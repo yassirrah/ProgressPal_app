@@ -1,0 +1,19 @@
+version: '3.9'
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: progresspal-db
+    environment:
+      POSTGRES_USER: progress
+      POSTGRES_PASSWORD: progress
+      POSTGRES_DB: progresspal
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+
+  redis:
+    image: redis:7-alpine
+    container_name: progresspal-redis
+    ports: ["6379:6379"]
+
+volumes:
+  pgdata:

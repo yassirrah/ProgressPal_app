@@ -1,0 +1,17 @@
+# env
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Java/Gradle
+target/
+build/
+.gradle/
+*.log
+
+# Node/React
+node_modules/
+dist/
+.cache/
+/frontend/.next/
