@@ -33,3 +33,9 @@ build/
 .vscode/
 
 
+
+# IDE & macOS
+.idea/
+*.iml
+.DS_Store
+**/.DS_Store
