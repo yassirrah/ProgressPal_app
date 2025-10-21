@@ -1,19 +1,48 @@
-version: '3.9'
+version: "3.9"
+
+networks:
+  progresspal-net:
+
+volumes:
+  pgdata:
+
 services:
   db:
     image: postgres:15-alpine
     container_name: progresspal-db
-    environment:
-      POSTGRES_USER: progress
-      POSTGRES_PASSWORD: progress
-      POSTGRES_DB: progresspal
+    env_file: ./env/db.dev.env
     ports: ["5432:5432"]
-    volumes: ["pgdata:/var/lib/postgresql/data"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      TZ: UTC
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+    networks: [progresspal-net]
 
   redis:
     image: redis:7-alpine
     container_name: progresspal-redis
     ports: ["6379:6379"]
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks: [progresspal-net]
 
-volumes:
-  pgdata:
+  # Optional helper UI
+  # pgadmin:
+  #   image: dpage/pgadmin4
+  #   ports: ["5050:80"]
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: admin@local
+  #     PGADMIN_DEFAULT_PASSWORD: admin
+  #   depends_on: [db]
+  #   networks: [progresspal-net]

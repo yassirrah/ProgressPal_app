@@ -15,3 +15,35 @@ node_modules/
 dist/
 .cache/
 /frontend/.next/
+
+
+# Env & secrets
+.env
+.env.*
+*.env
+*.secret
+*.secrets
+secrets.*
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_ed25519
+*.cert
+*.crt
+*.csr
+*.tok
+*.token
+*.credentials
+credentials.json
+service-account.json
+
+# Common secret-bearing config
+.aws/
+.ssh/
+.npmrc
+.pypirc
+docker-compose.override.yml

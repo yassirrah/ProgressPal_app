@@ -1,10 +1,10 @@
-package org.progresspalbackend.progresspalbackend.dto;
+package org.progresspalbackend.progresspalbackend.dto.session;
 
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 
 import java.util.UUID;
 
-public record ActivityCreateDto(
+public record SessionCreateDto(
         UUID userId,
         UUID activityTypeId,
         String title,

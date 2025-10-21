@@ -1,4 +1,4 @@
-package org.progresspalbackend.progresspalbackend.dto;
+package org.progresspalbackend.progresspalbackend.dto.activitytype;
 
 import java.util.UUID;
 

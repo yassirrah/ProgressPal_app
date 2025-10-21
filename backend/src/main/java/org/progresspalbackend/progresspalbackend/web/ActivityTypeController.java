@@ -1,8 +1,9 @@
 package org.progresspalbackend.progresspalbackend.web;
 
 import lombok.RequiredArgsConstructor;
-import org.progresspalbackend.progresspalbackend.dto.ActivityTypeCreateDto;
-import org.progresspalbackend.progresspalbackend.dto.ActivityTypeDto;
+
+import org.progresspalbackend.progresspalbackend.dto.activitytype.ActivityTypeCreateDto;
+import org.progresspalbackend.progresspalbackend.dto.activitytype.ActivityTypeDto;
 import org.progresspalbackend.progresspalbackend.service.ActivityTypeService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;

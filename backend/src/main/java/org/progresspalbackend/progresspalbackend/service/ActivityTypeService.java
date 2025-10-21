@@ -5,8 +5,9 @@ import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
-import org.progresspalbackend.progresspalbackend.dto.ActivityTypeCreateDto;
-import org.progresspalbackend.progresspalbackend.dto.ActivityTypeDto;
+
+import org.progresspalbackend.progresspalbackend.dto.activitytype.ActivityTypeCreateDto;
+import org.progresspalbackend.progresspalbackend.dto.activitytype.ActivityTypeDto;
 import org.progresspalbackend.progresspalbackend.mapper.ActivityTypeMapper;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
 import org.springframework.http.HttpStatus;

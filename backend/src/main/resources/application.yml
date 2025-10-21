@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: ProgressPalBackend
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/progresspal
+    username: progress
+    password: progress
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+  data:
+    redis:
+      host: redis
+      port: 6379
+
+server:
+  port: 8080
+
+logging:
+  level:
+    org.springframework: INFO

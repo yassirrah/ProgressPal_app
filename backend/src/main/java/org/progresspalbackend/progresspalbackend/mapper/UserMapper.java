@@ -4,8 +4,9 @@ import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 import org.progresspalbackend.progresspalbackend.domain.User;
-import org.progresspalbackend.progresspalbackend.dto.UserCreateDto;
-import org.progresspalbackend.progresspalbackend.dto.UserDto;
+import org.progresspalbackend.progresspalbackend.dto.user.UserCreateDto;
+import org.progresspalbackend.progresspalbackend.dto.user.UserDto;
+
 
 @Mapper(componentModel = "spring")
 public interface UserMapper {
