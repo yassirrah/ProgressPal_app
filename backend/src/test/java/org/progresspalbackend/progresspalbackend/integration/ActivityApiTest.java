@@ -1,9 +1,16 @@
 package org.progresspalbackend.progresspalbackend.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.progresspalbackend.progresspalbackend.domain.ActivityType;
+import org.progresspalbackend.progresspalbackend.domain.Session;
+import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
-import org.progresspalbackend.progresspalbackend.dto.ActivityCreateDto;
+import org.progresspalbackend.progresspalbackend.dto.session.SessionCreateDto;
+import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
+import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
+import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -15,76 +22,99 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.util.UUID;
+import java.time.Instant;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @Testcontainers
 @SpringBootTest
 @AutoConfigureMockMvc
-class ActivityApiTest {
+class SessionApiTest {
 
-    /* ── 1. Start a throw-away Postgres container ───────────── */
     @Container
-    static PostgreSQLContainer<?> db =
-            new PostgreSQLContainer<>("postgres:15-alpine")
-                    .withDatabaseName("progresspal")
-                    .withUsername("progress")
-                    .withPassword("progress");
+    static PostgreSQLContainer<?> db = new PostgreSQLContainer<>("postgres:15-alpine")
+            .withDatabaseName("progresspal")
+            .withUsername("progress")
+            .withPassword("progress");
 
-    /* ── 2. Plug container’s JDBC URL into Spring at runtime ── */
     @DynamicPropertySource
-    static void overrideProps(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url",      db::getJdbcUrl);
+    static void props(DynamicPropertyRegistry r) {
+        r.add("spring.datasource.url", db::getJdbcUrl);
         r.add("spring.datasource.username", db::getUsername);
         r.add("spring.datasource.password", db::getPassword);
+        r.add("spring.flyway.enabled", () -> "true");
+        r.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
     }
 
-    /* ── 3. Inject MockMvc + ObjectMapper ───────────────────── */
-    @Autowired
-    MockMvc mvc;
-    @Autowired
-    ObjectMapper json;
+    @Autowired MockMvc mvc;
+    @Autowired ObjectMapper json;
 
-    /* ── 4. Helper UUIDs (insert once per test run) ─────────── */
-    static final UUID USER_ID  = UUID.randomUUID();
-    static final UUID TYPE_ID  = UUID.randomUUID();
+    @Autowired UserRepository userRepo;
+    @Autowired ActivityTypeRepository typeRepo;
+    @Autowired SessionRepository sessionRepo;
 
-    @BeforeAll
-    static void seedLookupRows(@Autowired MockMvc mvc,
-                               @Autowired ObjectMapper json) throws Exception {
+    java.util.UUID userId;
+    java.util.UUID typeId;
 
-        /* Insert a user */
-        mvc.perform(post("/api/users")               // assumes you’ll add User controller later
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"id\":\""+ USER_ID +"\",\"username\":\"test\",\"email\":\"t@t.com\",\"password\":\"x\"}"))
-                .andExpect(status().isCreated());
+    @BeforeEach
+    void setupData() {
+        // delete in FK-safe order
+        sessionRepo.deleteAll();
+        typeRepo.deleteAll();
+        userRepo.deleteAll();
 
-        /* Insert an activity type */
-        mvc.perform(post("/api/activity-types")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"id\":\""+ TYPE_ID +"\",\"name\":\"TestType\"}"))
-                .andExpect(status().isCreated());
+        // DO NOT set IDs manually when @GeneratedValue is used
+        var user = new User();
+        user.setUsername("testuser");
+        user.setEmail("t@t.com");
+        user.setPassword("hashed");
+        user.setCreatedAt(Instant.now());
+        userId = userRepo.save(user).getId();
+
+        var type = new ActivityType();
+        type.setName("Studying");
+        type.setIconUrl(null);
+        type.setCustom(false);
+        typeId = typeRepo.save(type).getId();
     }
 
-    /* ── 5. Actual test: POST then GET list size = 1 ─────────── */
     @Test
-    void post_then_get() throws Exception {
+    void createSession_thenListByUser_returnsIt() throws Exception {
+        // Assuming your SessionCreateDto = (userId, activityTypeId, title, description, visibility)
+        var dto = new SessionCreateDto(
+                userId,
+                typeId,
+                "JUnit post",
+                "Made in integration test",
+                Visibility.PUBLIC
+        );
 
-        ActivityCreateDto dto = new ActivityCreateDto(
-                USER_ID, TYPE_ID,
-                "JUnit post", "Made in integration test", Visibility.PUBLIC);
-
-        /* POST */
-        mvc.perform(post("/api/activities")
+        // POST
+        mvc.perform(post("/api/sessions")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json.writeValueAsString(dto)))
-                .andExpect(status().isCreated());
+                        .content(json.writeValueAsString(dto)))      // <-- content, not contentType
+                .andExpect(status().isCreated())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.title").value("JUnit post"))
+                .andExpect(jsonPath("$.visibility").value("PUBLIC"))
+                .andExpect(jsonPath("$.activityTypeId").value(typeId.toString()))
+                .andExpect(jsonPath("$.userId").value(userId.toString()))
+                .andExpect(jsonPath("$.endedAt").doesNotExist());
 
-        /* GET list returns ≥ 1 */
-        mvc.perform(get("/api/activities"))
+        // GET list (adjust if you return a paged envelope)
+        mvc.perform(get("/api/sessions").param("userId", userId.toString()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1));
+                .andExpect(jsonPath("$[0].title").value("JUnit post"));
+
+        // repo sanity
+        assertThat(sessionRepo.count()).isEqualTo(1);
+        Session s = sessionRepo.findAll().get(0);
+        assertThat(s.getEndedAt()).isNull();
+        assertThat(s.getVisibility()).isEqualTo(Visibility.PUBLIC);
+        assertThat(s.getActivityType().getId()).isEqualTo(typeId);
+        assertThat(s.getUser().getId()).isEqualTo(userId);
     }
 }

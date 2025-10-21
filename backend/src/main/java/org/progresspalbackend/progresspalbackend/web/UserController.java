@@ -1,8 +1,9 @@
 package org.progresspalbackend.progresspalbackend.web;
 
 import lombok.RequiredArgsConstructor;
-import org.progresspalbackend.progresspalbackend.dto.UserCreateDto;
-import org.progresspalbackend.progresspalbackend.dto.UserDto;
+
+import org.progresspalbackend.progresspalbackend.dto.user.UserCreateDto;
+import org.progresspalbackend.progresspalbackend.dto.user.UserDto;
 import org.progresspalbackend.progresspalbackend.service.UserService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
