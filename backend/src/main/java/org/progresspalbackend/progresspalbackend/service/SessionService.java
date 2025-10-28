@@ -7,6 +7,7 @@ import org.progresspalbackend.progresspalbackend.domain.Session;
 
 import org.progresspalbackend.progresspalbackend.dto.session.SessionCreateDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
+import org.progresspalbackend.progresspalbackend.dto.session.SessionStopDto;
 import org.progresspalbackend.progresspalbackend.mapper.SessionMapper;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
@@ -61,5 +62,20 @@ public class SessionService {
         }
 
         return mapper.toDto(sessionRepo.save(existing));
+    }
+
+    public SessionDto stop(UUID id, UUID actorUserId, SessionStopDto body) {
+        Session s = sessionRepo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
+
+        if(!s.getUser().getId().equals(actorUserId)){
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You cannot stop another user's session");
+        }
+
+        if(s.getEndedAt() != null){
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Session already stopped");
+        }
+        s.setEndedAt(Instant.now());
+        return mapper.toDto(sessionRepo.save(s));
     }
 }

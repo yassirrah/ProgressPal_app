@@ -47,3 +47,9 @@ service-account.json
 .npmrc
 .pypirc
 docker-compose.override.yml
+
+
+# IDE
+.idea/
+*.iml
+.vscode/
