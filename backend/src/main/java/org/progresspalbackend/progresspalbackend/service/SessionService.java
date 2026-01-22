@@ -1,10 +1,12 @@
 package org.progresspalbackend.progresspalbackend.service;
 
+import jakarta.annotation.Nullable;
 import lombok.RequiredArgsConstructor;
 
 
 import org.progresspalbackend.progresspalbackend.domain.Session;
 
+import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionCreateDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionStopDto;
@@ -77,5 +79,21 @@ public class SessionService {
         }
         s.setEndedAt(Instant.now());
         return mapper.toDto(sessionRepo.save(s));
+    }
+
+    public List<SessionDto> findVisibleSessions(UUID actorUserId, UUID targetUserId, @Nullable Visibility visibility){
+        boolean isOwner = targetUserId.equals(actorUserId);
+        List<Session> sessions;
+        if(isOwner) {
+            if (visibility == null) {
+                sessions = sessionRepo.findByUserIdOrderByStartedAtDesc(targetUserId);
+            } else {
+                sessions = sessionRepo.findByUserIdAndVisibilityOrderByStartedAtDesc(targetUserId, visibility);
+            }
+        }else{
+            sessions = sessionRepo.findByUserIdAndVisibilityOrderByStartedAtDesc(targetUserId, Visibility.PUBLIC);
+        }
+        return sessions.stream().map(mapper::toDto).toList();
+
     }
 }

@@ -1,6 +1,8 @@
 package org.progresspalbackend.progresspalbackend.repository;
 
+
 import org.progresspalbackend.progresspalbackend.domain.Session;
+import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -10,10 +12,6 @@ public interface SessionRepository extends JpaRepository<Session, UUID> {
 
     // examples of useful custom finders  (optional)
     List<Session> findByUserIdOrderByStartedAtDesc(UUID userId);
-
+    List<Session> findByUserIdAndVisibilityOrderByStartedAtDesc(UUID userId, Visibility visibility);
     List<Session> findByActivityTypeId(UUID activityTypeId);
-
-    // soft-delete helper if you add an isDeleted column later
-    // @Query("select a from Activity a where a.isDeleted = false")
-    // List<Activity> findAllActive();
 }
