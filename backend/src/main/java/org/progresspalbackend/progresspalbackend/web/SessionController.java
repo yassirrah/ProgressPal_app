@@ -3,6 +3,7 @@ package org.progresspalbackend.progresspalbackend.web;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
+import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionCreateDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionStopDto;
@@ -35,8 +36,7 @@ public class SessionController {
             @PathVariable UUID id,
             @RequestHeader("X-User-Id") UUID userId,
             @RequestBody(required = false) SessionStopDto body
-    )
-    {
+    ){
         return service.stop(id, userId, body==null? new SessionStopDto() : body);
     }
 }

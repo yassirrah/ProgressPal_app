@@ -50,8 +50,7 @@ public class Session {
     @Enumerated(EnumType.STRING)
     @Column(name = "visibility", nullable = false) // remove length
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)             // ✅ Hibernate 6 way
-// If @JdbcTypeCode is not available, use:
-// @JdbcType(PostgreSQLEnumJdbcType.class)
+
     private Visibility visibility;
 
     @Transient
