@@ -94,6 +94,5 @@ public class SessionService {
             sessions = sessionRepo.findByUserIdAndVisibilityOrderByStartedAtDesc(targetUserId, Visibility.PUBLIC);
         }
         return sessions.stream().map(mapper::toDto).toList();
-
     }
 }
