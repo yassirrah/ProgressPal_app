@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.progresspalbackend.progresspalbackend.domain.Session;
 
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
+import org.progresspalbackend.progresspalbackend.dto.feed.FeedSessionDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionCreateDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionStopDto;
@@ -94,5 +95,21 @@ public class SessionService {
             sessions = sessionRepo.findByUserIdAndVisibilityOrderByStartedAtDesc(targetUserId, Visibility.PUBLIC);
         }
         return sessions.stream().map(mapper::toDto).toList();
+    }
+
+    public List<FeedSessionDto> getFeedSessions() {
+        return sessionRepo.findByVisibilityOrderByStartedAtDesc(Visibility.PUBLIC)
+                .stream()
+                .map(s -> new FeedSessionDto(
+                    s.getId(),
+                    s.getUser().getId(),
+                    s.getUser().getUsername(),
+                    s.getActivityType().getId(),
+                    s.getActivityType().getName(),
+                    s.getTitle(),
+                    s.getStartedAt(),
+                    s.getEndedAt(),
+                    s.getVisibility())
+                ).toList();
     }
 }
