@@ -46,7 +46,7 @@ class SessionStopApiTest {
         registry.add("spring.datasource.username", db::getUsername);
         registry.add("spring.datasource.password", db::getPassword);
         registry.add("spring.flyway.enabled", () -> "true");
-        registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate"); // ✅ fixed typo
+        registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
     }
 
     @Autowired MockMvc mvc;

@@ -8,14 +8,14 @@ import java.util.UUID;
 
 public record SessionCreateDto(
 //        UUID userId,
-        @NotNull(message = "ActivityTypeId is required")
+        @NotNull(message = "activityTypeId is required.")
         UUID activityTypeId,
 
-        @Size(max = 120, message = "Title must be at least")
+        @Size(max = 120, message = "title must be at most 120 characters.")
         String title,
 
         String description,
 
-        @NotNull(message = "Visibility is required")
+        @NotNull(message = "visibility is required.")
         Visibility visibility
 ) {}
