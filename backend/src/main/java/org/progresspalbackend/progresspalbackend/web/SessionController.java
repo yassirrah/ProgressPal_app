@@ -8,6 +8,7 @@ import org.progresspalbackend.progresspalbackend.dto.session.SessionCreateDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionStopDto;
 import org.progresspalbackend.progresspalbackend.service.SessionService;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,8 +27,9 @@ public class SessionController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public SessionDto create(@Valid @RequestBody SessionCreateDto dto) {
-        return service.create(dto);
+    public SessionDto create(@Valid @RequestBody SessionCreateDto dto,
+                             @RequestHeader("X-User-Id") UUID userId) {
+        return service.create(dto, userId);
     }
 
     @PatchMapping("/{id}/stop")

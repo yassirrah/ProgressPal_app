@@ -83,9 +83,8 @@ class SessionApiTest {
 
     @Test
     void createSession_thenListByUser_returnsIt() throws Exception {
-        // Assuming your SessionCreateDto = (userId, activityTypeId, title, description, visibility)
+        // Assuming your SessionCreateDto = (activityTypeId, title, description, visibility)
         var dto = new SessionCreateDto(
-                userId,
                 typeId,
                 "JUnit post",
                 "Made in integration test",
@@ -94,6 +93,7 @@ class SessionApiTest {
 
         // POST
         mvc.perform(post("/api/sessions")
+                        .header("X-User-Id", userId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json.writeValueAsString(dto)))      // <-- content, not contentType
                 .andExpect(status().isCreated())
