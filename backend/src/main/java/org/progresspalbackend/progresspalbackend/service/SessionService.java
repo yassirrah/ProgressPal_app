@@ -31,12 +31,12 @@ public class SessionService {
     private final ActivityTypeRepository typeRepo;
     private final SessionMapper mapper;
 
-    public SessionDto create(SessionCreateDto dto) {
+    public SessionDto create(SessionCreateDto dto, UUID user_id) {
         if(dto.activityTypeId() == null){
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "activityTypeId cannot be null");
         }
         Session entity = mapper.toEntity(dto);
-        entity.setUser(userRepo.getReferenceById(dto.userId()));
+        entity.setUser(userRepo.getReferenceById(user_id));
         entity.setActivityType(typeRepo.getReferenceById(dto.activityTypeId()));
         entity.setStartedAt(Instant.now());
         return mapper.toDto(sessionRepo.save(entity));
@@ -46,7 +46,7 @@ public class SessionService {
         return sessionRepo.findAll().stream().map(mapper::toDto).toList();
     }
 
-    public SessionDto update(UUID id, SessionCreateDto dto) {
+    public SessionDto update(UUID id, SessionCreateDto dto, UUID actor_user_id) {
         Session existing = sessionRepo.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
 
@@ -56,8 +56,8 @@ public class SessionService {
         existing.setVisibility(dto.visibility());
 
         // relation updates (only if changed)
-        if (!existing.getUser().getId().equals(dto.userId())) {
-            existing.setUser(userRepo.getReferenceById(dto.userId()));
+        if (!existing.getUser().getId().equals(actor_user_id)) {
+            existing.setUser(userRepo.getReferenceById(actor_user_id));
         }
         if (!existing.getActivityType().getId().equals(dto.activityTypeId())) {
             existing.setActivityType(typeRepo.getReferenceById(dto.activityTypeId()));
