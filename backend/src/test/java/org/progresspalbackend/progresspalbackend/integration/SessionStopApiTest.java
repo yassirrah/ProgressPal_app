@@ -111,4 +111,13 @@ class SessionStopApiTest {
                         .header("X-User-Id", userId.toString()))
                 .andExpect(status().isConflict());
     }
+
+    @Test
+    void stop_notOwner_returns403_standardPayload() throws Exception {
+
+        mvc.perform(patch("/api/sessions/{id}/stop", sessionId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("X-User-Id", UUID.randomUUID().toString()))
+                .andExpect(status().isForbidden());
+    }
 }

@@ -1,6 +1,7 @@
 package org.progresspalbackend.progresspalbackend.service;
 
 import jakarta.annotation.Nullable;
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 
 
@@ -77,6 +78,7 @@ public class SessionService {
         return mapper.toDto(sessionRepo.save(existing));
     }
 
+    @Transactional
     public SessionDto stop(UUID id, UUID actorUserId, SessionStopDto body) {
         Session s = sessionRepo.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
@@ -107,7 +109,7 @@ public class SessionService {
         return sessions.stream().map(mapper::toDto).toList();
     }
 
-    public List<FeedSessionDto> getFeedSessions() {
+    public List<FeedSessionDto> getFeedSessions(){
         return sessionRepo.findByVisibilityOrderByStartedAtDesc(Visibility.PUBLIC)
                 .stream()
                 .map(s -> new FeedSessionDto(
