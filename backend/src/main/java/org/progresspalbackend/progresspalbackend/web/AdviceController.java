@@ -8,8 +8,13 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.ErrorResponseException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.time.Instant;
 import java.util.stream.Collectors;
 
@@ -31,6 +36,13 @@ public class AdviceController{
         return build(HttpStatus.BAD_REQUEST, "Invalid body request", request.getRequestURI());
     }
 
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> handleResponseStatus(ResponseStatusException ex, HttpServletRequest request) {
+        HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
+        String msg = ex.getReason() != null ? ex.getReason() : status.getReasonPhrase();
+        return build(status, msg, request.getRequestURI());
+    }
+
     @ExceptionHandler(ErrorResponseException.class)
     public ResponseEntity<ErrorResponse> handleErrorResponse(ErrorResponseException ex, HttpServletRequest request) {
         HttpStatus status = (HttpStatus) ex.getStatusCode();
@@ -41,9 +53,20 @@ public class AdviceController{
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleOther(Exception ex, HttpServletRequest request){
+    public ResponseEntity<ErrorResponse> handleOther(HttpServletRequest request){
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected Error", request.getRequestURI());
     }
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ErrorResponse> handleMissingRequestHeader(MissingRequestHeaderException ex, HttpServletRequest request){
+        return build(HttpStatus.BAD_REQUEST, "Missing request header", request.getRequestURI());
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleMethodArgumentTypeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest request){
+        return build(HttpStatus.BAD_REQUEST, "Invalid parameter value", request.getRequestURI());
+    }
+
 
     private ResponseEntity<ErrorResponse> build(HttpStatus status, String msg, String path) {
         ErrorResponse er = new ErrorResponse(
