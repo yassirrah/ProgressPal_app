@@ -4,8 +4,10 @@ import jakarta.annotation.Nullable;
 import lombok.RequiredArgsConstructor;
 
 
+import org.progresspalbackend.progresspalbackend.domain.ActivityType;
 import org.progresspalbackend.progresspalbackend.domain.Session;
 
+import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.dto.feed.FeedSessionDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionCreateDto;
@@ -31,14 +33,22 @@ public class SessionService {
     private final UserRepository userRepo;
     private final ActivityTypeRepository typeRepo;
     private final SessionMapper mapper;
+    private final ActivityTypeRepository activityTypeRepository;
 
     public SessionDto create(SessionCreateDto dto, UUID user_id) {
         if(dto.activityTypeId() == null){
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "activityTypeId cannot be null");
         }
         Session entity = mapper.toEntity(dto);
-        entity.setUser(userRepo.getReferenceById(user_id));
-        entity.setActivityType(typeRepo.getReferenceById(dto.activityTypeId()));
+
+        User user = userRepo.findById(user_id).
+                orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        ActivityType activityType = activityTypeRepository.findById(dto.activityTypeId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "ActivityType not found"));
+
+        entity.setUser(user);
+        entity.setActivityType(activityType);
         entity.setStartedAt(Instant.now());
         return mapper.toDto(sessionRepo.save(entity));
     }
