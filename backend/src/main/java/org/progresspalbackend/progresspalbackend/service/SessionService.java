@@ -18,6 +18,8 @@ import org.progresspalbackend.progresspalbackend.mapper.SessionMapper;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -109,9 +111,8 @@ public class SessionService {
         return sessions.stream().map(mapper::toDto).toList();
     }
 
-    public List<FeedSessionDto> getFeedSessions(){
-        return sessionRepo.findByVisibilityOrderByStartedAtDesc(Visibility.PUBLIC)
-                .stream()
+    public Page<FeedSessionDto> getFeedSessions(Pageable pageable){
+        return sessionRepo.findByVisibilityOrderByStartedAtDesc(Visibility.PUBLIC, pageable)
                 .map(s -> new FeedSessionDto(
                     s.getId(),
                     s.getUser().getId(),
@@ -122,6 +123,6 @@ public class SessionService {
                     s.getStartedAt(),
                     s.getEndedAt(),
                     s.getVisibility())
-                ).toList();
+                );
     }
 }

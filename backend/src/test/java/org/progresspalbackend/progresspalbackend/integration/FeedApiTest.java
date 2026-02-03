@@ -25,7 +25,6 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest
@@ -88,17 +87,17 @@ public class FeedApiTest {
         mockMvc.perform(get("/api/feed")
                 .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$.content.length()").value(2))
                 // order desc: pub2 then pub1
-                .andExpect(jsonPath("$[0].id").value(pub2.getId().toString()))
-                .andExpect(jsonPath("$[1].id").value(pub1.getId().toString()))
+                .andExpect(jsonPath("$.content[0].id").value(pub2.getId().toString()))
+                .andExpect(jsonPath("$.content[1].id").value(pub1.getId().toString()))
                 // sanity fields
-                .andExpect(jsonPath("$[0].visibility").value("PUBLIC"))
-                .andExpect(jsonPath("$[1].visibility").value("PUBLIC"))
-                .andExpect(jsonPath("$[0].userId").exists())
-                .andExpect(jsonPath("$[0].username").exists())
-                .andExpect(jsonPath("$[0].activityTypeId").exists())
-                .andExpect(jsonPath("$[0].activityTypeName").exists());
+                .andExpect(jsonPath("$.content[0].visibility").value("PUBLIC"))
+                .andExpect(jsonPath("$.content[1].visibility").value("PUBLIC"))
+                .andExpect(jsonPath("$.content[0].userId").exists())
+                .andExpect(jsonPath("$.content[0].username").exists())
+                .andExpect(jsonPath("$.content[0].activityTypeId").exists())
+                .andExpect(jsonPath("$.content[0].activityTypeName").exists());
     }
 
     private User persistUser(){

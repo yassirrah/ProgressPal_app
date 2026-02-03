@@ -3,6 +3,8 @@ package org.progresspalbackend.progresspalbackend.repository;
 
 import org.progresspalbackend.progresspalbackend.domain.Session;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -17,5 +19,5 @@ public interface SessionRepository extends JpaRepository<Session, UUID> {
     List<Session> findByActivityTypeId(UUID activityTypeId);
 
     @EntityGraph(attributePaths = {"user", "activityType"})
-    List<Session> findByVisibilityOrderByStartedAtDesc(Visibility visibility);
+    Page<Session> findByVisibilityOrderByStartedAtDesc(Visibility visibility, Pageable pageable);
 }
