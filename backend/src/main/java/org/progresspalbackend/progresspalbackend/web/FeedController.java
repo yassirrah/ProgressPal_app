@@ -2,6 +2,10 @@ package org.progresspalbackend.progresspalbackend.web;
 
 import org.progresspalbackend.progresspalbackend.dto.feed.FeedSessionDto;
 import org.progresspalbackend.progresspalbackend.service.SessionService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -17,7 +21,9 @@ public class FeedController {
     }
 
     @GetMapping
-    public List<FeedSessionDto> feed(){
-        return service.getFeedSessions();
+    public Page<FeedSessionDto> feed(
+            @PageableDefault(size = 20, sort = "startedAt", direction = Sort.Direction.DESC)
+            Pageable pageable){
+        return service.getFeedSessions(pageable);
     }
 }
