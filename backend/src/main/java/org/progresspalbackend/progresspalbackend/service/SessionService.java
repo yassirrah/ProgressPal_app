@@ -50,6 +50,11 @@ public class SessionService {
         ActivityType activityType = activityTypeRepository.findById(dto.activityTypeId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "ActivityType not found"));
 
+
+        if(sessionRepo.existsByUser_IdAndEndedAtIsNull(user_id)){
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "User already has a live session");
+        }
+
         entity.setUser(user);
         entity.setActivityType(activityType);
         entity.setStartedAt(Instant.now());
