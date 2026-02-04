@@ -33,8 +33,9 @@ public class ActivityTypeController {
     /* ── CREATE ───────────────────────────── */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ActivityTypeDto create(@RequestBody ActivityTypeCreateDto dto) {
-        return service.create(dto);
+    public ActivityTypeDto create(@RequestBody ActivityTypeCreateDto dto,
+                                  @RequestHeader("X-User-Id") UUID userId) {
+        return service.create(dto, userId);
     }
 
     /* ── UPDATE ───────────────────────────── */

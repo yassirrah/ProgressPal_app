@@ -11,6 +11,8 @@ import org.progresspalbackend.progresspalbackend.dto.activitytype.ActivityTypeDt
 @Mapper(componentModel = "spring")
 public interface ActivityTypeMapper {
 
+    @Mapping(target = "createdBy", source = "createdBy.id")
+    @Mapping(target = "custom", source = "custom")
     ActivityTypeDto toDto(ActivityType entity);
 
     @Mapping(target = "id", ignore = true)

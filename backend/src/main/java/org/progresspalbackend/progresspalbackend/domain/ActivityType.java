@@ -23,10 +23,11 @@ public class ActivityType {
 
     private String iconUrl;         // optional
 
-    @Column(nullable = false)
-    private boolean isCustom;
+    @Column(name = "is_custom", nullable = false)
+    private boolean custom;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by")
     private User createdBy;         // null if predefined
+
 }
