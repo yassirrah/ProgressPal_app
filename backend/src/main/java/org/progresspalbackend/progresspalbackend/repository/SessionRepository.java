@@ -14,8 +14,8 @@ import java.util.UUID;
 public interface SessionRepository extends JpaRepository<Session, UUID> {
 
     // examples of useful custom finders  (optional)
-    List<Session> findByUserIdOrderByStartedAtDesc(UUID userId);
-    List<Session> findByUserIdAndVisibilityOrderByStartedAtDesc(UUID userId, Visibility visibility);
+    Page<Session> findByUserIdOrderByStartedAtDesc(UUID userId, Pageable pageable);
+    Page<Session> findByUserIdAndVisibilityOrderByStartedAtDesc(UUID userId, Visibility visibility, Pageable pageable);
     List<Session> findByActivityTypeId(UUID activityTypeId);
 
     @EntityGraph(attributePaths = {"user", "activityType"})
