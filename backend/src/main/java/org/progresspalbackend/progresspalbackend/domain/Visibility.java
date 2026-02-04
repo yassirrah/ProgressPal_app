@@ -6,4 +6,3 @@ public enum Visibility {
     FRIENDS,
     PRIVATE
 }
-
