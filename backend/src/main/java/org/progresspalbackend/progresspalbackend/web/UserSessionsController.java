@@ -3,6 +3,10 @@ package org.progresspalbackend.progresspalbackend.web;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
 import org.progresspalbackend.progresspalbackend.service.SessionService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,9 +22,10 @@ public class UserSessionsController {
     }
 
     @GetMapping("/{userId}/sessions")
-    public List<SessionDto> getUserSessions(@RequestHeader("X-User-Id") UUID actorUserId,
+    public Page<SessionDto> getUserSessions(@RequestHeader("X-User-Id") UUID actorUserId,
                                             @PathVariable UUID userId,
-                                            @RequestParam(required = false) Visibility visibility) {
-        return sessionService.findVisibleSessions(actorUserId, userId, visibility);
+                                            @RequestParam(required = false) Visibility visibility,
+                                            @PageableDefault(size = 20, sort = "startedAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        return sessionService.findVisibleSessions(actorUserId, userId, visibility, pageable);
     }
 }

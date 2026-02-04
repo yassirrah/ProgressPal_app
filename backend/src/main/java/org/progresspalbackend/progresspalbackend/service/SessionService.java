@@ -96,19 +96,19 @@ public class SessionService {
         return mapper.toDto(sessionRepo.save(s));
     }
 
-    public List<SessionDto> findVisibleSessions(UUID actorUserId, UUID targetUserId, @Nullable Visibility visibility){
+    public Page<SessionDto> findVisibleSessions(UUID actorUserId, UUID targetUserId, @Nullable Visibility visibility, Pageable pageable){
         boolean isOwner = targetUserId.equals(actorUserId);
-        List<Session> sessions;
+        Page<Session> sessions;
         if(isOwner) {
             if (visibility == null) {
-                sessions = sessionRepo.findByUserIdOrderByStartedAtDesc(targetUserId);
+                sessions = sessionRepo.findByUserIdOrderByStartedAtDesc(targetUserId, pageable);
             } else {
-                sessions = sessionRepo.findByUserIdAndVisibilityOrderByStartedAtDesc(targetUserId, visibility);
+                sessions = sessionRepo.findByUserIdAndVisibilityOrderByStartedAtDesc(targetUserId, visibility, pageable);
             }
         }else{
-            sessions = sessionRepo.findByUserIdAndVisibilityOrderByStartedAtDesc(targetUserId, Visibility.PUBLIC);
+            sessions = sessionRepo.findByUserIdAndVisibilityOrderByStartedAtDesc(targetUserId, Visibility.PUBLIC, pageable);
         }
-        return sessions.stream().map(mapper::toDto).toList();
+        return sessions.map(mapper::toDto);
     }
 
     public Page<FeedSessionDto> getFeedSessions(Pageable pageable){
