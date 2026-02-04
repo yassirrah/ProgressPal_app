@@ -81,9 +81,9 @@ public class UserSessionsApiTest {
                     .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 // desc by startedAt: newestPrivate, middlePublic, olderPublic
-                .andExpect(jsonPath("$[0].id").value(newestPrivate.getId().toString()))
-                .andExpect(jsonPath("$[1].id").value(middlePublic.getId().toString()))
-                .andExpect(jsonPath("$[2].id").value(olderPublic.getId().toString()));
+                .andExpect(jsonPath("$.content[0].id").value(newestPrivate.getId().toString()))
+                .andExpect(jsonPath("$.content[1].id").value(middlePublic.getId().toString()))
+                .andExpect(jsonPath("$.content[2].id").value(olderPublic.getId().toString()));
 
     }
 
@@ -107,12 +107,12 @@ public class UserSessionsApiTest {
                         .header("X-User-Id", user.getId().toString())
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$.content.length()").value(2))
                 // desc: p2 then p1
-                .andExpect(jsonPath("$[0].id").value(p2.getId().toString()))
-                .andExpect(jsonPath("$[1].id").value(p1.getId().toString()))
-                .andExpect(jsonPath("$[0].visibility").value("PRIVATE"))
-                .andExpect(jsonPath("$[1].visibility").value("PRIVATE"));
+                .andExpect(jsonPath("$.content[0].id").value(p2.getId().toString()))
+                .andExpect(jsonPath("$.content[1].id").value(p1.getId().toString()))
+                .andExpect(jsonPath("$.content[0].visibility").value("PRIVATE"))
+                .andExpect(jsonPath("$.content[1].visibility").value("PRIVATE"));
     }
 
     @Test
@@ -133,9 +133,9 @@ public class UserSessionsApiTest {
                         .header("X-User-Id", actor.getId().toString())
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value(pub.getId().toString()))
-                .andExpect(jsonPath("$[0].visibility").value("PUBLIC"));
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(pub.getId().toString()))
+                .andExpect(jsonPath("$.content[0].visibility").value("PUBLIC"));
     }
 
     private User persistUser() {
