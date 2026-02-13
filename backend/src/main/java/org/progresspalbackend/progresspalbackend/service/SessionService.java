@@ -1,10 +1,12 @@
 package org.progresspalbackend.progresspalbackend.service;
 
 import jakarta.annotation.Nullable;
+import jakarta.transaction.Status;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 
 
+import org.mapstruct.Mapper;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
 import org.progresspalbackend.progresspalbackend.domain.Session;
 
@@ -26,6 +28,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -129,5 +132,10 @@ public class SessionService {
                     s.getEndedAt(),
                     s.getVisibility())
                 );
+    }
+
+    public Optional<SessionDto> getLiveSessionOfUser(UUID actorUserId) {
+        return sessionRepo.findFirstByUser_IdAndEndedAtIsNullOrderByStartedAtDesc(actorUserId)
+                .map(mapper::toDto);
     }
 }
