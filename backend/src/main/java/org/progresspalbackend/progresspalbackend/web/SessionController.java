@@ -10,9 +10,12 @@ import org.progresspalbackend.progresspalbackend.dto.session.SessionStopDto;
 import org.progresspalbackend.progresspalbackend.service.SessionService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @RestController
@@ -40,5 +43,12 @@ public class SessionController {
             @RequestBody(required = false) SessionStopDto body
     ){
         return service.stop(id, userId, body==null? new SessionStopDto() : body);
+    }
+
+    @GetMapping("/live")
+    public ResponseEntity<SessionDto> live(
+            @RequestHeader("X-User-Id") UUID userId){
+        return service.getLiveSessionOfUser(userId).map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 }

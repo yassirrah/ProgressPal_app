@@ -8,9 +8,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface SessionRepository extends JpaRepository<Session, UUID> {
@@ -21,7 +20,8 @@ public interface SessionRepository extends JpaRepository<Session, UUID> {
     List<Session> findByActivityTypeId(UUID activityTypeId);
     boolean existsByUser_IdAndEndedAtIsNull(UUID userId);
 
-
     @EntityGraph(attributePaths = {"user", "activityType"})
     Page<Session> findByVisibilityOrderByStartedAtDesc(Visibility visibility, Pageable pageable);
+    Optional<Session> findFirstByUser_IdAndEndedAtIsNullOrderByStartedAtDesc(UUID userId);
+
 }
