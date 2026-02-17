@@ -20,8 +20,9 @@ public class ActivityTypeController {
 
     /* ── LIST ─────────────────────────────── */
     @GetMapping
-    public List<ActivityTypeDto> list() {
-        return service.list();
+    public List<ActivityTypeDto> list(@RequestHeader("X-User-Id") UUID userId,
+                                      @RequestParam(defaultValue = "ALL") String scope) {
+        return service.list(scope, userId);
     }
 
     /* ── GET ONE ──────────────────────────── */
@@ -43,5 +44,12 @@ public class ActivityTypeController {
     public ActivityTypeDto update(@PathVariable UUID id,
                                   @RequestBody ActivityTypeCreateDto dto) {
         return service.update(id, dto);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable UUID id,
+            @RequestHeader("X-User-Id") UUID userId) {
+        service.delete(userId, id);
     }
 }
