@@ -3,7 +3,6 @@ import {
   createActivityType,
   createSession,
   getActivityTypes,
-  getFeed,
   getLiveSession,
   getStoredUser,
   stopSession,
@@ -11,9 +10,9 @@ import {
 
 const Home = () => {
   const user = useMemo(() => getStoredUser(), []);
-  const [feedItems, setFeedItems] = useState([]);
   const [activityTypes, setActivityTypes] = useState([]);
   const [liveSession, setLiveSession] = useState(null);
+  const [now, setNow] = useState(Date.now());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -30,13 +29,11 @@ const Home = () => {
     setLoading(true);
     setError('');
     try {
-      const [feedResponse, types, live] = await Promise.all([
-        getFeed(0, 10),
+      const [types, live] = await Promise.all([
         user ? getActivityTypes(user.id, 'ALL') : Promise.resolve([]),
         user ? getLiveSession(user.id) : Promise.resolve(null),
       ]);
 
-      setFeedItems(feedResponse.content || []);
       setActivityTypes(types);
       setLiveSession(live);
       if (types.length > 0 && !sessionForm.activityTypeId) {
@@ -53,6 +50,23 @@ const Home = () => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!liveSession?.startedAt) return;
+    const intervalId = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [liveSession?.startedAt]);
+
+  const formatDuration = (startedAt) => {
+    const elapsedMs = Math.max(0, now - new Date(startedAt).getTime());
+    const totalSeconds = Math.floor(elapsedMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return [hours, minutes, seconds].map((n) => String(n).padStart(2, '0')).join(':');
+  };
 
   const handleCreateType = async (e) => {
     e.preventDefault();
@@ -105,57 +119,61 @@ const Home = () => {
           {liveSession ? (
             <div>
               <p><strong>{liveSession.title || 'Untitled session'}</strong></p>
-              <p>Started at: {new Date(liveSession.startedAt).toLocaleString()}</p>
+              <p>Live for: {formatDuration(liveSession.startedAt)}</p>
               <button onClick={handleStopSession}>Stop Live Session</button>
             </div>
           ) : (
             <p>No active session.</p>
           )}
 
-          <h2>Start Session</h2>
-          <form onSubmit={handleStartSession}>
-            <div>
-              <label>Activity type:</label>
-              <select
-                value={sessionForm.activityTypeId}
-                onChange={(e) => setSessionForm((prev) => ({ ...prev, activityTypeId: e.target.value }))}
-                required
-              >
-                {activityTypes.map((type) => (
-                  <option key={type.id} value={type.id}>
-                    {type.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label>Title:</label>
-              <input
-                type="text"
-                maxLength={120}
-                value={sessionForm.title}
-                onChange={(e) => setSessionForm((prev) => ({ ...prev, title: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label>Description:</label>
-              <textarea
-                value={sessionForm.description}
-                onChange={(e) => setSessionForm((prev) => ({ ...prev, description: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label>Visibility:</label>
-              <select
-                value={sessionForm.visibility}
-                onChange={(e) => setSessionForm((prev) => ({ ...prev, visibility: e.target.value }))}
-              >
-                <option value="PUBLIC">PUBLIC</option>
-                <option value="PRIVATE">PRIVATE</option>
-              </select>
-            </div>
-            <button type="submit">Start Session</button>
-          </form>
+          {!liveSession && (
+            <>
+              <h2>Start Session</h2>
+              <form onSubmit={handleStartSession}>
+                <div>
+                  <label>Activity type:</label>
+                  <select
+                    value={sessionForm.activityTypeId}
+                    onChange={(e) => setSessionForm((prev) => ({ ...prev, activityTypeId: e.target.value }))}
+                    required
+                  >
+                    {activityTypes.map((type) => (
+                      <option key={type.id} value={type.id}>
+                        {type.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label>Title:</label>
+                  <input
+                    type="text"
+                    maxLength={120}
+                    value={sessionForm.title}
+                    onChange={(e) => setSessionForm((prev) => ({ ...prev, title: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label>Description:</label>
+                  <textarea
+                    value={sessionForm.description}
+                    onChange={(e) => setSessionForm((prev) => ({ ...prev, description: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label>Visibility:</label>
+                  <select
+                    value={sessionForm.visibility}
+                    onChange={(e) => setSessionForm((prev) => ({ ...prev, visibility: e.target.value }))}
+                  >
+                    <option value="PUBLIC">PUBLIC</option>
+                    <option value="PRIVATE">PRIVATE</option>
+                  </select>
+                </div>
+                <button type="submit">Start Session</button>
+              </form>
+            </>
+          )}
 
           <h2>Create Activity Type</h2>
           <form onSubmit={handleCreateType}>
@@ -179,20 +197,6 @@ const Home = () => {
             <button type="submit">Create</button>
           </form>
         </>
-      )}
-
-      <h2>Public Feed</h2>
-      {feedItems.length === 0 ? (
-        <p>No public sessions yet.</p>
-      ) : (
-        <ul>
-          {feedItems.map((item) => (
-            <li key={item.id}>
-              <strong>{item.username}</strong> - {item.activityTypeName}
-              {item.title ? ` (${item.title})` : ''}
-            </li>
-          ))}
-        </ul>
       )}
     </div>
   );

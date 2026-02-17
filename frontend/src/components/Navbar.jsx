@@ -13,6 +13,7 @@ const Navbar = () => {
   return (
     <nav>
       <Link to="/">Home</Link>
+      <Link to="/feed">Feed</Link>
       {user ? (
         <>
           <span style={{ margin: '0 10px' }}>Hi, {user.username}</span>
