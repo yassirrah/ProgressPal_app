@@ -16,4 +16,6 @@ public interface ActivityTypeRepository extends JpaRepository<ActivityType, UUID
     List<ActivityType> findByCreatedById(UUID userId);        // custom types of a user
 
     boolean existsByNameIgnoreCaseAndCreatedBy(String name, User userId);
+
+    List<ActivityType> findByCustomTrueAndCreatedBy_IdOrderByNameAsc(UUID userId);
 }

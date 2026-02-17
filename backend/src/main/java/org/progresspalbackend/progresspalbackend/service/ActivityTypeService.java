@@ -1,5 +1,6 @@
 package org.progresspalbackend.progresspalbackend.service;
 
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
 
@@ -8,6 +9,7 @@ import org.progresspalbackend.progresspalbackend.dto.activitytype.ActivityTypeCr
 import org.progresspalbackend.progresspalbackend.dto.activitytype.ActivityTypeDto;
 import org.progresspalbackend.progresspalbackend.mapper.ActivityTypeMapper;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
+import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -24,6 +26,7 @@ public class ActivityTypeService {
     private final UserRepository userRepo;
     private final ActivityTypeMapper mapper;
     private final ActivityTypeRepository activityTypeRepository;
+    private final SessionRepository sessionRepository;
 
     public ActivityTypeDto create(ActivityTypeCreateDto dto, UUID user_id) {
         User user = userRepo.findById(user_id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
@@ -38,9 +41,22 @@ public class ActivityTypeService {
         return mapper.toDto(savedEntity);
     }
 
-    public List<ActivityTypeDto> list() {
-        return repo.findAll().stream().map(mapper::toDto).toList();
+    public List<ActivityTypeDto> list(String scope, UUID userId) {
+        List<ActivityType> res = switch (scope.toUpperCase()) {
+            case "DEFAULTS" -> repo.findByCustomFalseOrderByNameAsc();
+            case "MINE" -> repo.findByCustomTrueAndCreatedBy_IdOrderByNameAsc(userId);
+            case "ALL" -> {
+                List<ActivityType> defaults = repo.findByCustomFalseOrderByNameAsc();
+                List<ActivityType> mine = repo.findByCustomTrueAndCreatedBy_IdOrderByNameAsc(userId);
+                defaults.addAll(mine);
+                yield defaults;
+            }
+            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid scope");
+        };
+
+        return res.stream().map(mapper::toDto).toList();
     }
+
 
     public ActivityTypeDto find(UUID id) {
         return mapper.toDto(repo.findById(id)
@@ -54,5 +70,28 @@ public class ActivityTypeService {
                         HttpStatus.NOT_FOUND, "ActivityType not found"));
         mapper.updateFromDto(dto, existing);
         return mapper.toDto(repo.save(existing));
+    }
+
+    @Transactional
+    public void delete(UUID userId, UUID id) {
+        ActivityType type = activityTypeRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "ActivityType not found"));
+
+        // block defaults
+        if (!type.isCustom() || type.getCreatedBy() == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Default activity types cannot be deleted");
+        }
+
+        // ownership
+        if (!userId.equals(type.getCreatedBy().getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not allowed to delete this activity type");
+        }
+
+        // optional: block if used
+//        if (sessionRepository.existsByActivityType_Id(id)) {
+//            throw new ResponseStatusException(HttpStatus.CONFLICT, "ActivityType is in use");
+//        }
+
+        activityTypeRepository.delete(type);
     }
 }
