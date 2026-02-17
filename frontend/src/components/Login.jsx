@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { loginUserByEmail, setStoredUser } from '../lib/api';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -11,15 +11,12 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('http://localhost:5000/api/auth/login', {
-        email,
-        password,
-      });
-      localStorage.setItem('token', response.data.token); // Store JWT token
+      const user = await loginUserByEmail(email);
+      setStoredUser(user);
       setError('');
-      navigate('/'); // Redirect to home after login
+      navigate('/');
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed');
+      setError(err.message || 'Login failed');
     }
   };
 
@@ -48,6 +45,9 @@ const Login = () => {
         </div>
         <button type="submit">Login</button>
       </form>
+      <p style={{ color: '#666' }}>
+        Note: backend currently authenticates by user id header, so login uses email lookup.
+      </p>
       <p>
         Don't have an account? <a href="/signup">Sign up</a>
       </p>

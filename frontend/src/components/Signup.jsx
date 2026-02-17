@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { setStoredUser, signupUser } from '../lib/api';
 
 const Signup = () => {
   const [username, setUsername] = useState('');
@@ -12,15 +12,18 @@ const Signup = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:5000/api/auth/signup', {
+      const user = await signupUser({
         username,
         email,
         password,
+        profileImage: '',
+        bio: '',
       });
+      setStoredUser(user);
       setError('');
-      navigate('/login'); // Redirect to login after signup
+      navigate('/');
     } catch (err) {
-      setError(err.response?.data?.message || 'Signup failed');
+      setError(err.message || 'Signup failed');
     }
   };
 
