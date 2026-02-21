@@ -1,6 +1,7 @@
 package org.progresspalbackend.progresspalbackend.web;
 
 
+import org.progresspalbackend.progresspalbackend.dto.Friendship.FriendRequestDto;
 import org.progresspalbackend.progresspalbackend.dto.Friendship.FriendShipDto;
 import org.progresspalbackend.progresspalbackend.service.FriendShipService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +25,11 @@ public class FriendController {
     @GetMapping
     List<FriendShipDto> list(@RequestHeader("X-User-Id") UUID userId){
         return friendShipService.getAll(userId);
+    }
+
+    @GetMapping("/requests/incoming")
+    List<FriendRequestDto> incomingRequests(@RequestHeader("X-User-Id") UUID userId) {
+        return friendShipService.getIncomingPendingRequests(userId);
     }
 
     @ResponseStatus(HttpStatus.CREATED)
