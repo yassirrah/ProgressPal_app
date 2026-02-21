@@ -14,6 +14,7 @@ const Navbar = () => {
     <nav>
       <Link to="/">Home</Link>
       <Link to="/feed">Feed</Link>
+      <Link to="/friends">Friends</Link>
       {user ? (
         <>
           <span style={{ margin: '0 10px' }}>Hi, {user.username}</span>
