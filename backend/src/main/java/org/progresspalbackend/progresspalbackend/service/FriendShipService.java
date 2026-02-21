@@ -5,6 +5,7 @@ import org.progresspalbackend.progresspalbackend.domain.FriendRequest;
 import org.progresspalbackend.progresspalbackend.domain.Friendship;
 import org.progresspalbackend.progresspalbackend.domain.FriendshipStatus;
 import org.progresspalbackend.progresspalbackend.domain.User;
+import org.progresspalbackend.progresspalbackend.dto.Friendship.FriendRequestDto;
 import org.progresspalbackend.progresspalbackend.dto.Friendship.FriendShipDto;
 import org.progresspalbackend.progresspalbackend.mapper.FriendshipMapper;
 import org.progresspalbackend.progresspalbackend.repository.FriendRepository;
@@ -103,22 +104,34 @@ public class FriendShipService {
         friendRepository.save(new_friendship);
     }
 
+    @Transactional
     public List<FriendShipDto> getAll(UUID userId) {
-        List<Friendship> rows = new java.util.ArrayList<>();
-        rows.addAll(friendRepository.findAllByUser_Id(userId));
-        rows.addAll(friendRepository.findAllByFriend_Id(userId));
+        List<FriendShipDto> fromUserSide = friendRepository.findAllByUser_Id(userId)
+                .stream()
+                .map(mapper::toDtoFromUserSide)
+                .toList();
 
-        return rows.stream()
-                .map(f -> {
-                    UUID otherId = f.getUser().getId().equals(userId)
-                            ? f.getFriend().getId()
-                            : f.getUser().getId();
-                    return new FriendShipDto(otherId, f.getCreatedAt());
-                })
+        List<FriendShipDto> fromFriendSide = friendRepository.findAllByFriend_Id(userId)
+                .stream()
+                .map(mapper::toDtoFromFriendSide)
+                .toList();
+
+        List<FriendShipDto> all = new java.util.ArrayList<>(fromUserSide);
+        all.addAll(fromFriendSide);
+
+        return all.stream()
                 .distinct()
                 .toList();
     }
 
-
-
+    public List<FriendRequestDto> getIncomingPendingRequests(UUID userId) {
+        return friendRequestRepository.findAllByReceiver_IdAndStatus(userId, FriendshipStatus.PENDING)
+                .stream()
+                .map(req -> new FriendRequestDto(
+                        req.getRequester().getId(),
+                        req.getRequester().getUsername(),
+                        req.getCreatedAt()
+                ))
+                .toList();
+    }
 }
