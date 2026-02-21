@@ -85,6 +85,13 @@ class FriendshipApiTest {
         assertThat(pending).isNotNull();
         assertThat(pending.getStatus()).isEqualTo(FriendshipStatus.PENDING);
 
+        mvc.perform(get("/api/friends/requests/incoming")
+                        .header("X-User-Id", receiver.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].requesterId").value(requester.getId().toString()))
+                .andExpect(jsonPath("$[0].requesterUsername").value(requester.getUsername()));
+
         mvc.perform(patch("/api/friends/accept")
                         .header("X-User-Id", receiver.getId().toString())
                         .param("requesterId", requester.getId().toString()))

@@ -7,5 +7,6 @@ import java.util.UUID;
 
 public record FriendShipDto(
         @NotNull UUID FriendId,
+        String friendusername,
         @Nullable Instant createdAt
 ) {}

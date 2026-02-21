@@ -119,3 +119,47 @@ export async function stopSession(userId, sessionId) {
     throw new Error(toErrorMessage(error, 'Failed to stop session'));
   }
 }
+
+export async function getFriends(userId) {
+  try {
+    const { data } = await client.get('/friends', {
+      headers: { 'X-User-Id': userId },
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load friends'));
+  }
+}
+
+export async function sendFriendRequest(userId, receiverId) {
+  try {
+    await client.post('/friends/send', null, {
+      headers: { 'X-User-Id': userId },
+      params: { receiverId },
+    });
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to send friend request'));
+  }
+}
+
+export async function acceptFriendRequest(userId, requesterId) {
+  try {
+    await client.patch('/friends/accept', null, {
+      headers: { 'X-User-Id': userId },
+      params: { requesterId },
+    });
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to accept friend request'));
+  }
+}
+
+export async function getIncomingFriendRequests(userId) {
+  try {
+    const { data } = await client.get('/friends/requests/incoming', {
+      headers: { 'X-User-Id': userId },
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load incoming requests'));
+  }
+}
