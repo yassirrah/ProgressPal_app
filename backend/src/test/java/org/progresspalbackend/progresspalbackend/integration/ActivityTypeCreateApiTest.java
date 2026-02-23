@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
+import org.progresspalbackend.progresspalbackend.domain.MetricKind;
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
@@ -77,7 +78,30 @@ class ActivityTypeCreateApiTest {
                 .andExpect(jsonPath("$.name").value("My Custom Type"))
                 // if your response includes these fields, keep them:
                 .andExpect(jsonPath("$.createdBy").value(actor.getId().toString()))
-                .andExpect(jsonPath("$.custom").value(true));
+                .andExpect(jsonPath("$.custom").value(true))
+                .andExpect(jsonPath("$.metricKind").value("NONE"))
+                .andExpect(jsonPath("$.metricLabel").doesNotExist());
+    }
+
+    @Test
+    void createCustomActivityType_withMetric_returnsMetricInResponse() throws Exception {
+        User actor = persistUser();
+
+        String body = objectMapper.writeValueAsString(Map.of(
+                "name", "Reading",
+                "metricKind", MetricKind.INTEGER.name(),
+                "metricLabel", "pages"
+        ));
+
+        mvc.perform(post("/api/activity-types")
+                        .header("X-User-Id", actor.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("Reading"))
+                .andExpect(jsonPath("$.metricKind").value("INTEGER"))
+                .andExpect(jsonPath("$.metricLabel").value("pages"));
     }
 
     @Test
@@ -176,4 +200,3 @@ class ActivityTypeCreateApiTest {
         return userRepo.save(u);
     }
 }
-
