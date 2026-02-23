@@ -3,6 +3,7 @@ package org.progresspalbackend.progresspalbackend.integration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
+import org.progresspalbackend.progresspalbackend.domain.MetricKind;
 import org.progresspalbackend.progresspalbackend.domain.Session;
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
@@ -21,6 +22,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -75,8 +77,13 @@ public class FeedApiTest {
 
         ActivityType t1 = persistActivityType("Study");
         ActivityType t2 = persistActivityType("Gym");
+        t1.setMetricKind(MetricKind.INTEGER);
+        t1.setMetricLabel("games");
+        t1 = activityTypeRepo.save(t1);
 
         Session pub1 = sessionRepo.save(session(u1, t1, Visibility.PUBLIC, Instant.parse("2026-01-01T10:00:00Z")));
+        pub1.setMetricValue(new BigDecimal("10"));
+        pub1 = sessionRepo.save(pub1);
 
         // PRIVATE (newer but should NOT appear)
         sessionRepo.save(session(u2, t2, Visibility.PRIVATE, Instant.parse("2026-01-03T10:00:00Z")));
@@ -97,7 +104,9 @@ public class FeedApiTest {
                 .andExpect(jsonPath("$.content[0].userId").exists())
                 .andExpect(jsonPath("$.content[0].username").exists())
                 .andExpect(jsonPath("$.content[0].activityTypeId").exists())
-                .andExpect(jsonPath("$.content[0].activityTypeName").exists());
+                .andExpect(jsonPath("$.content[0].activityTypeName").exists())
+                .andExpect(jsonPath("$.content[1].metricValue").value(10))
+                .andExpect(jsonPath("$.content[1].metricLabel").value("games"));
     }
 
     private User persistUser(){
