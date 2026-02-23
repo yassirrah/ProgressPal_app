@@ -18,6 +18,7 @@ public interface SessionRepository extends JpaRepository<Session, UUID> {
     Page<Session> findByUserIdOrderByStartedAtDesc(UUID userId, Pageable pageable);
     Page<Session> findByUserIdAndVisibilityOrderByStartedAtDesc(UUID userId, Visibility visibility, Pageable pageable);
     List<Session> findByActivityTypeId(UUID activityTypeId);
+    boolean existsByActivityType_Id(UUID activityTypeId);
     boolean existsByUser_IdAndEndedAtIsNull(UUID userId);
 
     @EntityGraph(attributePaths = {"user", "activityType"})

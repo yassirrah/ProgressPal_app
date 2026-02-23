@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -70,6 +71,20 @@ public class ActivityTypeService {
         ActivityType existing = repo.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "ActivityType not found"));
+
+        MetricKind requestedMetricKind = dto.metricKind() == null ? MetricKind.NONE : dto.metricKind();
+        String requestedMetricLabel = requestedMetricKind == MetricKind.NONE ? null : dto.metricLabel();
+
+        MetricKind currentMetricKind = existing.getMetricKind() == null ? MetricKind.NONE : existing.getMetricKind();
+        String currentMetricLabel = currentMetricKind == MetricKind.NONE ? null : existing.getMetricLabel();
+
+        boolean metricChanged = currentMetricKind != requestedMetricKind
+                || !Objects.equals(currentMetricLabel, requestedMetricLabel);
+
+        if (metricChanged && sessionRepository.existsByActivityType_Id(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "ActivityType metric cannot be changed once used");
+        }
+
         mapper.updateFromDto(dto, existing);
         normalizeMetric(existing);
         return mapper.toDto(repo.save(existing));
