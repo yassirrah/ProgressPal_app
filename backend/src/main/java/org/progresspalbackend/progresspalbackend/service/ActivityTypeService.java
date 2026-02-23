@@ -3,6 +3,7 @@ package org.progresspalbackend.progresspalbackend.service;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
+import org.progresspalbackend.progresspalbackend.domain.MetricKind;
 
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.dto.activitytype.ActivityTypeCreateDto;
@@ -34,6 +35,7 @@ public class ActivityTypeService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This activity type already exists");
         }
         ActivityType entity = mapper.toEntity(dto);
+        normalizeMetric(entity);
         entity.setCreatedBy(user);
         entity.setCustom(true);
         ActivityType savedEntity = repo.save(entity);
@@ -69,6 +71,7 @@ public class ActivityTypeService {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "ActivityType not found"));
         mapper.updateFromDto(dto, existing);
+        normalizeMetric(existing);
         return mapper.toDto(repo.save(existing));
     }
 
@@ -93,5 +96,14 @@ public class ActivityTypeService {
 //        }
 
         activityTypeRepository.delete(type);
+    }
+
+    private void normalizeMetric(ActivityType type) {
+        if (type.getMetricKind() == null) {
+            type.setMetricKind(MetricKind.NONE);
+        }
+        if (type.getMetricKind() == MetricKind.NONE) {
+            type.setMetricLabel(null);
+        }
     }
 }

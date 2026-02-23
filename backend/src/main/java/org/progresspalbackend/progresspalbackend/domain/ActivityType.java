@@ -30,4 +30,11 @@ public class ActivityType {
     @JoinColumn(name = "created_by")
     private User createdBy;         // null if predefined
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "metric_kind", nullable = false, length = 20)
+    private MetricKind metricKind = MetricKind.NONE;
+
+    @Column(name = "metric_label", length = 80)
+    private String metricLabel;
+
 }
