@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { clearStoredUser, getStoredUser } from '../lib/api';
 
 const Navbar = () => {
   const user = getStoredUser();
+  const [logoMissing, setLogoMissing] = useState(false);
 
   const handleLogout = () => {
     clearStoredUser();
@@ -12,6 +13,18 @@ const Navbar = () => {
 
   return (
     <nav>
+      <Link to="/" className="brand-link" aria-label="ProgressPal home">
+        {!logoMissing ? (
+          <img
+            src="/progresspal-logo.png"
+            alt="ProgressPal"
+            className="brand-logo"
+            onError={() => setLogoMissing(true)}
+          />
+        ) : (
+          <span className="brand-text">ProgressPal</span>
+        )}
+      </Link>
       <Link to="/">Home</Link>
       <Link to="/feed">Feed</Link>
       <Link to="/friends">Friends</Link>

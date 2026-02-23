@@ -84,6 +84,15 @@ export async function createActivityType(userId, payload) {
   }
 }
 
+export async function updateActivityType(id, payload) {
+  try {
+    const { data } = await client.put(`/activity-types/${id}`, payload);
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to update activity type'));
+  }
+}
+
 export async function getLiveSession(userId) {
   try {
     const response = await client.get('/sessions/live', {
@@ -107,11 +116,11 @@ export async function createSession(userId, payload) {
   }
 }
 
-export async function stopSession(userId, sessionId) {
+export async function stopSession(userId, sessionId, payload = {}) {
   try {
     const { data } = await client.patch(
       `/sessions/${sessionId}/stop`,
-      {},
+      payload,
       { headers: { 'X-User-Id': userId } },
     );
     return data;
