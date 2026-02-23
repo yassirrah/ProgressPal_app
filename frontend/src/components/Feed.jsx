@@ -64,6 +64,12 @@ const Feed = () => {
     return [hours, minutes, seconds].map((n) => String(n).padStart(2, '0')).join(':');
   };
 
+  const formatMetric = (item) => {
+    if (item.metricValue == null) return null;
+    const label = item.metricLabel || 'units';
+    return `${item.metricValue} ${label}`;
+  };
+
   const handleAddFriend = async (receiverId) => {
     if (!currentUser) {
       setError('Please log in to send friend requests');
@@ -114,6 +120,12 @@ const Feed = () => {
               )}
 
               <div className="feed-meta">
+                {item.metricValue != null && (
+                  <div className="feed-meta-row">
+                    <span className="feed-meta-label">Metric</span>
+                    <span>{formatMetric(item)}</span>
+                  </div>
+                )}
                 <div className="feed-meta-row">
                   <span className="feed-meta-label">Started</span>
                   <span>{formatInstant(item.startedAt)}</span>

@@ -86,9 +86,6 @@ const Friends = () => {
           {friends.map((friend) => (
             <li key={`${friend.FriendId}-${friend.createdAt || ''}`}>
               <strong>{friend.friendusername || 'Unknown user'}</strong>
-              <span style={{ color: '#64748b', marginLeft: '6px' }}>
-                ({friend.FriendId})
-              </span>
             </li>
           ))}
         </ul>
@@ -103,9 +100,6 @@ const Friends = () => {
             <li key={`${request.requesterId}-${request.createdAt || ''}`}>
               <span>
                 <strong>{request.requesterUsername || 'Unknown user'}</strong>
-                <span style={{ color: '#64748b', marginLeft: '6px' }}>
-                  ({request.requesterId})
-                </span>
               </span>
               <button
                 type="button"

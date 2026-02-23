@@ -132,6 +132,8 @@ public class SessionService {
                     s.getActivityType().getId(),
                     s.getActivityType().getName(),
                     s.getTitle(),
+                    s.getMetricValue(),
+                    s.getActivityType().getMetricLabel(),
                     s.getStartedAt(),
                     s.getEndedAt(),
                     s.getVisibility())
