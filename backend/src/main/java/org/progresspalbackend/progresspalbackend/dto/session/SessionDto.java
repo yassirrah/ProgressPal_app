@@ -2,6 +2,7 @@ package org.progresspalbackend.progresspalbackend.dto.session;
 
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -13,6 +14,7 @@ public record SessionDto(
         String description,
         Instant startedAt,
         Instant endedAt,
+        BigDecimal metricValue,
         Visibility visibility,
         boolean ongoing
 ) {}

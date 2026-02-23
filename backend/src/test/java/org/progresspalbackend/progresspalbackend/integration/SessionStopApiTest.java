@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
+import org.progresspalbackend.progresspalbackend.domain.MetricKind;
 import org.progresspalbackend.progresspalbackend.domain.Session;
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
@@ -21,7 +22,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -94,6 +97,38 @@ class SessionStopApiTest {
                 .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.endedAt").exists());
+    }
+
+    @Test
+    void stop_live_session_with_metricValue_returns200_and_sets_metricValue() throws Exception {
+        ActivityType type = typeRepo.findById(typeId).orElseThrow();
+        type.setMetricKind(MetricKind.INTEGER);
+        type.setMetricLabel("pages");
+        typeRepo.save(type);
+
+        String body = json.writeValueAsString(Map.of("metricValue", 12));
+
+        mvc.perform(patch("/api/sessions/{id}/stop", sessionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body)
+                        .header("X-User-Id", userId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.endedAt").exists())
+                .andExpect(jsonPath("$.metricValue").value(12));
+
+        Session stopped = sessionRepo.findById(sessionId).orElseThrow();
+        org.junit.jupiter.api.Assertions.assertEquals(new BigDecimal("12"), stopped.getMetricValue());
+    }
+
+    @Test
+    void stop_session_with_metricValue_when_activity_type_has_no_metric_returns400() throws Exception {
+        String body = json.writeValueAsString(Map.of("metricValue", 2.5));
+
+        mvc.perform(patch("/api/sessions/{id}/stop", sessionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body)
+                        .header("X-User-Id", userId.toString()))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

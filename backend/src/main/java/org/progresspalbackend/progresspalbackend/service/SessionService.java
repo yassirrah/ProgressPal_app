@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 
 import org.mapstruct.Mapper;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
+import org.progresspalbackend.progresspalbackend.domain.MetricKind;
 import org.progresspalbackend.progresspalbackend.domain.Session;
 
 import org.progresspalbackend.progresspalbackend.domain.User;
@@ -26,6 +27,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -100,7 +102,9 @@ public class SessionService {
         if(s.getEndedAt() != null){
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Session already stopped");
         }
+        validateStopMetric(s.getActivityType(), body.metricValue());
         s.setEndedAt(Instant.now());
+        s.setMetricValue(body.metricValue());
         return mapper.toDto(sessionRepo.save(s));
     }
 
@@ -137,5 +141,17 @@ public class SessionService {
     public Optional<SessionDto> getLiveSessionOfUser(UUID actorUserId) {
         return sessionRepo.findFirstByUser_IdAndEndedAtIsNullOrderByStartedAtDesc(actorUserId)
                 .map(mapper::toDto);
+    }
+
+    private void validateStopMetric(ActivityType activityType, BigDecimal metricValue) {
+        MetricKind metricKind = activityType.getMetricKind() == null ? MetricKind.NONE : activityType.getMetricKind();
+
+        if (metricKind == MetricKind.NONE && metricValue != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This activity type does not accept a metric value");
+        }
+
+        if (metricKind == MetricKind.INTEGER && metricValue != null && metricValue.stripTrailingZeros().scale() > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "metricValue must be a whole number for INTEGER metrics");
+        }
     }
 }

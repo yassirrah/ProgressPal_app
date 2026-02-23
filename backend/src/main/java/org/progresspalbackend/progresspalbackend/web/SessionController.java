@@ -42,7 +42,7 @@ public class SessionController {
             @RequestHeader("X-User-Id") UUID userId,
             @RequestBody(required = false) SessionStopDto body
     ){
-        return service.stop(id, userId, body==null? new SessionStopDto() : body);
+        return service.stop(id, userId, body == null ? new SessionStopDto(null) : body);
     }
 
     @GetMapping("/live")
