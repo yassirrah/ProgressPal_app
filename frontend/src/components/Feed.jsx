@@ -81,37 +81,55 @@ const Feed = () => {
   };
 
   return (
-    <div>
+    <div className="feed-page">
       <h1>Public Feed</h1>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-      {message && <p>{message}</p>}
+      {error && <p className="message-error">{error}</p>}
+      {message && <p className="message-muted">{message}</p>}
       {loading && <p>Loading...</p>}
 
       {feedItems.length === 0 ? (
         <p>No public sessions yet.</p>
       ) : (
-        <ul>
+        <div className="feed-grid">
           {feedItems.map((item) => (
-            <li key={item.id}>
-              <strong>{item.username}</strong> - {item.activityTypeName}
-              {item.title ? ` (${item.title})` : ''}
-              {currentUser && currentUser.id !== item.userId && !friendIds.has(item.userId) && (
+            <article key={item.id} className="feed-card">
+              <div className="feed-card-head">
                 <div>
+                  <p className="feed-user">{item.username}</p>
+                  <p className="feed-activity">{item.activityTypeName}</p>
+                </div>
+                <span className={`feed-status-badge ${item.endedAt ? 'ended' : 'live'}`}>
+                  {item.endedAt ? 'Ended' : 'Live'}
+                </span>
+              </div>
+
+              {item.title && <p className="feed-title">{item.title}</p>}
+
+              {currentUser && currentUser.id !== item.userId && !friendIds.has(item.userId) && (
+                <div className="feed-card-actions">
                   <button type="button" onClick={() => handleAddFriend(item.userId)}>
                     Add Friend
                   </button>
                 </div>
               )}
-              <div>Started: {formatInstant(item.startedAt)}</div>
-              <div>
-                Ended: {item.endedAt ? formatInstant(item.endedAt) : <strong>Live</strong>}
+
+              <div className="feed-meta">
+                <div className="feed-meta-row">
+                  <span className="feed-meta-label">Started</span>
+                  <span>{formatInstant(item.startedAt)}</span>
+                </div>
+                <div className="feed-meta-row">
+                  <span className="feed-meta-label">Ended</span>
+                  <span>{item.endedAt ? formatInstant(item.endedAt) : 'Live'}</span>
+                </div>
+                <div className="feed-meta-row">
+                  <span className="feed-meta-label">Timer</span>
+                  <span>{item.endedAt ? 'Session completed' : formatDuration(item.startedAt)}</span>
+                </div>
               </div>
-              <div>
-                {item.endedAt ? 'Duration ended' : `Live for: ${formatDuration(item.startedAt)}`}
-              </div>
-            </li>
+            </article>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
