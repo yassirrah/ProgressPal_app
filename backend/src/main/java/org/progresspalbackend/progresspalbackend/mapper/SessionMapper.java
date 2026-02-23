@@ -22,6 +22,7 @@ public interface SessionMapper {
     @Mapping(target = "activityType",  ignore = true)
     @Mapping(target = "startedAt",     ignore = true)
     @Mapping(target = "endedAt",       ignore = true)
+    @Mapping(target = "metricValue",   ignore = true)
     Session toEntity(SessionCreateDto dto);
 
     /* Optional helper to set startedAt now */

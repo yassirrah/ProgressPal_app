@@ -8,6 +8,7 @@ import lombok.*;
 import org.hibernate.annotations.*;
 import org.hibernate.type.SqlTypes;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -46,6 +47,9 @@ public class Session {
 
     @Column(name = "ended_at")
     private Instant endedAt;
+
+    @Column(name = "metric_value")
+    private BigDecimal metricValue;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "visibility", nullable = false) // remove length
