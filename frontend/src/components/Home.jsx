@@ -22,6 +22,9 @@ const Home = () => {
 
   const [typesPanelOpen, setTypesPanelOpen] = useState(false);
   const [stopPanelOpen, setStopPanelOpen] = useState(false);
+  const [typeEditorMode, setTypeEditorMode] = useState('create');
+  const [typeSearch, setTypeSearch] = useState('');
+  const [iconPreviewFailed, setIconPreviewFailed] = useState(false);
 
   const [newTypeName, setNewTypeName] = useState('');
   const [newTypeIconUrl, setNewTypeIconUrl] = useState('');
@@ -33,6 +36,7 @@ const Home = () => {
   const [editTypeId, setEditTypeId] = useState('');
   const [editTypeForm, setEditTypeForm] = useState({
     name: '',
+    iconUrl: '',
     metricKind: 'NONE',
     metricLabel: '',
   });
@@ -99,7 +103,7 @@ const Home = () => {
   useEffect(() => {
     if (customActivityTypes.length === 0) {
       setEditTypeId('');
-      setEditTypeForm({ name: '', metricKind: 'NONE', metricLabel: '' });
+      setEditTypeForm({ name: '', iconUrl: '', metricKind: 'NONE', metricLabel: '' });
       return;
     }
 
@@ -110,6 +114,7 @@ const Home = () => {
     setEditTypeId(first.id);
     setEditTypeForm({
       name: first.name || '',
+      iconUrl: first.iconUrl || '',
       metricKind: first.metricKind || 'NONE',
       metricLabel: first.metricLabel || '',
     });
@@ -176,10 +181,14 @@ const Home = () => {
 
   const handleEditTypeSelection = (id) => {
     setEditTypeId(id);
+    setTypeEditorMode('edit');
+    setTypeError('');
+    setIconPreviewFailed(false);
     const selectedType = customActivityTypes.find((type) => type.id === id);
     if (!selectedType) return;
     setEditTypeForm({
       name: selectedType.name || '',
+      iconUrl: selectedType.iconUrl || '',
       metricKind: selectedType.metricKind || 'NONE',
       metricLabel: selectedType.metricLabel || '',
     });
@@ -195,14 +204,67 @@ const Home = () => {
         editTypeId,
         buildActivityTypePayload({
           name: editTypeForm.name,
+          iconUrl: editTypeForm.iconUrl,
           metricKind: editTypeForm.metricKind,
           metricLabel: editTypeForm.metricLabel,
         }),
       );
       await loadData();
     } catch (err) {
-      setTypeError(err.message || 'Failed to update activity type');
+      const raw = err.message || 'Failed to update activity type';
+      if (raw.toLowerCase().includes('cannot be changed once used')) {
+        setTypeError("You can't change the measurement type after you've logged sessions with it.");
+      } else {
+        setTypeError(raw);
+      }
     }
+  };
+
+  const handleCreateNewTypeMode = () => {
+    setTypeEditorMode('create');
+    setTypeError('');
+    setIconPreviewFailed(false);
+    setNewTypeName('');
+    setNewTypeIconUrl('');
+    setNewTypeMetricKind('NONE');
+    setNewTypeMetricLabel('');
+  };
+
+  const filteredCustomTypes = useMemo(() => {
+    const q = typeSearch.trim().toLowerCase();
+    if (!q) return customActivityTypes;
+    return customActivityTypes.filter((type) => (type.name || '').toLowerCase().includes(q));
+  }, [customActivityTypes, typeSearch]);
+
+  const isEditingType = typeEditorMode === 'edit' && !!editTypeId;
+  const activeTypeName = isEditingType ? editTypeForm.name : newTypeName;
+  const activeTypeIconUrl = isEditingType ? (editTypeForm.iconUrl || '') : newTypeIconUrl;
+  const activeTypeMetricKind = isEditingType ? editTypeForm.metricKind : newTypeMetricKind;
+  const activeTypeMetricLabel = isEditingType ? editTypeForm.metricLabel : newTypeMetricLabel;
+  const selectedEditType = customActivityTypes.find((type) => type.id === editTypeId) || null;
+
+  const updateActiveTypeField = (field, value) => {
+    setTypeError('');
+    if (field === 'iconUrl') setIconPreviewFailed(false);
+    if (isEditingType) {
+      setEditTypeForm((prev) => ({ ...prev, [field]: value }));
+      return;
+    }
+    if (field === 'name') setNewTypeName(value);
+    if (field === 'iconUrl') setNewTypeIconUrl(value);
+    if (field === 'metricKind') {
+      setNewTypeMetricKind(value);
+      if (value === 'NONE') setNewTypeMetricLabel('');
+    }
+    if (field === 'metricLabel') setNewTypeMetricLabel(value);
+  };
+
+  const handleTypeFormSubmit = async (e) => {
+    if (isEditingType) {
+      await handleUpdateType(e);
+      return;
+    }
+    await handleCreateType(e);
   };
 
   const handleStartSession = async (e) => {
@@ -410,128 +472,170 @@ const Home = () => {
               </div>
               <button
                 type="button"
-                className="secondary-button"
+                className="secondary-button section-toggle-button"
                 onClick={() => setTypesPanelOpen((prev) => !prev)}
+                aria-expanded={typesPanelOpen}
               >
-                {typesPanelOpen ? 'Hide Manager' : 'Manage Activity Types'}
+                {typesPanelOpen ? 'Activity Types ▴' : 'Activity Types ▾'}
               </button>
             </div>
 
             {typeError && <p className="message-error">{typeError}</p>}
 
             {!typesPanelOpen ? (
-              <p className="message-muted">Create or edit activity types only when needed.</p>
+              <p className="message-muted">Create or edit your custom activity types when needed.</p>
             ) : (
-              <>
-                <h3>Create Activity Type</h3>
-                <form onSubmit={handleCreateType}>
-                  <div>
-                    <label>Name:</label>
-                    <input
-                      type="text"
-                      value={newTypeName}
-                      onChange={(e) => setNewTypeName(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label>Icon URL:</label>
-                    <input
-                      type="text"
-                      value={newTypeIconUrl}
-                      onChange={(e) => setNewTypeIconUrl(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label>Metric kind:</label>
-                    <select
-                      value={newTypeMetricKind}
-                      onChange={(e) => {
-                        const nextKind = e.target.value;
-                        setNewTypeMetricKind(nextKind);
-                        if (nextKind === 'NONE') setNewTypeMetricLabel('');
-                      }}
+              <div className="activity-types-manager">
+                <aside className="activity-types-list-panel">
+                  <div className="activity-types-list-head">
+                    <h3 style={{ margin: 0 }}>Your Custom Types</h3>
+                    <button
+                      type="button"
+                      className="secondary-button compact-button"
+                      onClick={handleCreateNewTypeMode}
                     >
-                      <option value="NONE">NONE</option>
-                      <option value="INTEGER">INTEGER</option>
-                      <option value="DECIMAL">DECIMAL</option>
-                    </select>
+                      + Create New
+                    </button>
                   </div>
+
                   <div>
-                    <label>Metric label:</label>
+                    <label>Search</label>
                     <input
                       type="text"
-                      value={newTypeMetricLabel}
-                      onChange={(e) => setNewTypeMetricLabel(e.target.value)}
-                      disabled={newTypeMetricKind === 'NONE'}
-                      placeholder={newTypeMetricKind === 'NONE' ? 'Disabled for NONE' : 'e.g. pages, km, reps'}
+                      placeholder="Search activity types"
+                      value={typeSearch}
+                      onChange={(e) => setTypeSearch(e.target.value)}
                     />
                   </div>
-                  <button type="submit">Create</button>
-                </form>
 
-                <h3>Edit Custom Activity Type</h3>
-                {customActivityTypes.length === 0 ? (
-                  <p>No custom activity types yet.</p>
-                ) : (
-                  <form onSubmit={handleUpdateType}>
-                    <div>
-                      <label>Select type:</label>
-                      <select
-                        value={editTypeId}
-                        onChange={(e) => handleEditTypeSelection(e.target.value)}
-                      >
-                        {customActivityTypes.map((type) => (
-                          <option key={type.id} value={type.id}>
-                            {type.name}
-                          </option>
-                        ))}
-                      </select>
+                  {customActivityTypes.length === 0 ? (
+                    <p className="message-muted">No custom activity types yet.</p>
+                  ) : filteredCustomTypes.length === 0 ? (
+                    <p className="message-muted">No custom activity types match your search.</p>
+                  ) : (
+                    <div className="activity-type-list">
+                      {filteredCustomTypes.map((type) => (
+                        <button
+                          key={type.id}
+                          type="button"
+                          className={`activity-type-list-item ${editTypeId === type.id && isEditingType ? 'active' : ''}`}
+                          onClick={() => handleEditTypeSelection(type.id)}
+                        >
+                          <span className="activity-type-list-name">{type.name}</span>
+                          <span className="activity-type-list-meta">
+                            {(type.metricKind || 'NONE') === 'NONE' ? 'No measurement' : `${type.metricKind} • ${type.metricLabel || 'unit'}`}
+                          </span>
+                        </button>
+                      ))}
                     </div>
+                  )}
+                </aside>
+
+                <div className="activity-types-editor-panel">
+                  <div className="activity-types-editor-head">
                     <div>
-                      <label>Name:</label>
+                      <h3 style={{ margin: 0 }}>{isEditingType ? 'Edit Activity Type' : 'Create Activity Type'}</h3>
+                      <p className="message-muted" style={{ margin: '0.2rem 0 0' }}>
+                        {isEditingType
+                          ? `Editing ${selectedEditType?.name || 'selected type'}`
+                          : 'Create a new custom activity type'}
+                      </p>
+                    </div>
+                    <span className={`activity-type-mode-badge ${isEditingType ? 'edit' : 'create'}`}>
+                      {isEditingType ? 'Edit mode' : 'Create mode'}
+                    </span>
+                  </div>
+
+                  <form onSubmit={handleTypeFormSubmit}>
+                    <div>
+                      <label>Name</label>
                       <input
                         type="text"
-                        value={editTypeForm.name}
-                        onChange={(e) => setEditTypeForm((prev) => ({ ...prev, name: e.target.value }))}
+                        value={activeTypeName}
+                        onChange={(e) => updateActiveTypeField('name', e.target.value)}
                         required
                       />
                     </div>
+
                     <div>
-                      <label>Metric kind:</label>
-                      <select
-                        value={editTypeForm.metricKind}
-                        onChange={(e) => {
-                          const nextKind = e.target.value;
-                          setEditTypeForm((prev) => ({
-                            ...prev,
-                            metricKind: nextKind,
-                            metricLabel: nextKind === 'NONE' ? '' : prev.metricLabel,
-                          }));
-                        }}
-                      >
-                        <option value="NONE">NONE</option>
-                        <option value="INTEGER">INTEGER</option>
-                        <option value="DECIMAL">DECIMAL</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label>Metric label:</label>
+                      <label>Icon URL (optional)</label>
                       <input
-                        type="text"
-                        value={editTypeForm.metricLabel}
-                        onChange={(e) => setEditTypeForm((prev) => ({ ...prev, metricLabel: e.target.value }))}
-                        disabled={editTypeForm.metricKind === 'NONE'}
-                        placeholder={editTypeForm.metricKind === 'NONE' ? 'Disabled for NONE' : 'e.g. pages, km, reps'}
+                        type="url"
+                        value={activeTypeIconUrl}
+                        onChange={(e) => updateActiveTypeField('iconUrl', e.target.value)}
+                        placeholder="https://example.com/icon.png"
                       />
+                      {activeTypeIconUrl.trim() !== '' && (
+                        <div className="activity-type-icon-preview-wrap">
+                          {!iconPreviewFailed ? (
+                            <img
+                              src={activeTypeIconUrl}
+                              alt=""
+                              className="activity-type-icon-preview"
+                              onError={() => setIconPreviewFailed(true)}
+                              onLoad={() => setIconPreviewFailed(false)}
+                            />
+                          ) : (
+                            <div className="activity-type-icon-preview activity-type-icon-preview--fallback" aria-hidden="true">
+                              !
+                            </div>
+                          )}
+                          <span className={`message-muted ${iconPreviewFailed ? 'message-error-inline' : ''}`}>
+                            {iconPreviewFailed ? 'Invalid image URL preview' : 'Icon preview'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label>Measurement Type</label>
+                      <select
+                        value={activeTypeMetricKind}
+                        onChange={(e) => updateActiveTypeField('metricKind', e.target.value)}
+                      >
+                        <option value="NONE">None</option>
+                        <option value="INTEGER">Whole Number</option>
+                        <option value="DECIMAL">Decimal</option>
+                      </select>
                       <p className="message-muted" style={{ margin: '6px 0 0' }}>
-                        Locked after first use: changing metric kind or label may return a 409 conflict.
+                        Choose how this activity is measured (for example pages, km, games, reps).
                       </p>
                     </div>
-                    <button type="submit">Save Activity Type</button>
+
+                    {activeTypeMetricKind !== 'NONE' && (
+                      <div>
+                        <label>What to Track (Unit Name)</label>
+                        <input
+                          type="text"
+                          value={activeTypeMetricLabel}
+                          onChange={(e) => updateActiveTypeField('metricLabel', e.target.value)}
+                          placeholder="e.g. pages, km, games, reps"
+                        />
+                        {isEditingType && (
+                          <p className="message-muted" style={{ margin: '6px 0 0' }}>
+                            You can&apos;t change the measurement type after you&apos;ve logged sessions with it.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="home-row" style={{ marginTop: 0 }}>
+                      <button type="submit">
+                        {isEditingType ? 'Save Changes' : 'Create Activity Type'}
+                      </button>
+                      {isEditingType && (
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={handleCreateNewTypeMode}
+                        >
+                          Create New Instead
+                        </button>
+                      )}
+                    </div>
                   </form>
-                )}
-              </>
+                </div>
+              </div>
             )}
           </section>
 
