@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   getActivityTypes,
   getMyDashboardByActivityType,
@@ -56,6 +57,8 @@ const MySessions = () => {
     metricLabel: null,
     metricSeries: null,
   });
+  const [insightsOpen, setInsightsOpen] = useState(false);
+  const [historyFiltersOpen, setHistoryFiltersOpen] = useState(false);
 
   useEffect(() => {
     const loadActivityTypes = async () => {
@@ -117,7 +120,7 @@ const MySessions = () => {
 
   useEffect(() => {
     const loadTrends = async () => {
-      if (!user) return;
+      if (!user || !insightsOpen) return;
       setTrendsLoading(true);
       setTrendsError('');
       try {
@@ -142,11 +145,11 @@ const MySessions = () => {
     };
 
     loadTrends();
-  }, [user, filters.from, filters.to, trendsFilters.bucket, trendsFilters.activityTypeId]);
+  }, [user, insightsOpen, filters.from, filters.to, trendsFilters.bucket, trendsFilters.activityTypeId]);
 
   useEffect(() => {
     const loadBreakdown = async () => {
-      if (!user) return;
+      if (!user || !insightsOpen) return;
       setBreakdownLoading(true);
       setBreakdownError('');
       try {
@@ -163,7 +166,7 @@ const MySessions = () => {
     };
 
     loadBreakdown();
-  }, [user, filters.from, filters.to]);
+  }, [user, insightsOpen, filters.from, filters.to]);
 
   const handleFilterChange = (field, value) => {
     setFilters((prev) => ({
@@ -215,6 +218,7 @@ const MySessions = () => {
     () => activityTypes.filter((type) => (type.metricKind || 'NONE') !== 'NONE'),
     [activityTypes],
   );
+  const topActivity = summary.topActivityTypesByTime?.[0] || null;
 
   useEffect(() => {
     if (!trendsFilters.activityTypeId) return;
@@ -238,279 +242,153 @@ const MySessions = () => {
 
   return (
     <div className="home-stack">
-      <h1>My Sessions</h1>
-      <p className="message-muted" style={{ marginTop: '-0.25rem' }}>
-        Filter your own sessions by date range, activity type, visibility, and status.
-      </p>
-
-      <section className="home-card">
-        <div className="home-section-head">
+      <section className="home-card my-sessions-header-card">
+        <div className="my-sessions-header">
           <div>
-            <h2>Dashboard Summary</h2>
+            <h1 style={{ marginBottom: '0.15rem' }}>My Sessions</h1>
             <p className="message-muted" style={{ margin: 0 }}>
-              Based on the selected date range only ({filters.from || 'any start'} to {filters.to || 'any end'}).
+              History first. Use the date range below to update stats and insights.
             </p>
           </div>
-        </div>
-
-        {summaryError && <p className="message-error">{summaryError}</p>}
-
-        {summaryLoading ? (
-          <p>Loading summary...</p>
-        ) : (
-          <>
-            <div className="summary-grid">
-              <article className="summary-stat-card">
-                <p className="summary-stat-label">Total Sessions</p>
-                <p className="summary-stat-value">{summary.totalSessions ?? 0}</p>
-              </article>
-              <article className="summary-stat-card">
-                <p className="summary-stat-label">Total Duration</p>
-                <p className="summary-stat-value">{formatDuration(summary.totalDurationSeconds)}</p>
-              </article>
-              <article className="summary-stat-card">
-                <p className="summary-stat-label">Active Days</p>
-                <p className="summary-stat-value">{summary.activeDays ?? 0}</p>
-              </article>
-            </div>
-
-            <div className="summary-top-list">
-              <p className="summary-top-title">Top Activity Types by Time</p>
-              {summary.topActivityTypesByTime?.length ? (
-                summary.topActivityTypesByTime.map((item, index) => (
-                  <div key={item.activityTypeId || `${item.activityTypeName}-${index}`} className="summary-top-row">
-                    <div>
-                      <p className="feed-user" style={{ marginBottom: 0 }}>
-                        {index + 1}. {item.activityTypeName || 'Unknown'}
-                      </p>
-                    </div>
-                    <span className="feed-status-badge ended">{formatDuration(item.totalDurationSeconds)}</span>
-                  </div>
-                ))
-              ) : (
-                <p className="message-muted" style={{ margin: 0 }}>
-                  No sessions in the selected date range.
-                </p>
-              )}
-            </div>
-          </>
-        )}
-      </section>
-
-      <section className="home-card">
-        <div className="home-section-head">
-          <div>
-            <h2>Trends</h2>
-            <p className="message-muted" style={{ margin: 0 }}>
-              Time series by {trendsFilters.bucket.toLowerCase()} for the selected date range only.
-            </p>
+          <div className="my-sessions-header-actions">
+            <Link to="/" className="my-sessions-cta">
+              Start Session
+            </Link>
           </div>
         </div>
 
-        <div className="home-filter-grid" style={{ marginTop: 0 }}>
-          <div>
-            <label>Bucket</label>
-            <select
-              value={trendsFilters.bucket}
-              onChange={(e) => setTrendsFilters((prev) => ({ ...prev, bucket: e.target.value }))}
-            >
-              <option value="DAY">DAY</option>
-              <option value="WEEK">WEEK</option>
-            </select>
-          </div>
-          <div>
-            <label>Metric Activity Type (optional)</label>
-            <select
-              value={trendsFilters.activityTypeId}
-              onChange={(e) => setTrendsFilters((prev) => ({ ...prev, activityTypeId: e.target.value }))}
-            >
-              <option value="">None</option>
-              {metricEnabledTypes.map((type) => (
-                <option key={type.id} value={type.id}>{type.name}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {trendsError && <p className="message-error">{trendsError}</p>}
-
-        {trendsLoading ? (
-          <p>Loading trends...</p>
-        ) : (
-          <div className="trends-layout">
-            <div className="trends-panel">
-              <p className="summary-top-title">Duration ({trendsData.bucket || trendsFilters.bucket})</p>
-              {trendsData.durationSeries?.length ? (
-                <div className="trend-series-list">
-                  {trendsData.durationSeries.map((point) => (
-                    <div key={`dur-${point.bucketStart}`} className="trend-row">
-                      <span className="trend-label">{point.bucketStart}</span>
-                      <div className="trend-bar-track" aria-hidden="true">
-                        <div
-                          className="trend-bar-fill"
-                          style={{ width: `${Math.max(4, ((Number(point.totalDurationSeconds) || 0) / durationMax) * 100)}%` }}
-                        />
-                      </div>
-                      <span className="trend-value">{formatDuration(point.totalDurationSeconds)}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="message-muted" style={{ margin: 0 }}>No duration trend data for this range.</p>
-              )}
-            </div>
-
-            <div className="trends-panel">
-              <p className="summary-top-title">
-                Metric Trend
-                {trendsData.metricLabel ? ` (${trendsData.metricLabel})` : ''}
-              </p>
-              {trendsFilters.activityTypeId ? (
-                Array.isArray(trendsData.metricSeries) && trendsData.metricSeries.length ? (
-                  <div className="trend-series-list">
-                    {trendsData.metricSeries.map((point) => (
-                      <div key={`met-${point.bucketStart}`} className="trend-row">
-                        <span className="trend-label">{point.bucketStart}</span>
-                        <div className="trend-bar-track" aria-hidden="true">
-                          <div
-                            className="trend-bar-fill metric"
-                            style={{ width: `${Math.max(4, ((Number(point.totalMetricValue) || 0) / metricMax) * 100)}%` }}
-                          />
-                        </div>
-                        <span className="trend-value">
-                          {point.totalMetricValue}
-                          {trendsData.metricLabel ? ` ${trendsData.metricLabel}` : ''}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="message-muted" style={{ margin: 0 }}>
-                    No metric trend data available for the selected activity type.
-                  </p>
-                )
-              ) : (
-                <p className="message-muted" style={{ margin: 0 }}>
-                  Select a metric-enabled activity type to view metric trends.
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="home-card">
-        <div className="home-section-head">
-          <div>
-            <h2>By Activity Type</h2>
-            <p className="message-muted" style={{ margin: 0 }}>
-              Aggregated totals for the selected date range only.
-            </p>
-          </div>
-        </div>
-
-        {breakdownError && <p className="message-error">{breakdownError}</p>}
-
-        {breakdownLoading ? (
-          <p>Loading activity breakdown...</p>
-        ) : activityBreakdown.length ? (
-          <div className="summary-top-list" style={{ marginTop: 0, borderTop: 0, paddingTop: 0 }}>
-            {activityBreakdown.map((row) => {
-              const metricTotal = formatMetricTotal(row);
-              return (
-                <article key={row.activityTypeId} className="breakdown-card">
-                  <div className="my-session-head">
-                    <div>
-                      <p className="feed-user">{row.name || 'Unknown activity'}</p>
-                      <p className="feed-activity">{row.category || 'No category'}</p>
-                    </div>
-                    <span className="feed-status-badge ended">{formatDuration(row.totalDurationSeconds)}</span>
-                  </div>
-
-                  <div className="feed-meta">
-                    <div className="feed-meta-row">
-                      <span className="feed-meta-label">Sessions</span>
-                      <span>{row.totalSessions ?? 0}</span>
-                    </div>
-                    <div className="feed-meta-row">
-                      <span className="feed-meta-label">Duration</span>
-                      <span>{formatDuration(row.totalDurationSeconds)}</span>
-                    </div>
-                    {metricTotal && (
-                      <div className="feed-meta-row">
-                        <span className="feed-meta-label">Total Metric</span>
-                        <span>{metricTotal}</span>
-                      </div>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="message-muted">No activity breakdown available for the selected date range.</p>
-        )}
-      </section>
-
-      <section className="home-card">
-        {error && <p className="message-error">{error}</p>}
-
-        <div className="home-filter-grid">
-          <div>
-            <label>Status</label>
-            <select value={filters.status} onChange={(e) => handleFilterChange('status', e.target.value)}>
-              <option value="ALL">ALL</option>
-              <option value="LIVE">LIVE</option>
-              <option value="ENDED">ENDED</option>
-            </select>
-          </div>
-
-          <div>
-            <label>Visibility</label>
-            <select value={filters.visibility} onChange={(e) => handleFilterChange('visibility', e.target.value)}>
-              <option value="">Any</option>
-              <option value="PUBLIC">PUBLIC</option>
-              <option value="PRIVATE">PRIVATE</option>
-            </select>
-          </div>
-
-          <div>
-            <label>Activity Type</label>
-            <select value={filters.activityTypeId} onChange={(e) => handleFilterChange('activityTypeId', e.target.value)}>
-              <option value="">All activity types</option>
-              {activityTypes.map((type) => (
-                <option key={type.id} value={type.id}>{type.name}</option>
-              ))}
-            </select>
-          </div>
-
+        <div className="my-sessions-date-grid">
           <div>
             <label>From</label>
             <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} />
           </div>
-
           <div>
             <label>To</label>
             <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} />
           </div>
-
-          <div>
-            <label>Page Size</label>
-            <select value={filters.size} onChange={(e) => handleFilterChange('size', Number(e.target.value))}>
-              <option value={5}>5</option>
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-            </select>
+          <div className="my-sessions-date-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                handleFilterChange('from', '');
+                handleFilterChange('to', '');
+              }}
+            >
+              Clear Dates
+            </button>
           </div>
         </div>
+      </section>
 
-        <div className="home-row" style={{ marginTop: '0.25rem' }}>
-          <button type="button" className="secondary-button" onClick={resetFilters}>
-            Reset Filters
+      <section className="home-card">
+        <div className="home-section-head">
+          <div>
+            <h2>Quick Stats</h2>
+            <p className="message-muted" style={{ margin: 0 }}>
+              Snapshot for {filters.from || 'all time'} to {filters.to || 'today'}.
+            </p>
+          </div>
+        </div>
+        {summaryError && <p className="message-error">{summaryError}</p>}
+        {summaryLoading ? (
+          <p>Loading summary...</p>
+        ) : (
+          <div className="summary-grid">
+            <article className="summary-stat-card">
+              <p className="summary-stat-label">Total Sessions</p>
+              <p className="summary-stat-value">{summary.totalSessions ?? 0}</p>
+            </article>
+            <article className="summary-stat-card">
+              <p className="summary-stat-label">Total Duration</p>
+              <p className="summary-stat-value">{formatDuration(summary.totalDurationSeconds)}</p>
+            </article>
+            <article className="summary-stat-card">
+              <p className="summary-stat-label">Active Days</p>
+              <p className="summary-stat-value">{summary.activeDays ?? 0}</p>
+            </article>
+            <article className="summary-stat-card">
+              <p className="summary-stat-label">Top Activity</p>
+              <p className="summary-stat-value summary-stat-value--small">
+                {topActivity?.activityTypeName || '—'}
+              </p>
+              <p className="message-muted" style={{ margin: '0.2rem 0 0' }}>
+                {topActivity ? formatDuration(topActivity.totalDurationSeconds) : 'No data'}
+              </p>
+            </article>
+          </div>
+        )}
+      </section>
+
+      <section className="home-card">
+        <div className="home-section-head">
+          <div>
+            <h2>Session History</h2>
+            <p className="message-muted" style={{ margin: 0 }}>
+              Main view of your sessions. Advanced filters are optional.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setHistoryFiltersOpen((prev) => !prev)}
+          >
+            {historyFiltersOpen ? 'Hide Filters' : 'Advanced Filters'}
           </button>
         </div>
+
+        {error && <p className="message-error">{error}</p>}
+
+        {historyFiltersOpen && (
+          <>
+            <div className="home-filter-grid" style={{ marginTop: 0 }}>
+              <div>
+                <label>Status</label>
+                <select value={filters.status} onChange={(e) => handleFilterChange('status', e.target.value)}>
+                  <option value="ALL">ALL</option>
+                  <option value="LIVE">LIVE</option>
+                  <option value="ENDED">ENDED</option>
+                </select>
+              </div>
+
+              <div>
+                <label>Visibility</label>
+                <select value={filters.visibility} onChange={(e) => handleFilterChange('visibility', e.target.value)}>
+                  <option value="">Any</option>
+                  <option value="PUBLIC">PUBLIC</option>
+                  <option value="PRIVATE">PRIVATE</option>
+                </select>
+              </div>
+
+              <div>
+                <label>Activity Type</label>
+                <select value={filters.activityTypeId} onChange={(e) => handleFilterChange('activityTypeId', e.target.value)}>
+                  <option value="">All activity types</option>
+                  {activityTypes.map((type) => (
+                    <option key={type.id} value={type.id}>{type.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label>Page Size</label>
+                <select value={filters.size} onChange={(e) => handleFilterChange('size', Number(e.target.value))}>
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="home-row" style={{ marginTop: '0.25rem' }}>
+              <button type="button" className="secondary-button" onClick={resetFilters}>
+                Reset Filters
+              </button>
+            </div>
+          </>
+        )}
 
         {loading ? (
           <p>Loading your sessions...</p>
@@ -584,6 +462,185 @@ const MySessions = () => {
           </>
         ) : (
           <p className="message-muted">No sessions match the current filters.</p>
+        )}
+      </section>
+
+      <section className="home-card">
+        <div className="home-section-head">
+          <div>
+            <h2>Insights</h2>
+            <p className="message-muted" style={{ margin: 0 }}>
+              Trends and breakdowns are hidden by default to keep history focused.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setInsightsOpen((prev) => !prev)}
+          >
+            {insightsOpen ? 'Hide Trends' : 'View Trends'}
+          </button>
+        </div>
+
+        {!insightsOpen ? (
+          <p className="message-muted" style={{ margin: 0 }}>
+            Open Insights to view trends and activity-type analytics for the selected date range.
+          </p>
+        ) : (
+          <div className="insights-stack">
+            <section className="insights-panel">
+              <div className="home-section-head">
+                <div>
+                  <h3>Trends</h3>
+                  <p className="message-muted" style={{ margin: 0 }}>
+                    Time series by {trendsFilters.bucket.toLowerCase()} for the selected date range.
+                  </p>
+                </div>
+              </div>
+
+              <div className="home-filter-grid" style={{ marginTop: 0 }}>
+                <div>
+                  <label>Bucket</label>
+                  <select
+                    value={trendsFilters.bucket}
+                    onChange={(e) => setTrendsFilters((prev) => ({ ...prev, bucket: e.target.value }))}
+                  >
+                    <option value="DAY">DAY</option>
+                    <option value="WEEK">WEEK</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Metric Activity Type (optional)</label>
+                  <select
+                    value={trendsFilters.activityTypeId}
+                    onChange={(e) => setTrendsFilters((prev) => ({ ...prev, activityTypeId: e.target.value }))}
+                  >
+                    <option value="">None</option>
+                    {metricEnabledTypes.map((type) => (
+                      <option key={type.id} value={type.id}>{type.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {trendsError && <p className="message-error">{trendsError}</p>}
+
+              {trendsLoading ? (
+                <p>Loading trends...</p>
+              ) : (
+                <div className="trends-layout">
+                  <div className="trends-panel">
+                    <p className="summary-top-title">Duration ({trendsData.bucket || trendsFilters.bucket})</p>
+                    {trendsData.durationSeries?.length ? (
+                      <div className="trend-series-list">
+                        {trendsData.durationSeries.map((point) => (
+                          <div key={`dur-${point.bucketStart}`} className="trend-row">
+                            <span className="trend-label">{point.bucketStart}</span>
+                            <div className="trend-bar-track" aria-hidden="true">
+                              <div
+                                className="trend-bar-fill"
+                                style={{ width: `${Math.max(4, ((Number(point.totalDurationSeconds) || 0) / durationMax) * 100)}%` }}
+                              />
+                            </div>
+                            <span className="trend-value">{formatDuration(point.totalDurationSeconds)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="message-muted" style={{ margin: 0 }}>No duration trend data for this range.</p>
+                    )}
+                  </div>
+
+                  <div className="trends-panel">
+                    <p className="summary-top-title">
+                      Metric Trend
+                      {trendsData.metricLabel ? ` (${trendsData.metricLabel})` : ''}
+                    </p>
+                    {trendsFilters.activityTypeId ? (
+                      Array.isArray(trendsData.metricSeries) && trendsData.metricSeries.length ? (
+                        <div className="trend-series-list">
+                          {trendsData.metricSeries.map((point) => (
+                            <div key={`met-${point.bucketStart}`} className="trend-row">
+                              <span className="trend-label">{point.bucketStart}</span>
+                              <div className="trend-bar-track" aria-hidden="true">
+                                <div
+                                  className="trend-bar-fill metric"
+                                  style={{ width: `${Math.max(4, ((Number(point.totalMetricValue) || 0) / metricMax) * 100)}%` }}
+                                />
+                              </div>
+                              <span className="trend-value">
+                                {point.totalMetricValue}
+                                {trendsData.metricLabel ? ` ${trendsData.metricLabel}` : ''}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="message-muted" style={{ margin: 0 }}>
+                          No metric trend data available for the selected activity type.
+                        </p>
+                      )
+                    ) : (
+                      <p className="message-muted" style={{ margin: 0 }}>
+                        Select a metric-enabled activity type to view metric trends.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <section className="insights-panel">
+              <div className="home-section-head">
+                <div>
+                  <h3>By Activity Type</h3>
+                  <p className="message-muted" style={{ margin: 0 }}>
+                    Aggregated totals for the selected date range.
+                  </p>
+                </div>
+              </div>
+              {breakdownError && <p className="message-error">{breakdownError}</p>}
+              {breakdownLoading ? (
+                <p>Loading activity breakdown...</p>
+              ) : activityBreakdown.length ? (
+                <div className="summary-top-list" style={{ marginTop: 0, borderTop: 0, paddingTop: 0 }}>
+                  {activityBreakdown.map((row) => {
+                    const metricTotal = formatMetricTotal(row);
+                    return (
+                      <article key={row.activityTypeId} className="breakdown-card">
+                        <div className="my-session-head">
+                          <div>
+                            <p className="feed-user">{row.name || 'Unknown activity'}</p>
+                            <p className="feed-activity">{row.category || 'No category'}</p>
+                          </div>
+                          <span className="feed-status-badge ended">{formatDuration(row.totalDurationSeconds)}</span>
+                        </div>
+
+                        <div className="feed-meta">
+                          <div className="feed-meta-row">
+                            <span className="feed-meta-label">Sessions</span>
+                            <span>{row.totalSessions ?? 0}</span>
+                          </div>
+                          <div className="feed-meta-row">
+                            <span className="feed-meta-label">Duration</span>
+                            <span>{formatDuration(row.totalDurationSeconds)}</span>
+                          </div>
+                          {metricTotal && (
+                            <div className="feed-meta-row">
+                              <span className="feed-meta-label">Total Metric</span>
+                              <span>{metricTotal}</span>
+                            </div>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="message-muted">No activity breakdown available for the selected date range.</p>
+              )}
+            </section>
+          </div>
         )}
       </section>
     </div>
