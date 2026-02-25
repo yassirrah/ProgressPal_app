@@ -2,6 +2,7 @@ package org.progresspalbackend.progresspalbackend.web;
 
 
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
+import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardSummaryDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
 import org.progresspalbackend.progresspalbackend.service.SessionService;
 import org.springframework.data.domain.Page;
@@ -49,6 +50,13 @@ public class MeController {
                 status,
                 clampPageable(pageable)
         );
+    }
+
+    @GetMapping("/dashboard/summary")
+    MeDashboardSummaryDto getDashboardSummary(@RequestHeader("X-User-Id") UUID userId,
+                                              @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                              @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return sessionService.getMyDashboardSummary(userId, from, to);
     }
 
     private Pageable clampPageable(Pageable pageable) {

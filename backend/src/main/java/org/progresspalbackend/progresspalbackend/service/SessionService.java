@@ -14,6 +14,8 @@ import org.progresspalbackend.progresspalbackend.domain.Session;
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.dto.feed.FeedSessionDto;
+import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardSummaryDto;
+import org.progresspalbackend.progresspalbackend.dto.dashboard.TopActivityTypeByTimeDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionCreateDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionStopDto;
@@ -29,13 +31,21 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -156,12 +166,99 @@ public class SessionService {
                                           @Nullable Visibility visibility,
                                           @Nullable String status,
                                           Pageable pageable) {
+        validateDateRange(from, to);
+        SessionStatusFilter statusFilter = parseStatus(status);
+        Specification<Session> spec = buildMySessionsSpec(userId, from, to, activityTypeId, visibility, statusFilter);
+        return sessionRepo.findAll(spec, pageable).map(mapper::toDto);
+    }
+
+    @Transactional
+    public MeDashboardSummaryDto getMyDashboardSummary(UUID userId,
+                                                       @Nullable LocalDate from,
+                                                       @Nullable LocalDate to) {
+        validateDateRange(from, to);
+
+        Specification<Session> spec = buildMySessionsSpec(
+                userId,
+                from,
+                to,
+                null,
+                null,
+                SessionStatusFilter.ALL
+        );
+
+        List<Session> sessions = sessionRepo.findAll(spec);
+        Instant now = Instant.now();
+
+        long totalDurationSeconds = 0;
+        Set<LocalDate> activeDays = new HashSet<>();
+        Map<UUID, Long> durationByTypeId = new HashMap<>();
+
+        for (Session session : sessions) {
+            activeDays.add(session.getStartedAt().atOffset(ZoneOffset.UTC).toLocalDate());
+
+            Instant end = session.getEndedAt() == null ? now : session.getEndedAt();
+            long durationSeconds = Math.max(0, Duration.between(session.getStartedAt(), end).getSeconds());
+            totalDurationSeconds += durationSeconds;
+
+            UUID activityTypeId = session.getActivityType().getId();
+            durationByTypeId.merge(activityTypeId, durationSeconds, Long::sum);
+        }
+
+        Map<UUID, String> typeNamesById = typeRepo.findAllById(durationByTypeId.keySet()).stream()
+                .collect(Collectors.toMap(ActivityType::getId, ActivityType::getName, (a, b) -> a));
+
+        List<TopActivityTypeByTimeDto> top = durationByTypeId.entrySet().stream()
+                .sorted(
+                        Comparator.<Map.Entry<UUID, Long>>comparingLong(Map.Entry::getValue)
+                                .reversed()
+                                .thenComparing(entry -> typeNamesById.getOrDefault(entry.getKey(), ""))
+                                .thenComparing(Map.Entry::getKey)
+                )
+                .limit(3)
+                .map(entry -> new TopActivityTypeByTimeDto(
+                        entry.getKey(),
+                        typeNamesById.getOrDefault(entry.getKey(), "Unknown"),
+                        entry.getValue()
+                ))
+                .toList();
+
+        return new MeDashboardSummaryDto(
+                sessions.size(),
+                totalDurationSeconds,
+                activeDays.size(),
+                top
+        );
+    }
+
+    private void validateStopMetric(ActivityType activityType, BigDecimal metricValue) {
+        MetricKind metricKind = activityType.getMetricKind() == null ? MetricKind.NONE : activityType.getMetricKind();
+
+        if (metricKind == MetricKind.NONE && metricValue != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This activity type does not accept a metric value");
+        }
+
+        if (metricKind == MetricKind.INTEGER && metricValue != null && metricValue.stripTrailingZeros().scale() > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "metricValue must be a whole number for INTEGER metrics");
+        }
+    }
+
+    private Specification<Session> byUserId(UUID userId) {
+        return (root, query, cb) -> cb.equal(root.get("user").get("id"), userId);
+    }
+
+    private void validateDateRange(@Nullable LocalDate from, @Nullable LocalDate to) {
         if (from != null && to != null && from.isAfter(to)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "'from' must be before or equal to 'to'");
         }
+    }
 
-        SessionStatusFilter statusFilter = parseStatus(status);
-
+    private Specification<Session> buildMySessionsSpec(UUID userId,
+                                                       @Nullable LocalDate from,
+                                                       @Nullable LocalDate to,
+                                                       @Nullable UUID activityTypeId,
+                                                       @Nullable Visibility visibility,
+                                                       SessionStatusFilter statusFilter) {
         Specification<Session> spec = Specification.where(byUserId(userId));
 
         if (from != null) {
@@ -184,23 +281,7 @@ public class SessionService {
             spec = spec.and((root, query, cb) -> cb.isNotNull(root.get("endedAt")));
         }
 
-        return sessionRepo.findAll(spec, pageable).map(mapper::toDto);
-    }
-
-    private void validateStopMetric(ActivityType activityType, BigDecimal metricValue) {
-        MetricKind metricKind = activityType.getMetricKind() == null ? MetricKind.NONE : activityType.getMetricKind();
-
-        if (metricKind == MetricKind.NONE && metricValue != null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This activity type does not accept a metric value");
-        }
-
-        if (metricKind == MetricKind.INTEGER && metricValue != null && metricValue.stripTrailingZeros().scale() > 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "metricValue must be a whole number for INTEGER metrics");
-        }
-    }
-
-    private Specification<Session> byUserId(UUID userId) {
-        return (root, query, cb) -> cb.equal(root.get("user").get("id"), userId);
+        return spec;
     }
 
     private SessionStatusFilter parseStatus(@Nullable String raw) {
