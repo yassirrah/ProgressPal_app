@@ -169,6 +169,45 @@ export async function getMyDashboardSummary(userId, filters = {}) {
   }
 }
 
+export async function getMyDashboardByActivityType(userId, filters = {}) {
+  try {
+    const params = {};
+    ['from', 'to'].forEach((key) => {
+      const value = filters[key];
+      if (value === undefined || value === null || value === '') return;
+      params[key] = value;
+    });
+
+    const { data } = await client.get('/me/dashboard/by-activity-type', {
+      headers: { 'X-User-Id': userId },
+      params,
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load activity type breakdown'));
+  }
+}
+
+export async function getMyDashboardTrends(userId, filters = {}) {
+  try {
+    const params = {};
+    const allowedKeys = ['from', 'to', 'bucket', 'activityTypeId'];
+    allowedKeys.forEach((key) => {
+      const value = filters[key];
+      if (value === undefined || value === null || value === '') return;
+      params[key] = value;
+    });
+
+    const { data } = await client.get('/me/dashboard/trends', {
+      headers: { 'X-User-Id': userId },
+      params,
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load trends'));
+  }
+}
+
 export async function getFriends(userId) {
   try {
     const { data } = await client.get('/friends', {
