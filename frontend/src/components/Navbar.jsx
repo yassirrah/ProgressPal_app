@@ -26,6 +26,7 @@ const Navbar = () => {
         )}
       </Link>
       <Link to="/">Home</Link>
+      <Link to="/my-sessions">My Sessions</Link>
       <Link to="/feed">Feed</Link>
       <Link to="/friends">Friends</Link>
       {user ? (

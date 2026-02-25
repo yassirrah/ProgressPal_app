@@ -2,6 +2,8 @@ package org.progresspalbackend.progresspalbackend.web;
 
 
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
+import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardByActivityTypeDto;
+import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardSummaryDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
 import org.progresspalbackend.progresspalbackend.service.SessionService;
 import org.springframework.data.domain.Page;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -49,6 +52,20 @@ public class MeController {
                 status,
                 clampPageable(pageable)
         );
+    }
+
+    @GetMapping("/dashboard/summary")
+    MeDashboardSummaryDto getDashboardSummary(@RequestHeader("X-User-Id") UUID userId,
+                                              @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                              @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return sessionService.getMyDashboardSummary(userId, from, to);
+    }
+
+    @GetMapping("/dashboard/by-activity-type")
+    List<MeDashboardByActivityTypeDto> getDashboardByActivityType(@RequestHeader("X-User-Id") UUID userId,
+                                                                  @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                                                  @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return sessionService.getMyDashboardByActivityType(userId, from, to);
     }
 
     private Pageable clampPageable(Pageable pageable) {
