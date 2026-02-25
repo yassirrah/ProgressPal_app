@@ -14,6 +14,7 @@ import org.progresspalbackend.progresspalbackend.domain.Session;
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.dto.feed.FeedSessionDto;
+import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardByActivityTypeDto;
 import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardSummaryDto;
 import org.progresspalbackend.progresspalbackend.dto.dashboard.TopActivityTypeByTimeDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionCreateDto;
@@ -197,8 +198,7 @@ public class SessionService {
         for (Session session : sessions) {
             activeDays.add(session.getStartedAt().atOffset(ZoneOffset.UTC).toLocalDate());
 
-            Instant end = session.getEndedAt() == null ? now : session.getEndedAt();
-            long durationSeconds = Math.max(0, Duration.between(session.getStartedAt(), end).getSeconds());
+            long durationSeconds = computeSessionDurationSeconds(session, now);
             totalDurationSeconds += durationSeconds;
 
             UUID activityTypeId = session.getActivityType().getId();
@@ -231,6 +231,57 @@ public class SessionService {
         );
     }
 
+    @Transactional
+    public List<MeDashboardByActivityTypeDto> getMyDashboardByActivityType(UUID userId,
+                                                                           @Nullable LocalDate from,
+                                                                           @Nullable LocalDate to) {
+        validateDateRange(from, to);
+
+        Specification<Session> spec = buildMySessionsSpec(
+                userId,
+                from,
+                to,
+                null,
+                null,
+                SessionStatusFilter.ALL
+        );
+
+        List<Session> sessions = sessionRepo.findAll(spec);
+        Instant now = Instant.now();
+        Map<UUID, ActivityTypeAggregate> aggregates = new HashMap<>();
+
+        for (Session session : sessions) {
+            ActivityType activityType = session.getActivityType();
+            UUID activityTypeId = activityType.getId();
+            MetricKind metricKind = activityType.getMetricKind() == null ? MetricKind.NONE : activityType.getMetricKind();
+
+            ActivityTypeAggregate aggregate = aggregates.computeIfAbsent(activityTypeId, ignoredId ->
+                    new ActivityTypeAggregate(
+                            activityTypeId,
+                            activityType.getName(),
+                            metricKind,
+                            metricKind == MetricKind.NONE ? null : activityType.getMetricLabel()
+                    )
+            );
+
+            aggregate.totalSessions++;
+            aggregate.totalDurationSeconds += computeSessionDurationSeconds(session, now);
+
+            if (aggregate.metricKind != MetricKind.NONE && session.getMetricValue() != null) {
+                aggregate.totalMetricValue = aggregate.totalMetricValue.add(session.getMetricValue());
+            }
+        }
+
+        return aggregates.values().stream()
+                .sorted(
+                        Comparator.comparingLong(ActivityTypeAggregate::getTotalDurationSeconds).reversed()
+                                .thenComparing(ActivityTypeAggregate::getName)
+                                .thenComparing(ActivityTypeAggregate::getActivityTypeId)
+                )
+                .map(ActivityTypeAggregate::toDto)
+                .toList();
+    }
+
     private void validateStopMetric(ActivityType activityType, BigDecimal metricValue) {
         MetricKind metricKind = activityType.getMetricKind() == null ? MetricKind.NONE : activityType.getMetricKind();
 
@@ -245,6 +296,11 @@ public class SessionService {
 
     private Specification<Session> byUserId(UUID userId) {
         return (root, query, cb) -> cb.equal(root.get("user").get("id"), userId);
+    }
+
+    private long computeSessionDurationSeconds(Session session, Instant now) {
+        Instant end = session.getEndedAt() == null ? now : session.getEndedAt();
+        return Math.max(0, Duration.between(session.getStartedAt(), end).getSeconds());
     }
 
     private void validateDateRange(@Nullable LocalDate from, @Nullable LocalDate to) {
@@ -299,5 +355,47 @@ public class SessionService {
         LIVE,
         ENDED,
         ALL
+    }
+
+    private static final class ActivityTypeAggregate {
+        private final UUID activityTypeId;
+        private final String name;
+        private final MetricKind metricKind;
+        private final String metricLabel;
+        private long totalDurationSeconds;
+        private long totalSessions;
+        private BigDecimal totalMetricValue;
+
+        private ActivityTypeAggregate(UUID activityTypeId, String name, MetricKind metricKind, String metricLabel) {
+            this.activityTypeId = activityTypeId;
+            this.name = name;
+            this.metricKind = metricKind;
+            this.metricLabel = metricLabel;
+            this.totalMetricValue = metricKind == MetricKind.NONE ? null : BigDecimal.ZERO;
+        }
+
+        private UUID getActivityTypeId() {
+            return activityTypeId;
+        }
+
+        private String getName() {
+            return name == null ? "" : name;
+        }
+
+        private long getTotalDurationSeconds() {
+            return totalDurationSeconds;
+        }
+
+        private MeDashboardByActivityTypeDto toDto() {
+            return new MeDashboardByActivityTypeDto(
+                    activityTypeId,
+                    name,
+                    null,
+                    totalDurationSeconds,
+                    totalSessions,
+                    metricKind == MetricKind.NONE ? null : totalMetricValue,
+                    metricKind == MetricKind.NONE ? null : metricLabel
+            );
+        }
     }
 }
