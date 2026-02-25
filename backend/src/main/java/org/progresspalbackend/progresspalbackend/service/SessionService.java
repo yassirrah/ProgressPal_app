@@ -23,13 +23,17 @@ import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -145,6 +149,44 @@ public class SessionService {
                 .map(mapper::toDto);
     }
 
+    public Page<SessionDto> getMySessions(UUID userId,
+                                          @Nullable LocalDate from,
+                                          @Nullable LocalDate to,
+                                          @Nullable UUID activityTypeId,
+                                          @Nullable Visibility visibility,
+                                          @Nullable String status,
+                                          Pageable pageable) {
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "'from' must be before or equal to 'to'");
+        }
+
+        SessionStatusFilter statusFilter = parseStatus(status);
+
+        Specification<Session> spec = Specification.where(byUserId(userId));
+
+        if (from != null) {
+            Instant fromInclusive = from.atStartOfDay().toInstant(ZoneOffset.UTC);
+            spec = spec.and((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("startedAt"), fromInclusive));
+        }
+        if (to != null) {
+            Instant toExclusive = to.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+            spec = spec.and((root, query, cb) -> cb.lessThan(root.get("startedAt"), toExclusive));
+        }
+        if (activityTypeId != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("activityType").get("id"), activityTypeId));
+        }
+        if (visibility != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("visibility"), visibility));
+        }
+        if (statusFilter == SessionStatusFilter.LIVE) {
+            spec = spec.and((root, query, cb) -> cb.isNull(root.get("endedAt")));
+        } else if (statusFilter == SessionStatusFilter.ENDED) {
+            spec = spec.and((root, query, cb) -> cb.isNotNull(root.get("endedAt")));
+        }
+
+        return sessionRepo.findAll(spec, pageable).map(mapper::toDto);
+    }
+
     private void validateStopMetric(ActivityType activityType, BigDecimal metricValue) {
         MetricKind metricKind = activityType.getMetricKind() == null ? MetricKind.NONE : activityType.getMetricKind();
 
@@ -155,5 +197,26 @@ public class SessionService {
         if (metricKind == MetricKind.INTEGER && metricValue != null && metricValue.stripTrailingZeros().scale() > 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "metricValue must be a whole number for INTEGER metrics");
         }
+    }
+
+    private Specification<Session> byUserId(UUID userId) {
+        return (root, query, cb) -> cb.equal(root.get("user").get("id"), userId);
+    }
+
+    private SessionStatusFilter parseStatus(@Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
+            return SessionStatusFilter.ALL;
+        }
+        try {
+            return SessionStatusFilter.valueOf(raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status. Use LIVE, ENDED, or ALL");
+        }
+    }
+
+    private enum SessionStatusFilter {
+        LIVE,
+        ENDED,
+        ALL
     }
 }
