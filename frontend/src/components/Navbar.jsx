@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { clearStoredUser, getStoredUser } from '../lib/api';
 
 const Navbar = () => {
@@ -10,6 +10,9 @@ const Navbar = () => {
     clearStoredUser();
     window.location.href = '/login';
   };
+
+  const navLinkClass = ({ isActive }) => `nav-link${isActive ? ' active' : ''}`;
+  const userInitial = (user?.username || '?').trim().charAt(0).toUpperCase() || '?';
 
   return (
     <nav>
@@ -25,19 +28,22 @@ const Navbar = () => {
           <span className="brand-text">ProgressPal</span>
         )}
       </Link>
-      <Link to="/">Home</Link>
-      <Link to="/my-sessions">My Sessions</Link>
-      <Link to="/feed">Feed</Link>
-      <Link to="/friends">Friends</Link>
+      <NavLink to="/" end className={navLinkClass}>Home</NavLink>
+      <NavLink to="/my-sessions" className={navLinkClass}>My Sessions</NavLink>
+      <NavLink to="/feed" className={navLinkClass}>Feed</NavLink>
+      <NavLink to="/friends" className={navLinkClass}>Friends</NavLink>
       {user ? (
         <>
-          <span style={{ margin: '0 10px' }}>Hi, {user.username}</span>
+          <div className="nav-user-chip" title={user.username}>
+            <span className="nav-user-avatar" aria-hidden="true">{userInitial}</span>
+            <span className="nav-user-name">{user.username}</span>
+          </div>
           <button onClick={handleLogout}>Logout</button>
         </>
       ) : (
         <>
-          <Link to="/login">Login</Link>
-          <Link to="/signup">Sign Up</Link>
+          <NavLink to="/login" className={navLinkClass}>Login</NavLink>
+          <NavLink to="/signup" className={navLinkClass}>Sign Up</NavLink>
         </>
       )}
     </nav>

@@ -85,6 +85,12 @@ const Home = () => {
     setSessionError('');
   }, [liveSession?.id]);
 
+  useEffect(() => {
+    if (liveSession) {
+      setTypesPanelOpen(false);
+    }
+  }, [liveSession]);
+
   const customActivityTypes = useMemo(
     () => activityTypes.filter((type) => type.custom),
     [activityTypes],
@@ -115,6 +121,14 @@ const Home = () => {
   const liveMetricKind = liveSessionType?.metricKind || 'NONE';
   const liveMetricLabel = liveSessionType?.metricLabel || 'metric';
   const showStopMetricInput = !!liveSession && liveMetricKind !== 'NONE';
+  const liveCardAccentClass = (() => {
+    const value = (liveSessionType?.name || '').toLowerCase();
+    if (value.includes('read') || value.includes('study') || value.includes('learn')) return 'live-card-reading';
+    if (value.includes('code') || value.includes('dev') || value.includes('program')) return 'live-card-coding';
+    if (value.includes('chess')) return 'live-card-chess';
+    if (value.includes('gym') || value.includes('workout') || value.includes('fitness')) return 'live-card-gym';
+    return 'live-card-default';
+  })();
 
   const formatDuration = (startedAt) => {
     const elapsedMs = Math.max(0, now - new Date(startedAt).getTime());
@@ -253,21 +267,43 @@ const Home = () => {
 
       {user && (
         <>
-          <section className="home-card">
+          <section className={`home-card live-session-card ${liveCardAccentClass}`}>
             <div className="home-section-head">
-              <h2>Your Live Session</h2>
+              <div className="live-heading-wrap">
+                <h2>Your Live Session</h2>
+                {liveSession && (
+                  <span className="live-indicator" aria-label="Live session active">
+                    <span className="live-indicator-dot" aria-hidden="true" />
+                    LIVE
+                  </span>
+                )}
+              </div>
             </div>
             {sessionError && <p className="message-error">{sessionError}</p>}
             {liveSession ? (
               <div>
-                <p className="message-muted">
-                  {liveSessionType?.name ? `Activity: ${liveSessionType.name}` : 'Live session in progress'}
+                {liveSession.title ? (
+                  <>
+                    {liveSessionType?.name && (
+                      <p className="live-activity-pill-row">
+                        <span className="live-activity-pill">{liveSessionType.name}</span>
+                      </p>
+                    )}
+                    <p className="live-session-title"><strong>{liveSession.title}</strong></p>
+                  </>
+                ) : (
+                  <p className="live-session-title">
+                    <strong>{liveSessionType?.name || 'Live session in progress'}</strong>
+                  </p>
+                )}
+                <p className="live-timer-row">
+                  <span className="live-timer-label">Live for</span>
+                  <span className="live-timer-value">{formatDuration(liveSession.startedAt)}</span>
                 </p>
-                <p><strong>{liveSession.title || 'Untitled session'}</strong></p>
-                <p>Live for: {formatDuration(liveSession.startedAt)}</p>
                 {!stopPanelOpen && (
-                  <button type="button" onClick={handleStopClick}>
-                    {showStopMetricInput ? 'Stop Session (add metric)' : 'Stop Live Session'}
+                  <button type="button" className="danger-soft-button" onClick={handleStopClick}>
+                    <span className="danger-soft-button-icon" aria-hidden="true">■</span>
+                    <span>{showStopMetricInput ? 'End Session (add metric)' : 'End Session'}</span>
                   </button>
                 )}
                 {stopPanelOpen && (
@@ -291,7 +327,10 @@ const Home = () => {
                       </p>
                     </div>
                     <div className="home-row">
-                      <button type="button" onClick={handleStopSession}>Confirm Stop</button>
+                      <button type="button" className="danger-soft-button" onClick={handleStopSession}>
+                        <span className="danger-soft-button-icon" aria-hidden="true">■</span>
+                        <span>Confirm End Session</span>
+                      </button>
                       <button
                         type="button"
                         className="secondary-button"
@@ -308,33 +347,40 @@ const Home = () => {
             )}
           </section>
 
-          <section className="home-card">
-            <div className="home-section-head">
-              <div>
-                <h2>Start Session</h2>
-                <p className="message-muted" style={{ margin: 0 }}>
-                  Primary action. Quick start, no quantity required.
-                </p>
-              </div>
-            </div>
-            {!liveSession && sessionError && <p className="message-error">{sessionError}</p>}
-            {liveSession ? (
-              <p className="message-muted">Start form is hidden while a session is live.</p>
-            ) : (
-              <form onSubmit={handleStartSession}>
+          {!liveSession && (
+            <section className="home-card">
+              <div className="home-section-head">
                 <div>
-                  <label>Activity type:</label>
-                  <select
-                    value={sessionForm.activityTypeId}
-                    onChange={(e) => setSessionForm((prev) => ({ ...prev, activityTypeId: e.target.value }))}
-                    required
-                  >
-                    {activityTypes.map((type) => (
-                      <option key={type.id} value={type.id}>
-                        {type.name}
-                      </option>
-                    ))}
-                  </select>
+                  <h2>Start Session</h2>
+                </div>
+              </div>
+              {sessionError && <p className="message-error">{sessionError}</p>}
+              <form onSubmit={handleStartSession}>
+                <div className="home-inline-fields">
+                  <div>
+                    <label>Activity type:</label>
+                    <select
+                      value={sessionForm.activityTypeId}
+                      onChange={(e) => setSessionForm((prev) => ({ ...prev, activityTypeId: e.target.value }))}
+                      required
+                    >
+                      {activityTypes.map((type) => (
+                        <option key={type.id} value={type.id}>
+                          {type.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label>Visibility:</label>
+                    <select
+                      value={sessionForm.visibility}
+                      onChange={(e) => setSessionForm((prev) => ({ ...prev, visibility: e.target.value }))}
+                    >
+                      <option value="PUBLIC">PUBLIC</option>
+                      <option value="PRIVATE">PRIVATE</option>
+                    </select>
+                  </div>
                 </div>
                 <div>
                   <label>Title:</label>
@@ -352,28 +398,15 @@ const Home = () => {
                     onChange={(e) => setSessionForm((prev) => ({ ...prev, description: e.target.value }))}
                   />
                 </div>
-                <div>
-                  <label>Visibility:</label>
-                  <select
-                    value={sessionForm.visibility}
-                    onChange={(e) => setSessionForm((prev) => ({ ...prev, visibility: e.target.value }))}
-                  >
-                    <option value="PUBLIC">PUBLIC</option>
-                    <option value="PRIVATE">PRIVATE</option>
-                  </select>
-                </div>
                 <button type="submit">Start Session</button>
               </form>
-            )}
-          </section>
+            </section>
+          )}
 
-          <section className="home-card">
+          <section className={`home-card ${liveSession ? 'deemphasized-live' : ''}`}>
             <div className="home-section-head">
               <div>
                 <h2>Activity Types</h2>
-                <p className="message-muted" style={{ margin: 0 }}>
-                  Setup and editing tools. Hidden by default to keep Home focused.
-                </p>
               </div>
               <button
                 type="button"
