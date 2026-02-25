@@ -150,6 +150,25 @@ export async function getMySessions(userId, filters = {}) {
   }
 }
 
+export async function getMyDashboardSummary(userId, filters = {}) {
+  try {
+    const params = {};
+    ['from', 'to'].forEach((key) => {
+      const value = filters[key];
+      if (value === undefined || value === null || value === '') return;
+      params[key] = value;
+    });
+
+    const { data } = await client.get('/me/dashboard/summary', {
+      headers: { 'X-User-Id': userId },
+      params,
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load dashboard summary'));
+  }
+}
+
 export async function getFriends(userId) {
   try {
     const { data } = await client.get('/friends', {

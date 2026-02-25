@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { getActivityTypes, getMySessions, getStoredUser } from '../lib/api';
+import { getActivityTypes, getMyDashboardSummary, getMySessions, getStoredUser } from '../lib/api';
 
 const MySessions = () => {
   const user = useMemo(() => getStoredUser(), []);
   const [activityTypes, setActivityTypes] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState('');
+  const [summaryLoading, setSummaryLoading] = useState(false);
 
   const [filters, setFilters] = useState({
     page: 0,
@@ -23,6 +25,13 @@ const MySessions = () => {
     totalPages: 0,
     number: 0,
     size: 10,
+  });
+
+  const [summary, setSummary] = useState({
+    totalSessions: 0,
+    totalDurationSeconds: 0,
+    activeDays: 0,
+    topActivityTypesByTime: [],
   });
 
   useEffect(() => {
@@ -57,6 +66,32 @@ const MySessions = () => {
     loadSessions();
   }, [user, filters]);
 
+  useEffect(() => {
+    const loadSummary = async () => {
+      if (!user) return;
+      setSummaryLoading(true);
+      setSummaryError('');
+      try {
+        const data = await getMyDashboardSummary(user.id, {
+          from: filters.from,
+          to: filters.to,
+        });
+        setSummary(data || {
+          totalSessions: 0,
+          totalDurationSeconds: 0,
+          activeDays: 0,
+          topActivityTypesByTime: [],
+        });
+      } catch (err) {
+        setSummaryError(err.message || 'Failed to load dashboard summary');
+      } finally {
+        setSummaryLoading(false);
+      }
+    };
+
+    loadSummary();
+  }, [user, filters.from, filters.to]);
+
   const handleFilterChange = (field, value) => {
     setFilters((prev) => ({
       ...prev,
@@ -89,6 +124,14 @@ const MySessions = () => {
     return `${session.metricValue} ${label}`;
   };
 
+  const formatDuration = (seconds) => {
+    const totalSeconds = Math.max(0, Number(seconds) || 0);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const remainingSeconds = totalSeconds % 60;
+    return [hours, minutes, remainingSeconds].map((n) => String(n).padStart(2, '0')).join(':');
+  };
+
   if (!user) {
     return <p>Please log in to view your sessions.</p>;
   }
@@ -99,6 +142,60 @@ const MySessions = () => {
       <p className="message-muted" style={{ marginTop: '-0.25rem' }}>
         Filter your own sessions by date range, activity type, visibility, and status.
       </p>
+
+      <section className="home-card">
+        <div className="home-section-head">
+          <div>
+            <h2>Dashboard Summary</h2>
+            <p className="message-muted" style={{ margin: 0 }}>
+              Based on the selected date range only ({filters.from || 'any start'} to {filters.to || 'any end'}).
+            </p>
+          </div>
+        </div>
+
+        {summaryError && <p className="message-error">{summaryError}</p>}
+
+        {summaryLoading ? (
+          <p>Loading summary...</p>
+        ) : (
+          <>
+            <div className="summary-grid">
+              <article className="summary-stat-card">
+                <p className="summary-stat-label">Total Sessions</p>
+                <p className="summary-stat-value">{summary.totalSessions ?? 0}</p>
+              </article>
+              <article className="summary-stat-card">
+                <p className="summary-stat-label">Total Duration</p>
+                <p className="summary-stat-value">{formatDuration(summary.totalDurationSeconds)}</p>
+              </article>
+              <article className="summary-stat-card">
+                <p className="summary-stat-label">Active Days</p>
+                <p className="summary-stat-value">{summary.activeDays ?? 0}</p>
+              </article>
+            </div>
+
+            <div className="summary-top-list">
+              <p className="summary-top-title">Top Activity Types by Time</p>
+              {summary.topActivityTypesByTime?.length ? (
+                summary.topActivityTypesByTime.map((item, index) => (
+                  <div key={item.activityTypeId || `${item.activityTypeName}-${index}`} className="summary-top-row">
+                    <div>
+                      <p className="feed-user" style={{ marginBottom: 0 }}>
+                        {index + 1}. {item.activityTypeName || 'Unknown'}
+                      </p>
+                    </div>
+                    <span className="feed-status-badge ended">{formatDuration(item.totalDurationSeconds)}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="message-muted" style={{ margin: 0 }}>
+                  No sessions in the selected date range.
+                </p>
+              )}
+            </div>
+          </>
+        )}
+      </section>
 
       <section className="home-card">
         {error && <p className="message-error">{error}</p>}
