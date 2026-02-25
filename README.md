@@ -15,8 +15,9 @@ ProgressPal is a full-stack progress tracking app for time-based sessions with o
 - React + React Router
 - Axios API client
 - Home dashboard (live session, start session, activity type management)
+- My Sessions page (history-first layout with quick stats + collapsible insights)
 - Public feed (card UI)
-- Friends page (friend list + incoming requests)
+- Friends page (social card UI for friends + requests)
 
 ## Implemented Features
 
@@ -33,7 +34,12 @@ ProgressPal is a full-stack progress tracking app for time-based sessions with o
 - Stop a session (`PATCH /api/sessions/{id}/stop`)
 - Live session endpoint (`GET /api/sessions/live`) returns `204` when none exists
 - Owner/non-owner visibility rules through `/api/users/{userId}/sessions`
+- Owner-only session history endpoint with filters: `GET /api/me/sessions`
 - Public feed endpoint for public sessions only
+- Personal dashboard analytics endpoints:
+  - `GET /api/me/dashboard/summary`
+  - `GET /api/me/dashboard/by-activity-type`
+  - `GET /api/me/dashboard/trends`
 
 ### Session Metrics (current backend support)
 - Activity types can define one optional quantity metric:
@@ -66,6 +72,11 @@ ProgressPal is a full-stack progress tracking app for time-based sessions with o
   - activity type name
   - live/ended timestamps
   - session metric (`metricValue`, `metricLabel`) when available
+- Redesigned social card UI:
+  - avatar + relative timestamp
+  - hero "Total Time" stat
+  - metric pill (when available)
+  - local kudos interaction button (frontend-only state)
 
 ### Friendships
 - Send friend request
@@ -73,6 +84,7 @@ ProgressPal is a full-stack progress tracking app for time-based sessions with o
 - List friends
 - List incoming friend requests
 - Frontend hides raw IDs and displays usernames
+- Friends page uses card-based rows with avatars, empty states, and improved request UX
 
 ## Frontend Screens
 
@@ -80,16 +92,24 @@ ProgressPal is a full-stack progress tracking app for time-based sessions with o
   - Live session card with timer
   - Stop flow with optional metric entry (when activity type supports it)
   - Start session form
-  - Collapsible activity type manager (create/edit)
+  - Collapsible activity type manager with single create/edit form, search, and mode switching
+- `/my-sessions`
+  - Primary personal history page
+  - Shared date range filters (`from`, `to`)
+  - Quick stats row (summary)
+  - Session history list with advanced filters behind toggle
+  - Insights (trends + activity-type breakdown) behind toggle
 - `/feed` Public Feed
-  - Session cards
-  - Live timer for active sessions
+  - Social-style session cards
+  - Relative timestamps + live indicator
+  - Hero "Total Time" pill
   - Add friend action
-  - Session metric display (for example `10 games`)
+  - Session metric pill display (for example `10 games`)
+  - Kudos button (frontend-only feedback/count)
 - `/friends`
-  - Friends list
-  - Incoming requests
-  - Send friend request by user id
+  - Card-based friends list with avatars
+  - Card-based incoming request list with accept action
+  - Send friend request form labeled for username/user ID input
 - `/login`
 - `/signup`
 
@@ -142,6 +162,7 @@ User create/update body (`UserCreateDto`):
 | `PATCH` | `/api/sessions/{id}/stop` | Stop session and optionally save metric | Yes (`X-User-Id`) |
 | `GET` | `/api/sessions/live` | Get current user's live session (`204` if none) | Yes (`X-User-Id`) |
 | `GET` | `/api/users/{userId}/sessions` | Get user sessions with visibility rules + pagination | Yes (`X-User-Id`) |
+| `GET` | `/api/me/sessions` | Get current user's sessions with filters + pagination | Yes (`X-User-Id`) |
 
 Start session body (`SessionCreateDto`):
 - `activityTypeId` (UUID, required)
@@ -151,6 +172,13 @@ Start session body (`SessionCreateDto`):
 
 Stop session body (`SessionStopDto`, optional body):
 - `metricValue` (optional decimal number)
+
+`GET /api/me/sessions` query params:
+- `page`, `size` (size clamped by backend)
+- `from`, `to` (date range, inclusive by day on `startedAt`)
+- `activityTypeId` (optional)
+- `visibility` (`PUBLIC` / `PRIVATE`, optional)
+- `status` (`LIVE` / `ENDED` / `ALL`, optional)
 
 Examples:
 
@@ -221,6 +249,45 @@ Feed item includes:
 - `endedAt`
 - `visibility`
 
+### Me Dashboard / Personal Analytics
+
+| Method | Path | Description | Auth Header |
+|---|---|---|---|
+| `GET` | `/api/me/dashboard/summary` | Summary stats for current user's sessions in date range | Yes (`X-User-Id`) |
+| `GET` | `/api/me/dashboard/by-activity-type` | Aggregated totals grouped by activity type | Yes (`X-User-Id`) |
+| `GET` | `/api/me/dashboard/trends` | Time-series trends for duration (+ optional metric series) | Yes (`X-User-Id`) |
+
+Shared query params (`summary`, `by-activity-type`, `trends`):
+- `from` (optional, `YYYY-MM-DD`)
+- `to` (optional, `YYYY-MM-DD`)
+
+`GET /api/me/dashboard/trends` additional query params:
+- `bucket` (`DAY` or `WEEK`, required)
+- `activityTypeId` (optional, enables metric trend series for that activity type)
+
+`GET /api/me/dashboard/summary` returns:
+- `totalSessions`
+- `totalDurationSeconds`
+- `activeDays`
+- `topActivityTypesByTime` (top 3)
+
+`GET /api/me/dashboard/by-activity-type` returns per activity type:
+- `activityTypeId`
+- `name`
+- `category` (currently `null` / optional)
+- `totalDurationSeconds`
+- `totalSessions`
+- `totalMetricValue` (nullable for non-metric activity types)
+- `metricLabel` (nullable for non-metric activity types)
+
+`GET /api/me/dashboard/trends` returns:
+- `bucket` (`DAY` / `WEEK`)
+- `durationSeries` (ordered by `bucketStart`)
+- optional metric trend fields:
+  - `metricActivityTypeId`
+  - `metricLabel`
+  - `metricSeries` (ordered by `bucketStart`, nullable when selected type has no metric)
+
 ### Friendships
 
 | Method | Path | Description | Auth Header |
@@ -282,11 +349,12 @@ cd backend
 ./mvnw -q test -Dtest=ActivityTypeCreateApiTest
 ./mvnw -q test -Dtest=SessionStopApiTest
 ./mvnw -q test -Dtest=FeedApiTest,FeedPaginationApiTest
+./mvnw -q test -Dtest=MeSessionsApiTest,MeDashboardSummaryApiTest,MeDashboardByActivityTypeApiTest,MeDashboardTrendsApiTest
 ```
 
 ## Notes / Current Gaps
 
 - Frontend login is mocked (email lookup from `/api/users`), not real authentication.
 - `PUT /api/activity-types/{id}` currently does not require `X-User-Id` in controller (ownership checks for update are not enforced there yet).
-- The “Send Friend Request” UI still uses receiver UUID input (can be improved to username search).
-
+- "Send Friend Request" UI is labeled for username or ID, but backend currently expects `receiverId` (UUID) in the request.
+- Kudos on the feed is currently frontend-only (no backend persistence/count storage yet).
