@@ -4,6 +4,7 @@ package org.progresspalbackend.progresspalbackend.web;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardByActivityTypeDto;
 import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardSummaryDto;
+import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardTrendsDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
 import org.progresspalbackend.progresspalbackend.service.SessionService;
 import org.springframework.data.domain.Page;
@@ -66,6 +67,15 @@ public class MeController {
                                                                   @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                                                   @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return sessionService.getMyDashboardByActivityType(userId, from, to);
+    }
+
+    @GetMapping("/dashboard/trends")
+    MeDashboardTrendsDto getDashboardTrends(@RequestHeader("X-User-Id") UUID userId,
+                                            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+                                            @RequestParam String bucket,
+                                            @RequestParam(required = false) UUID activityTypeId) {
+        return sessionService.getMyDashboardTrends(userId, from, to, bucket, activityTypeId);
     }
 
     private Pageable clampPageable(Pageable pageable) {

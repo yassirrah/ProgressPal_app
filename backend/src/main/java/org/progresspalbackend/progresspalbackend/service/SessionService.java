@@ -13,9 +13,12 @@ import org.progresspalbackend.progresspalbackend.domain.Session;
 
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
+import org.progresspalbackend.progresspalbackend.dto.dashboard.DurationTrendPointDto;
 import org.progresspalbackend.progresspalbackend.dto.feed.FeedSessionDto;
 import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardByActivityTypeDto;
 import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardSummaryDto;
+import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardTrendsDto;
+import org.progresspalbackend.progresspalbackend.dto.dashboard.MetricTrendPointDto;
 import org.progresspalbackend.progresspalbackend.dto.dashboard.TopActivityTypeByTimeDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionCreateDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
@@ -33,9 +36,11 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.temporal.TemporalAdjusters;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -44,8 +49,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -282,6 +287,73 @@ public class SessionService {
                 .toList();
     }
 
+    @Transactional
+    public MeDashboardTrendsDto getMyDashboardTrends(UUID userId,
+                                                     @Nullable LocalDate from,
+                                                     @Nullable LocalDate to,
+                                                     String bucketRaw,
+                                                     @Nullable UUID metricActivityTypeId) {
+        validateDateRange(from, to);
+        TrendBucket bucket = parseTrendBucket(bucketRaw);
+
+        Specification<Session> spec = buildMySessionsSpec(
+                userId,
+                from,
+                to,
+                null,
+                null,
+                SessionStatusFilter.ALL
+        );
+
+        List<Session> sessions = sessionRepo.findAll(spec);
+        Instant now = Instant.now();
+
+        Map<LocalDate, Long> durationByBucket = new TreeMap<>();
+        for (Session session : sessions) {
+            LocalDate bucketStart = bucketStartOf(session.getStartedAt(), bucket);
+            durationByBucket.merge(bucketStart, computeSessionDurationSeconds(session, now), Long::sum);
+        }
+
+        List<DurationTrendPointDto> durationSeries = durationByBucket.entrySet().stream()
+                .map(entry -> new DurationTrendPointDto(entry.getKey(), entry.getValue()))
+                .toList();
+
+        String metricLabel = null;
+        List<MetricTrendPointDto> metricSeries = null;
+
+        if (metricActivityTypeId != null) {
+            ActivityType metricActivityType = typeRepo.findById(metricActivityTypeId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "ActivityType not found"));
+            MetricKind metricKind = metricActivityType.getMetricKind() == null ? MetricKind.NONE : metricActivityType.getMetricKind();
+
+            if (metricKind != MetricKind.NONE) {
+                metricLabel = metricActivityType.getMetricLabel();
+                Map<LocalDate, BigDecimal> metricByBucket = new TreeMap<>();
+                for (Session session : sessions) {
+                    if (!session.getActivityType().getId().equals(metricActivityTypeId)) {
+                        continue;
+                    }
+                    if (session.getMetricValue() == null) {
+                        continue;
+                    }
+                    LocalDate bucketStart = bucketStartOf(session.getStartedAt(), bucket);
+                    metricByBucket.merge(bucketStart, session.getMetricValue(), BigDecimal::add);
+                }
+                metricSeries = metricByBucket.entrySet().stream()
+                        .map(entry -> new MetricTrendPointDto(entry.getKey(), entry.getValue()))
+                        .toList();
+            }
+        }
+
+        return new MeDashboardTrendsDto(
+                bucket.name(),
+                durationSeries,
+                metricActivityTypeId,
+                metricLabel,
+                metricSeries
+        );
+    }
+
     private void validateStopMetric(ActivityType activityType, BigDecimal metricValue) {
         MetricKind metricKind = activityType.getMetricKind() == null ? MetricKind.NONE : activityType.getMetricKind();
 
@@ -301,6 +373,14 @@ public class SessionService {
     private long computeSessionDurationSeconds(Session session, Instant now) {
         Instant end = session.getEndedAt() == null ? now : session.getEndedAt();
         return Math.max(0, Duration.between(session.getStartedAt(), end).getSeconds());
+    }
+
+    private LocalDate bucketStartOf(Instant instant, TrendBucket bucket) {
+        LocalDate day = instant.atOffset(ZoneOffset.UTC).toLocalDate();
+        if (bucket == TrendBucket.DAY) {
+            return day;
+        }
+        return day.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
     }
 
     private void validateDateRange(@Nullable LocalDate from, @Nullable LocalDate to) {
@@ -355,6 +435,22 @@ public class SessionService {
         LIVE,
         ENDED,
         ALL
+    }
+
+    private TrendBucket parseTrendBucket(@Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "bucket is required (DAY or WEEK)");
+        }
+        try {
+            return TrendBucket.valueOf(raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid bucket. Use DAY or WEEK");
+        }
+    }
+
+    private enum TrendBucket {
+        DAY,
+        WEEK
     }
 
     private static final class ActivityTypeAggregate {
