@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { getActivityTypes, getMyDashboardSummary, getMySessions, getStoredUser } from '../lib/api';
+import {
+  getActivityTypes,
+  getMyDashboardByActivityType,
+  getMyDashboardSummary,
+  getMyDashboardTrends,
+  getMySessions,
+  getStoredUser,
+} from '../lib/api';
 
 const MySessions = () => {
   const user = useMemo(() => getStoredUser(), []);
@@ -8,6 +15,10 @@ const MySessions = () => {
   const [loading, setLoading] = useState(false);
   const [summaryError, setSummaryError] = useState('');
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [breakdownError, setBreakdownError] = useState('');
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const [trendsError, setTrendsError] = useState('');
+  const [trendsLoading, setTrendsLoading] = useState(false);
 
   const [filters, setFilters] = useState({
     page: 0,
@@ -32,6 +43,18 @@ const MySessions = () => {
     totalDurationSeconds: 0,
     activeDays: 0,
     topActivityTypesByTime: [],
+  });
+  const [activityBreakdown, setActivityBreakdown] = useState([]);
+  const [trendsFilters, setTrendsFilters] = useState({
+    bucket: 'DAY',
+    activityTypeId: '',
+  });
+  const [trendsData, setTrendsData] = useState({
+    bucket: 'DAY',
+    durationSeries: [],
+    metricActivityTypeId: null,
+    metricLabel: null,
+    metricSeries: null,
   });
 
   useEffect(() => {
@@ -92,6 +115,56 @@ const MySessions = () => {
     loadSummary();
   }, [user, filters.from, filters.to]);
 
+  useEffect(() => {
+    const loadTrends = async () => {
+      if (!user) return;
+      setTrendsLoading(true);
+      setTrendsError('');
+      try {
+        const data = await getMyDashboardTrends(user.id, {
+          from: filters.from,
+          to: filters.to,
+          bucket: trendsFilters.bucket,
+          activityTypeId: trendsFilters.activityTypeId,
+        });
+        setTrendsData(data || {
+          bucket: trendsFilters.bucket,
+          durationSeries: [],
+          metricActivityTypeId: trendsFilters.activityTypeId || null,
+          metricLabel: null,
+          metricSeries: null,
+        });
+      } catch (err) {
+        setTrendsError(err.message || 'Failed to load trends');
+      } finally {
+        setTrendsLoading(false);
+      }
+    };
+
+    loadTrends();
+  }, [user, filters.from, filters.to, trendsFilters.bucket, trendsFilters.activityTypeId]);
+
+  useEffect(() => {
+    const loadBreakdown = async () => {
+      if (!user) return;
+      setBreakdownLoading(true);
+      setBreakdownError('');
+      try {
+        const data = await getMyDashboardByActivityType(user.id, {
+          from: filters.from,
+          to: filters.to,
+        });
+        setActivityBreakdown(Array.isArray(data) ? data : []);
+      } catch (err) {
+        setBreakdownError(err.message || 'Failed to load activity type breakdown');
+      } finally {
+        setBreakdownLoading(false);
+      }
+    };
+
+    loadBreakdown();
+  }, [user, filters.from, filters.to]);
+
   const handleFilterChange = (field, value) => {
     setFilters((prev) => ({
       ...prev,
@@ -131,6 +204,33 @@ const MySessions = () => {
     const remainingSeconds = totalSeconds % 60;
     return [hours, minutes, remainingSeconds].map((n) => String(n).padStart(2, '0')).join(':');
   };
+
+  const formatMetricTotal = (row) => {
+    if (row?.totalMetricValue == null) return null;
+    if (!row?.metricLabel) return String(row.totalMetricValue);
+    return `${row.totalMetricValue} ${row.metricLabel}`;
+  };
+
+  const metricEnabledTypes = useMemo(
+    () => activityTypes.filter((type) => (type.metricKind || 'NONE') !== 'NONE'),
+    [activityTypes],
+  );
+
+  useEffect(() => {
+    if (!trendsFilters.activityTypeId) return;
+    const exists = metricEnabledTypes.some((type) => type.id === trendsFilters.activityTypeId);
+    if (exists) return;
+    setTrendsFilters((prev) => ({ ...prev, activityTypeId: '' }));
+  }, [metricEnabledTypes, trendsFilters.activityTypeId]);
+
+  const durationMax = Math.max(
+    1,
+    ...(Array.isArray(trendsData.durationSeries) ? trendsData.durationSeries.map((p) => Number(p.totalDurationSeconds) || 0) : [0]),
+  );
+  const metricMax = Math.max(
+    1,
+    ...((Array.isArray(trendsData.metricSeries) ? trendsData.metricSeries : []).map((p) => Number(p.totalMetricValue) || 0)),
+  );
 
   if (!user) {
     return <p>Please log in to view your sessions.</p>;
@@ -194,6 +294,161 @@ const MySessions = () => {
               )}
             </div>
           </>
+        )}
+      </section>
+
+      <section className="home-card">
+        <div className="home-section-head">
+          <div>
+            <h2>Trends</h2>
+            <p className="message-muted" style={{ margin: 0 }}>
+              Time series by {trendsFilters.bucket.toLowerCase()} for the selected date range only.
+            </p>
+          </div>
+        </div>
+
+        <div className="home-filter-grid" style={{ marginTop: 0 }}>
+          <div>
+            <label>Bucket</label>
+            <select
+              value={trendsFilters.bucket}
+              onChange={(e) => setTrendsFilters((prev) => ({ ...prev, bucket: e.target.value }))}
+            >
+              <option value="DAY">DAY</option>
+              <option value="WEEK">WEEK</option>
+            </select>
+          </div>
+          <div>
+            <label>Metric Activity Type (optional)</label>
+            <select
+              value={trendsFilters.activityTypeId}
+              onChange={(e) => setTrendsFilters((prev) => ({ ...prev, activityTypeId: e.target.value }))}
+            >
+              <option value="">None</option>
+              {metricEnabledTypes.map((type) => (
+                <option key={type.id} value={type.id}>{type.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {trendsError && <p className="message-error">{trendsError}</p>}
+
+        {trendsLoading ? (
+          <p>Loading trends...</p>
+        ) : (
+          <div className="trends-layout">
+            <div className="trends-panel">
+              <p className="summary-top-title">Duration ({trendsData.bucket || trendsFilters.bucket})</p>
+              {trendsData.durationSeries?.length ? (
+                <div className="trend-series-list">
+                  {trendsData.durationSeries.map((point) => (
+                    <div key={`dur-${point.bucketStart}`} className="trend-row">
+                      <span className="trend-label">{point.bucketStart}</span>
+                      <div className="trend-bar-track" aria-hidden="true">
+                        <div
+                          className="trend-bar-fill"
+                          style={{ width: `${Math.max(4, ((Number(point.totalDurationSeconds) || 0) / durationMax) * 100)}%` }}
+                        />
+                      </div>
+                      <span className="trend-value">{formatDuration(point.totalDurationSeconds)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="message-muted" style={{ margin: 0 }}>No duration trend data for this range.</p>
+              )}
+            </div>
+
+            <div className="trends-panel">
+              <p className="summary-top-title">
+                Metric Trend
+                {trendsData.metricLabel ? ` (${trendsData.metricLabel})` : ''}
+              </p>
+              {trendsFilters.activityTypeId ? (
+                Array.isArray(trendsData.metricSeries) && trendsData.metricSeries.length ? (
+                  <div className="trend-series-list">
+                    {trendsData.metricSeries.map((point) => (
+                      <div key={`met-${point.bucketStart}`} className="trend-row">
+                        <span className="trend-label">{point.bucketStart}</span>
+                        <div className="trend-bar-track" aria-hidden="true">
+                          <div
+                            className="trend-bar-fill metric"
+                            style={{ width: `${Math.max(4, ((Number(point.totalMetricValue) || 0) / metricMax) * 100)}%` }}
+                          />
+                        </div>
+                        <span className="trend-value">
+                          {point.totalMetricValue}
+                          {trendsData.metricLabel ? ` ${trendsData.metricLabel}` : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="message-muted" style={{ margin: 0 }}>
+                    No metric trend data available for the selected activity type.
+                  </p>
+                )
+              ) : (
+                <p className="message-muted" style={{ margin: 0 }}>
+                  Select a metric-enabled activity type to view metric trends.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="home-card">
+        <div className="home-section-head">
+          <div>
+            <h2>By Activity Type</h2>
+            <p className="message-muted" style={{ margin: 0 }}>
+              Aggregated totals for the selected date range only.
+            </p>
+          </div>
+        </div>
+
+        {breakdownError && <p className="message-error">{breakdownError}</p>}
+
+        {breakdownLoading ? (
+          <p>Loading activity breakdown...</p>
+        ) : activityBreakdown.length ? (
+          <div className="summary-top-list" style={{ marginTop: 0, borderTop: 0, paddingTop: 0 }}>
+            {activityBreakdown.map((row) => {
+              const metricTotal = formatMetricTotal(row);
+              return (
+                <article key={row.activityTypeId} className="breakdown-card">
+                  <div className="my-session-head">
+                    <div>
+                      <p className="feed-user">{row.name || 'Unknown activity'}</p>
+                      <p className="feed-activity">{row.category || 'No category'}</p>
+                    </div>
+                    <span className="feed-status-badge ended">{formatDuration(row.totalDurationSeconds)}</span>
+                  </div>
+
+                  <div className="feed-meta">
+                    <div className="feed-meta-row">
+                      <span className="feed-meta-label">Sessions</span>
+                      <span>{row.totalSessions ?? 0}</span>
+                    </div>
+                    <div className="feed-meta-row">
+                      <span className="feed-meta-label">Duration</span>
+                      <span>{formatDuration(row.totalDurationSeconds)}</span>
+                    </div>
+                    {metricTotal && (
+                      <div className="feed-meta-row">
+                        <span className="feed-meta-label">Total Metric</span>
+                        <span>{metricTotal}</span>
+                      </div>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="message-muted">No activity breakdown available for the selected date range.</p>
         )}
       </section>
 

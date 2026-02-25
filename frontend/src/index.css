@@ -195,6 +195,76 @@ form {
   padding: 0.65rem 0.75rem;
 }
 
+.breakdown-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 0.8rem;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 0.55rem;
+}
+
+.trends-layout {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  margin-top: 0.85rem;
+}
+
+.trends-panel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.trend-series-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.trend-row {
+  display: grid;
+  grid-template-columns: minmax(88px, auto) 1fr auto;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.trend-label {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.trend-bar-track {
+  height: 10px;
+  border-radius: 999px;
+  background: #edf2f5;
+  overflow: hidden;
+  border: 1px solid #e1e8ee;
+}
+
+.trend-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(14, 165, 168, 0.55), var(--accent));
+}
+
+.trend-bar-fill.metric {
+  background: linear-gradient(90deg, rgba(11, 141, 144, 0.45), #22c1a6);
+}
+
+.trend-value {
+  font-size: 0.86rem;
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .my-sessions-list {
   display: grid;
   gap: 0.75rem;
