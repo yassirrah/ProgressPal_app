@@ -23,6 +23,11 @@ public class UserController {
         return service.list();
     }
 
+    @GetMapping("/search")
+    public List<UserDto> searchByUsername(@RequestParam("q") String query) {
+        return service.searchByUsername(query);
+    }
+
     @GetMapping("/{id}")
     public UserDto get(@PathVariable UUID id) {
         return service.find(id);

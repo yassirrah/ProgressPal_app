@@ -33,6 +33,17 @@ public class UserService {
                 .toList();
     }
 
+    public List<UserDto> searchByUsername(String query) {
+        String normalized = query == null ? "" : query.trim();
+        if (normalized.isBlank()) {
+            return List.of();
+        }
+
+        return repo.findTop10ByUsernameContainingIgnoreCaseOrderByUsernameAsc(normalized).stream()
+                .map(mapper::toDto)
+                .toList();
+    }
+
     public UserDto find(UUID id) {
         return repo.findById(id)
                 .map(mapper::toDto)
