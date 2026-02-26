@@ -4,6 +4,7 @@ import {
   getFriends,
   getIncomingFriendRequests,
   getStoredUser,
+  searchUsersByUsername,
   sendFriendRequest,
 } from '../lib/api';
 
@@ -11,7 +12,11 @@ const Friends = () => {
   const user = useMemo(() => getStoredUser(), []);
   const [friends, setFriends] = useState([]);
   const [incomingRequests, setIncomingRequests] = useState([]);
+  const [friendLookup, setFriendLookup] = useState('');
   const [receiverId, setReceiverId] = useState('');
+  const [userSuggestions, setUserSuggestions] = useState([]);
+  const [searchingUsers, setSearchingUsers] = useState(false);
+  const [lookupFocused, setLookupFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [acceptingRequesterId, setAcceptingRequesterId] = useState('');
@@ -42,15 +47,64 @@ const Friends = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const query = friendLookup.trim();
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+    if (!user || !query || query.length < 2 || uuidPattern.test(query)) {
+      setUserSuggestions([]);
+      setSearchingUsers(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        setSearchingUsers(true);
+        const users = await searchUsersByUsername(query);
+        if (cancelled) return;
+        setUserSuggestions((users || []).filter((candidate) => candidate.id !== user.id));
+      } catch {
+        if (!cancelled) setUserSuggestions([]);
+      } finally {
+        if (!cancelled) setSearchingUsers(false);
+      }
+    }, 220);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [friendLookup, user]);
+
+  const friendIdSet = useMemo(
+    () => new Set((friends || []).map((friend) => friend.FriendId)),
+    [friends],
+  );
+
+  const visibleSuggestions = useMemo(
+    () => userSuggestions.filter((candidate) => !friendIdSet.has(candidate.id)),
+    [userSuggestions, friendIdSet],
+  );
+
   const handleSendRequest = async (e) => {
     e.preventDefault();
     if (!user) return;
+    const input = friendLookup.trim();
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const resolvedReceiverId = receiverId.trim() || (uuidPattern.test(input) ? input : '');
+    if (!resolvedReceiverId) {
+      setError('Select a user from suggestions or enter a valid user ID.');
+      return;
+    }
     try {
       setSending(true);
       setError('');
       setMessage('');
-      await sendFriendRequest(user.id, receiverId.trim());
+      await sendFriendRequest(user.id, resolvedReceiverId);
+      setFriendLookup('');
       setReceiverId('');
+      setUserSuggestions([]);
       setSendSuccessPulse(true);
       setMessage('Friend request sent.');
       window.setTimeout(() => setSendSuccessPulse(false), 1400);
@@ -60,6 +114,28 @@ const Friends = () => {
     } finally {
       setSending(false);
     }
+  };
+
+  const handleLookupChange = (value) => {
+    setFriendLookup(value);
+    setLookupFocused(true);
+
+    const trimmed = value.trim();
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (uuidPattern.test(trimmed)) {
+      setReceiverId(trimmed);
+      setUserSuggestions([]);
+    } else {
+      setReceiverId('');
+    }
+  };
+
+  const handleSelectSuggestion = (candidate) => {
+    setFriendLookup(candidate.username);
+    setReceiverId(candidate.id);
+    setUserSuggestions([]);
+    setLookupFocused(false);
+    setError('');
   };
 
   const handleAcceptRequest = async (requesterId) => {
@@ -119,21 +195,56 @@ const Friends = () => {
         <form onSubmit={handleSendRequest} className="friends-form">
           <div>
             <label>Search by Username or User ID</label>
-            <input
-              type="text"
-              value={receiverId}
-              onChange={(e) => setReceiverId(e.target.value)}
-              placeholder="username or UUID"
-              required
-            />
+            <div className="friends-lookup">
+              <input
+                type="text"
+                value={friendLookup}
+                onChange={(e) => handleLookupChange(e.target.value)}
+                onFocus={() => setLookupFocused(true)}
+                onBlur={() => window.setTimeout(() => setLookupFocused(false), 100)}
+                placeholder="Type a username or paste a UUID"
+                required
+                autoComplete="off"
+              />
+              {lookupFocused && (visibleSuggestions.length > 0 || searchingUsers) && (
+                <div className="friends-typeahead-list" role="listbox" aria-label="User suggestions">
+                  {searchingUsers && (
+                    <div className="friends-typeahead-status">Searching usernames...</div>
+                  )}
+                  {!searchingUsers && visibleSuggestions.map((candidate) => (
+                    <button
+                      key={candidate.id}
+                      type="button"
+                      className="friends-typeahead-item"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleSelectSuggestion(candidate);
+                      }}
+                    >
+                      <span
+                        className="friend-avatar friend-avatar--mini"
+                        style={avatarStyleFor(candidate.username)}
+                        aria-hidden="true"
+                      >
+                        {getInitial(candidate.username)}
+                      </span>
+                      <span className="friends-typeahead-text">
+                        <span className="friends-typeahead-name">{candidate.username}</span>
+                        <span className="friends-typeahead-meta">Select user</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <p className="message-muted" style={{ margin: '6px 0 0' }}>
-              User ID is supported now. Username search can be added later without changing this UI.
+              Type a username to autocomplete, or paste a user ID directly.
             </p>
           </div>
           <div className="friends-form-actions">
             <button
               type="submit"
-              disabled={sending || !receiverId.trim()}
+              disabled={sending || !friendLookup.trim()}
               className={sendSuccessPulse ? 'button-success-pulse' : ''}
             >
               {sending ? 'Sending...' : sendSuccessPulse ? '✓ Request Sent' : 'Send Request'}

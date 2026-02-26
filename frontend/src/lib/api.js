@@ -222,6 +222,17 @@ export async function getFriends(userId) {
   }
 }
 
+export async function searchUsersByUsername(query) {
+  try {
+    const { data } = await client.get('/users/search', {
+      params: { q: query },
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to search users'));
+  }
+}
+
 export async function sendFriendRequest(userId, receiverId) {
   try {
     await client.post('/friends/send', null, {
