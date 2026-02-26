@@ -793,6 +793,74 @@ form {
   padding: 0;
 }
 
+.friends-lookup {
+  position: relative;
+}
+
+.friends-typeahead-list {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 10px 28px rgba(12, 25, 38, 0.08);
+  overflow: hidden;
+  display: grid;
+}
+
+.friends-typeahead-status {
+  padding: 0.6rem 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.friends-typeahead-item {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  background: transparent;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.friends-typeahead-item:last-child {
+  border-bottom: 0;
+}
+
+.friends-typeahead-item:hover,
+.friends-typeahead-item:focus-visible {
+  background: rgba(14, 165, 168, 0.06);
+}
+
+.friends-typeahead-text {
+  min-width: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+
+.friends-typeahead-name {
+  color: var(--text);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.friends-typeahead-meta {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .friends-form-actions {
   display: flex;
   justify-content: flex-start;
@@ -848,6 +916,12 @@ form {
   border: 1px solid var(--border);
   font-weight: 800;
   flex-shrink: 0;
+}
+
+.friend-avatar--mini {
+  width: 30px;
+  height: 30px;
+  font-size: 0.85rem;
 }
 
 .friend-name {
