@@ -24,6 +24,10 @@ public interface SessionRepository extends JpaRepository<Session, UUID>, JpaSpec
 
     @EntityGraph(attributePaths = {"user", "activityType"})
     Page<Session> findByVisibilityOrderByStartedAtDesc(Visibility visibility, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"user", "activityType"})
+    Page<Session> findByUser_IdInAndVisibilityOrderByStartedAtDesc(List<UUID> userIds, Visibility visibility, Pageable pageable);
+
     Optional<Session> findFirstByUser_IdAndEndedAtIsNullOrderByStartedAtDesc(UUID userId);
 
 }

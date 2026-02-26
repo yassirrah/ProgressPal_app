@@ -8,7 +8,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/feed")
@@ -22,8 +22,9 @@ public class FeedController {
 
     @GetMapping
     public Page<FeedSessionDto> feed(
+            @RequestHeader("X-User-Id") UUID userId,
             @PageableDefault(size = 20, sort = "startedAt", direction = Sort.Direction.DESC)
             Pageable pageable){
-        return service.getFeedSessions(pageable);
+        return service.getFeedSessions(userId, pageable);
     }
 }

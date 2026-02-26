@@ -25,6 +25,7 @@ import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionStopDto;
 import org.progresspalbackend.progresspalbackend.mapper.SessionMapper;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
+import org.progresspalbackend.progresspalbackend.repository.FriendRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.data.domain.Page;
@@ -48,6 +49,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -60,6 +62,7 @@ public class SessionService {
     private final SessionRepository sessionRepo;
     private final UserRepository userRepo;
     private final ActivityTypeRepository typeRepo;
+    private final FriendRepository friendRepository;
     private final SessionMapper mapper;
     private final ActivityTypeRepository activityTypeRepository;
 
@@ -143,8 +146,18 @@ public class SessionService {
         return sessions.map(mapper::toDto);
     }
 
-    public Page<FeedSessionDto> getFeedSessions(Pageable pageable){
-        return sessionRepo.findByVisibilityOrderByStartedAtDesc(Visibility.PUBLIC, pageable)
+    public Page<FeedSessionDto> getFeedSessions(UUID actorUserId, Pageable pageable){
+        Set<UUID> friendIds = new LinkedHashSet<>();
+        friendRepository.findAllByUser_Id(actorUserId)
+                .forEach(friendship -> friendIds.add(friendship.getFriend().getId()));
+        friendRepository.findAllByFriend_Id(actorUserId)
+                .forEach(friendship -> friendIds.add(friendship.getUser().getId()));
+
+        if (friendIds.isEmpty()) {
+            return Page.empty(pageable);
+        }
+
+        return sessionRepo.findByUser_IdInAndVisibilityOrderByStartedAtDesc(List.copyOf(friendIds), Visibility.PUBLIC, pageable)
                 .map(s -> new FeedSessionDto(
                     s.getId(),
                     s.getUser().getId(),
