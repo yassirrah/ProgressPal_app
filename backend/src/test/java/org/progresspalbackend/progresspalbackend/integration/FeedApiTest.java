@@ -3,11 +3,13 @@ package org.progresspalbackend.progresspalbackend.integration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
+import org.progresspalbackend.progresspalbackend.domain.Friendship;
 import org.progresspalbackend.progresspalbackend.domain.MetricKind;
 import org.progresspalbackend.progresspalbackend.domain.Session;
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
+import org.progresspalbackend.progresspalbackend.repository.FriendRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,6 +57,8 @@ public class FeedApiTest {
     ActivityTypeRepository activityTypeRepo;
     @Autowired
     UserRepository userRepo;
+    @Autowired
+    FriendRepository friendRepo;
 
     @Autowired
     MockMvc mockMvc;
@@ -64,34 +68,46 @@ public class FeedApiTest {
 
     @BeforeEach
     void cleanDb() {
-        userRepo.deleteAll();
-        activityTypeRepo.deleteAll();
         sessionRepo.deleteAll();
+        friendRepo.deleteAll();
+        activityTypeRepo.deleteAll();
+        userRepo.deleteAll();
     }
 
     @Test
-    void feed_returnsOnlyPublicSessions_orderedDesc() throws  Exception{
+    void feed_returnsOnlyFriendsPublicSessions_orderedDesc() throws  Exception{
 
-        User u1 = persistUser();
-        User u2 = persistUser();
+        User viewer = persistUser();
+        User friendA = persistUser();
+        User friendB = persistUser();
+        User stranger = persistUser();
 
         ActivityType t1 = persistActivityType("Study");
         ActivityType t2 = persistActivityType("Gym");
+        ActivityType t3 = persistActivityType("Chess");
         t1.setMetricKind(MetricKind.INTEGER);
         t1.setMetricLabel("games");
         t1 = activityTypeRepo.save(t1);
 
-        Session pub1 = sessionRepo.save(session(u1, t1, Visibility.PUBLIC, Instant.parse("2026-01-01T10:00:00Z")));
+        // friendship in both possible directions should be respected
+        friendRepo.save(friendship(viewer, friendA));
+        friendRepo.save(friendship(friendB, viewer));
+
+        Session pub1 = sessionRepo.save(session(friendA, t1, Visibility.PUBLIC, Instant.parse("2026-01-01T10:00:00Z")));
         pub1.setMetricValue(new BigDecimal("10"));
         pub1 = sessionRepo.save(pub1);
 
-        // PRIVATE (newer but should NOT appear)
-        sessionRepo.save(session(u2, t2, Visibility.PRIVATE, Instant.parse("2026-01-03T10:00:00Z")));
+        // friend private (should not appear)
+        sessionRepo.save(session(friendA, t2, Visibility.PRIVATE, Instant.parse("2026-01-03T10:00:00Z")));
 
-        // PUBLIC (newest)
-        Session pub2 = sessionRepo.save(session(u2, t2, Visibility.PUBLIC, Instant.parse("2026-01-04T10:00:00Z")));
+        // friend public (newest)
+        Session pub2 = sessionRepo.save(session(friendB, t2, Visibility.PUBLIC, Instant.parse("2026-01-04T10:00:00Z")));
+
+        // stranger public (should not appear even if public)
+        sessionRepo.save(session(stranger, t3, Visibility.PUBLIC, Instant.parse("2026-01-05T10:00:00Z")));
 
         mockMvc.perform(get("/api/feed")
+                .header("X-User-Id", viewer.getId().toString())
                 .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(2))
@@ -133,5 +149,13 @@ public class FeedApiTest {
         s.setEndedAt(null);
         s.setTitle("t");
         return s;
+    }
+
+    private Friendship friendship(User user, User friend) {
+        Friendship f = new Friendship();
+        f.setUser(user);
+        f.setFriend(friend);
+        f.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z"));
+        return f;
     }
 }

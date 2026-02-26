@@ -3,10 +3,12 @@ package org.progresspalbackend.progresspalbackend.integration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
+import org.progresspalbackend.progresspalbackend.domain.Friendship;
 import org.progresspalbackend.progresspalbackend.domain.Session;
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
+import org.progresspalbackend.progresspalbackend.repository.FriendRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,27 +53,35 @@ class FeedPaginationApiTest {
     @Autowired SessionRepository sessionRepo;
     @Autowired ActivityTypeRepository activityTypeRepo;
     @Autowired UserRepository userRepo;
+    @Autowired FriendRepository friendRepo;
 
     @BeforeEach
     void cleanDb() {
         sessionRepo.deleteAll();
+        friendRepo.deleteAll();
         activityTypeRepo.deleteAll();
         userRepo.deleteAll();
     }
 
     @Test
     void feed_page0_size2_returnsNewest2PublicSessions() throws Exception {
-        User u = persistUser();
+        User viewer = persistUser();
+        User friend = persistUser();
+        User stranger = persistUser();
         ActivityType t = persistActivityType("Study");
+        friendship(viewer, friend);
 
-        Session s1 = sessionRepo.save(session(u, t, Visibility.PUBLIC, Instant.parse("2026-01-01T10:00:00Z")));
-        Session s2 = sessionRepo.save(session(u, t, Visibility.PUBLIC, Instant.parse("2026-01-02T10:00:00Z")));
-        Session s3 = sessionRepo.save(session(u, t, Visibility.PUBLIC, Instant.parse("2026-01-03T10:00:00Z")));
+        Session s1 = sessionRepo.save(session(friend, t, Visibility.PUBLIC, Instant.parse("2026-01-01T10:00:00Z")));
+        Session s2 = sessionRepo.save(session(friend, t, Visibility.PUBLIC, Instant.parse("2026-01-02T10:00:00Z")));
+        Session s3 = sessionRepo.save(session(friend, t, Visibility.PUBLIC, Instant.parse("2026-01-03T10:00:00Z")));
 
-        // Private should never appear
-        sessionRepo.save(session(u, t, Visibility.PRIVATE, Instant.parse("2026-01-04T10:00:00Z")));
+        // Private friend session should never appear
+        sessionRepo.save(session(friend, t, Visibility.PRIVATE, Instant.parse("2026-01-04T10:00:00Z")));
+        // Stranger public should never appear
+        sessionRepo.save(session(stranger, t, Visibility.PUBLIC, Instant.parse("2026-01-05T10:00:00Z")));
 
         mvc.perform(get("/api/feed")
+                        .header("X-User-Id", viewer.getId().toString())
                         .queryParam("page", "0")
                         .queryParam("size", "2")
                         .accept(MediaType.APPLICATION_JSON))
@@ -88,14 +98,17 @@ class FeedPaginationApiTest {
 
     @Test
     void feed_page1_size2_returnsNextPublicSession() throws Exception {
-        User u = persistUser();
+        User viewer = persistUser();
+        User friend = persistUser();
         ActivityType t = persistActivityType("Study");
+        friendship(viewer, friend);
 
-        Session s1 = sessionRepo.save(session(u, t, Visibility.PUBLIC, Instant.parse("2026-01-01T10:00:00Z")));
-        sessionRepo.save(session(u, t, Visibility.PUBLIC, Instant.parse("2026-01-02T10:00:00Z")));
-        sessionRepo.save(session(u, t, Visibility.PUBLIC, Instant.parse("2026-01-03T10:00:00Z")));
+        Session s1 = sessionRepo.save(session(friend, t, Visibility.PUBLIC, Instant.parse("2026-01-01T10:00:00Z")));
+        sessionRepo.save(session(friend, t, Visibility.PUBLIC, Instant.parse("2026-01-02T10:00:00Z")));
+        sessionRepo.save(session(friend, t, Visibility.PUBLIC, Instant.parse("2026-01-03T10:00:00Z")));
 
         mvc.perform(get("/api/feed")
+                        .header("X-User-Id", viewer.getId().toString())
                         .queryParam("page", "1")
                         .queryParam("size", "2")
                         .accept(MediaType.APPLICATION_JSON))
@@ -131,5 +144,13 @@ class FeedPaginationApiTest {
         s.setEndedAt(null);
         s.setTitle("t");
         return s;
+    }
+
+    private Friendship friendship(User user, User friend) {
+        Friendship f = new Friendship();
+        f.setUser(user);
+        f.setFriend(friend);
+        f.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z"));
+        return friendRepo.save(f);
     }
 }

@@ -26,10 +26,16 @@ const Feed = () => {
     loadFriends();
 
     const loadFeed = async () => {
+      if (!currentUser?.id) {
+        setFeedItems([]);
+        setLoading(false);
+        setError('Please log in to view your friends feed');
+        return;
+      }
       setLoading(true);
       setError('');
       try {
-        const response = await getFeed(0, 20);
+        const response = await getFeed(currentUser.id, 0, 20);
         setFeedItems(response.content || []);
       } catch (err) {
         setError(err.message || 'Failed to load feed');
@@ -136,13 +142,13 @@ const Feed = () => {
 
   return (
     <div className="feed-page">
-      <h1>Public Feed</h1>
+      <h1>Friends Feed</h1>
       {error && <p className="message-error">{error}</p>}
       {message && <p className="message-muted">{message}</p>}
       {loading && <p>Loading...</p>}
 
       {feedItems.length === 0 ? (
-        <p>No public sessions yet.</p>
+        <p>No friend sessions yet.</p>
       ) : (
         <div className="feed-grid">
           {feedItems.map((item) => (
