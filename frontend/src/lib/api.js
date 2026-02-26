@@ -52,9 +52,12 @@ export async function loginUserByEmail(email) {
   }
 }
 
-export async function getFeed(page = 0, size = 10) {
+export async function getFeed(userId, page = 0, size = 10) {
   try {
-    const { data } = await client.get('/feed', { params: { page, size } });
+    const { data } = await client.get('/feed', {
+      headers: { 'X-User-Id': userId },
+      params: { page, size },
+    });
     return data;
   } catch (error) {
     throw new Error(toErrorMessage(error, 'Failed to load feed'));
