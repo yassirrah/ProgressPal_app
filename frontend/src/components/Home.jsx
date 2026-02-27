@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   createActivityType,
   createSession,
+  deleteActivityType,
   getActivityTypes,
   getLiveSession,
   getStoredUser,
@@ -25,6 +26,7 @@ const Home = () => {
   const [typeEditorMode, setTypeEditorMode] = useState('create');
   const [typeSearch, setTypeSearch] = useState('');
   const [iconPreviewFailed, setIconPreviewFailed] = useState(false);
+  const [deletingType, setDeletingType] = useState(false);
 
   const [newTypeName, setNewTypeName] = useState('');
   const [newTypeIconUrl, setNewTypeIconUrl] = useState('');
@@ -228,6 +230,33 @@ const Home = () => {
     setNewTypeIconUrl('');
     setNewTypeMetricKind('NONE');
     setNewTypeMetricLabel('');
+  };
+
+  const handleDeleteType = async () => {
+    if (!user || !editTypeId) return;
+    const selected = customActivityTypes.find((type) => type.id === editTypeId);
+    const typeName = selected?.name || 'this activity type';
+    const confirmed = window.confirm(`Delete "${typeName}"?`);
+    if (!confirmed) return;
+
+    try {
+      setDeletingType(true);
+      setTypeError('');
+      await deleteActivityType(user.id, editTypeId);
+      setTypeEditorMode('create');
+      setEditTypeId('');
+      setEditTypeForm({ name: '', iconUrl: '', metricKind: 'NONE', metricLabel: '' });
+      await loadData();
+    } catch (err) {
+      const raw = err.message || 'Failed to delete activity type';
+      if (raw.toLowerCase().includes('in use')) {
+        setTypeError('You cannot delete this activity type because it already has sessions.');
+      } else {
+        setTypeError(raw);
+      }
+    } finally {
+      setDeletingType(false);
+    }
   };
 
   const filteredCustomTypes = useMemo(() => {
@@ -628,8 +657,19 @@ const Home = () => {
                           type="button"
                           className="secondary-button"
                           onClick={handleCreateNewTypeMode}
+                          disabled={deletingType}
                         >
                           Create New Instead
+                        </button>
+                      )}
+                      {isEditingType && (
+                        <button
+                          type="button"
+                          className="danger-soft-button"
+                          onClick={handleDeleteType}
+                          disabled={deletingType}
+                        >
+                          {deletingType ? 'Deleting...' : 'Delete Activity Type'}
                         </button>
                       )}
                     </div>

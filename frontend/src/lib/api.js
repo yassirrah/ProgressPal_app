@@ -96,6 +96,16 @@ export async function updateActivityType(id, payload) {
   }
 }
 
+export async function deleteActivityType(userId, id) {
+  try {
+    await client.delete(`/activity-types/${id}`, {
+      headers: { 'X-User-Id': userId },
+    });
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to delete activity type'));
+  }
+}
+
 export async function getLiveSession(userId) {
   try {
     const response = await client.get('/sessions/live', {
