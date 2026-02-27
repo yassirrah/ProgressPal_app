@@ -105,10 +105,9 @@ public class ActivityTypeService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not allowed to delete this activity type");
         }
 
-        // optional: block if used
-//        if (sessionRepository.existsByActivityType_Id(id)) {
-//            throw new ResponseStatusException(HttpStatus.CONFLICT, "ActivityType is in use");
-//        }
+        if (sessionRepository.existsByActivityType_Id(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "ActivityType is in use");
+        }
 
         activityTypeRepository.delete(type);
     }

@@ -4,8 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
+import org.progresspalbackend.progresspalbackend.domain.Session;
 import org.progresspalbackend.progresspalbackend.domain.User;
+import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
+import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -18,6 +21,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -45,6 +49,7 @@ public class ActivityTypeScopeApiTest {
     }
 
     @Autowired ActivityTypeRepository activityTypeRepo;
+    @Autowired SessionRepository sessionRepo;
     @Autowired UserRepository userRepo;
 
     @Autowired MockMvc mockMvc;
@@ -52,6 +57,7 @@ public class ActivityTypeScopeApiTest {
 
     @BeforeEach
     void cleanDb() {
+        sessionRepo.deleteAll();
         activityTypeRepo.deleteAll();
         userRepo.deleteAll();
     }
@@ -182,6 +188,24 @@ public class ActivityTypeScopeApiTest {
         mockMvc.perform(delete("/api/activity-types/{id}", def.getId())
                         .header("X-User-Id", u1.getId().toString()))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void delete_custom_type_in_use_returns409() throws Exception {
+        User owner = persistUser();
+        ActivityType mine = persistCustomType(owner, "Chess");
+
+        Session s = new Session();
+        s.setUser(owner);
+        s.setActivityType(mine);
+        s.setVisibility(Visibility.PUBLIC);
+        s.setStartedAt(Instant.parse("2026-01-01T10:00:00Z"));
+        s.setTitle("used");
+        sessionRepo.save(s);
+
+        mockMvc.perform(delete("/api/activity-types/{id}", mine.getId())
+                        .header("X-User-Id", owner.getId().toString()))
+                .andExpect(status().isConflict());
     }
 
     // If your implementation uses 404 to "hide" resources instead of 403,
