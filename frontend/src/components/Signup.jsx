@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { setStoredUser, signupUser } from '../lib/api';
+import { loginUser, setStoredUser, signupUser } from '../lib/api';
 
 const Signup = () => {
   const [username, setUsername] = useState('');
@@ -19,7 +19,12 @@ const Signup = () => {
         profileImage: '',
         bio: '',
       });
-      setStoredUser(user);
+      try {
+        const auth = await loginUser(email, password);
+        setStoredUser(auth.user, auth.token);
+      } catch {
+        setStoredUser(user, null);
+      }
       setError('');
       navigate('/');
     } catch (err) {

@@ -2,6 +2,7 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 const USER_STORAGE_KEY = 'progresspal_user';
+const AUTH_STORAGE_KEY = 'progresspal_auth';
 
 const client = axios.create({
   baseURL: API_BASE_URL,
@@ -11,8 +12,7 @@ function toErrorMessage(error, fallback) {
   return error?.response?.data?.message || fallback;
 }
 
-export function getStoredUser() {
-  const raw = localStorage.getItem(USER_STORAGE_KEY);
+function safeParse(raw) {
   if (!raw) return null;
   try {
     return JSON.parse(raw);
@@ -21,12 +21,77 @@ export function getStoredUser() {
   }
 }
 
-export function setStoredUser(user) {
-  localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+function readAuthState() {
+  const auth = safeParse(localStorage.getItem(AUTH_STORAGE_KEY));
+  if (auth && auth.user && auth.user.id) {
+    return {
+      user: auth.user,
+      token: typeof auth.token === 'string' && auth.token.trim() ? auth.token.trim() : null,
+    };
+  }
+
+  const legacyUser = safeParse(localStorage.getItem(USER_STORAGE_KEY));
+  if (legacyUser && legacyUser.id) {
+    return { user: legacyUser, token: null };
+  }
+
+  return null;
+}
+
+function persistAuthState(state) {
+  if (!state || !state.user) {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    localStorage.removeItem(USER_STORAGE_KEY);
+    return;
+  }
+
+  const normalized = {
+    user: state.user,
+    token: typeof state.token === 'string' && state.token.trim() ? state.token.trim() : null,
+  };
+
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(normalized));
+  localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(normalized.user));
+}
+
+function authHeaders(userId) {
+  const state = readAuthState();
+  if (state?.token) {
+    return { Authorization: `Bearer ${state.token}` };
+  }
+
+  const fallbackUserId = userId || state?.user?.id;
+  if (fallbackUserId) {
+    return { 'X-User-Id': fallbackUserId };
+  }
+
+  return {};
+}
+
+export function getStoredAuth() {
+  return readAuthState();
+}
+
+export function getStoredAuthToken() {
+  return readAuthState()?.token || null;
+}
+
+export function getStoredUser() {
+  return readAuthState()?.user || null;
+}
+
+export function setStoredUser(user, token = null) {
+  persistAuthState({ user, token });
+}
+
+export function setStoredAuthToken(token) {
+  const state = readAuthState();
+  if (!state?.user) return;
+  persistAuthState({ user: state.user, token });
 }
 
 export function clearStoredUser() {
-  localStorage.removeItem(USER_STORAGE_KEY);
+  persistAuthState(null);
 }
 
 export async function signupUser(payload) {
@@ -38,24 +103,24 @@ export async function signupUser(payload) {
   }
 }
 
-export async function loginUserByEmail(email) {
+export async function loginUser(email, password) {
   try {
-    const { data } = await client.get('/users');
-    const user = data.find((entry) => entry.email.toLowerCase() === email.toLowerCase());
-    if (!user) {
-      throw new Error('No user found with that email');
-    }
-    return user;
+    const { data } = await client.post('/auth/login', { email, password });
+    return data;
   } catch (error) {
-    if (error instanceof Error) throw error;
     throw new Error(toErrorMessage(error, 'Login failed'));
   }
+}
+
+export async function loginUserByEmail(email, password) {
+  const auth = await loginUser(email, password);
+  return auth.user;
 }
 
 export async function getFeed(userId, page = 0, size = 10) {
   try {
     const { data } = await client.get('/feed', {
-      headers: { 'X-User-Id': userId },
+      headers: authHeaders(userId),
       params: { page, size },
     });
     return data;
@@ -67,7 +132,7 @@ export async function getFeed(userId, page = 0, size = 10) {
 export async function getActivityTypes(userId, scope = 'ALL') {
   try {
     const { data } = await client.get('/activity-types', {
-      headers: { 'X-User-Id': userId },
+      headers: authHeaders(userId),
       params: { scope },
     });
     return data;
@@ -79,7 +144,7 @@ export async function getActivityTypes(userId, scope = 'ALL') {
 export async function createActivityType(userId, payload) {
   try {
     const { data } = await client.post('/activity-types', payload, {
-      headers: { 'X-User-Id': userId },
+      headers: authHeaders(userId),
     });
     return data;
   } catch (error) {
@@ -99,7 +164,7 @@ export async function updateActivityType(id, payload) {
 export async function deleteActivityType(userId, id) {
   try {
     await client.delete(`/activity-types/${id}`, {
-      headers: { 'X-User-Id': userId },
+      headers: authHeaders(userId),
     });
   } catch (error) {
     throw new Error(toErrorMessage(error, 'Failed to delete activity type'));
@@ -109,7 +174,7 @@ export async function deleteActivityType(userId, id) {
 export async function getLiveSession(userId) {
   try {
     const response = await client.get('/sessions/live', {
-      headers: { 'X-User-Id': userId },
+      headers: authHeaders(userId),
       validateStatus: (status) => status === 200 || status === 204,
     });
     return response.status === 204 ? null : response.data;
@@ -121,7 +186,7 @@ export async function getLiveSession(userId) {
 export async function createSession(userId, payload) {
   try {
     const { data } = await client.post('/sessions', payload, {
-      headers: { 'X-User-Id': userId },
+      headers: authHeaders(userId),
     });
     return data;
   } catch (error) {
@@ -134,7 +199,7 @@ export async function stopSession(userId, sessionId, payload = {}) {
     const { data } = await client.patch(
       `/sessions/${sessionId}/stop`,
       payload,
-      { headers: { 'X-User-Id': userId } },
+      { headers: authHeaders(userId) },
     );
     return data;
   } catch (error) {
@@ -147,7 +212,7 @@ export async function pauseSession(userId, sessionId) {
     const { data } = await client.patch(
       `/sessions/${sessionId}/pause`,
       null,
-      { headers: { 'X-User-Id': userId } },
+      { headers: authHeaders(userId) },
     );
     return data;
   } catch (error) {
@@ -160,7 +225,7 @@ export async function resumeSession(userId, sessionId) {
     const { data } = await client.patch(
       `/sessions/${sessionId}/resume`,
       null,
-      { headers: { 'X-User-Id': userId } },
+      { headers: authHeaders(userId) },
     );
     return data;
   } catch (error) {
@@ -173,7 +238,7 @@ export async function updateSessionGoal(userId, sessionId, payload) {
     const { data } = await client.patch(
       `/sessions/${sessionId}/goal`,
       payload,
-      { headers: { 'X-User-Id': userId } },
+      { headers: authHeaders(userId) },
     );
     return data;
   } catch (error) {
@@ -186,7 +251,7 @@ export async function updateSessionProgress(userId, sessionId, payload) {
     const { data } = await client.patch(
       `/sessions/${sessionId}/progress`,
       payload,
-      { headers: { 'X-User-Id': userId } },
+      { headers: authHeaders(userId) },
     );
     return data;
   } catch (error) {
@@ -206,7 +271,7 @@ export async function getMySessions(userId, filters = {}) {
     });
 
     const { data } = await client.get('/me/sessions', {
-      headers: { 'X-User-Id': userId },
+      headers: authHeaders(userId),
       params,
     });
     return data;
@@ -225,7 +290,7 @@ export async function getMyDashboardSummary(userId, filters = {}) {
     });
 
     const { data } = await client.get('/me/dashboard/summary', {
-      headers: { 'X-User-Id': userId },
+      headers: authHeaders(userId),
       params,
     });
     return data;
@@ -244,7 +309,7 @@ export async function getMyDashboardByActivityType(userId, filters = {}) {
     });
 
     const { data } = await client.get('/me/dashboard/by-activity-type', {
-      headers: { 'X-User-Id': userId },
+      headers: authHeaders(userId),
       params,
     });
     return data;
@@ -264,7 +329,7 @@ export async function getMyDashboardTrends(userId, filters = {}) {
     });
 
     const { data } = await client.get('/me/dashboard/trends', {
-      headers: { 'X-User-Id': userId },
+      headers: authHeaders(userId),
       params,
     });
     return data;
@@ -276,7 +341,7 @@ export async function getMyDashboardTrends(userId, filters = {}) {
 export async function getFriends(userId) {
   try {
     const { data } = await client.get('/friends', {
-      headers: { 'X-User-Id': userId },
+      headers: authHeaders(userId),
     });
     return data;
   } catch (error) {
@@ -298,7 +363,7 @@ export async function searchUsersByUsername(query) {
 export async function sendFriendRequest(userId, receiverId) {
   try {
     await client.post('/friends/send', null, {
-      headers: { 'X-User-Id': userId },
+      headers: authHeaders(userId),
       params: { receiverId },
     });
   } catch (error) {
@@ -309,7 +374,7 @@ export async function sendFriendRequest(userId, receiverId) {
 export async function acceptFriendRequest(userId, requesterId) {
   try {
     await client.patch('/friends/accept', null, {
-      headers: { 'X-User-Id': userId },
+      headers: authHeaders(userId),
       params: { requesterId },
     });
   } catch (error) {
@@ -320,7 +385,7 @@ export async function acceptFriendRequest(userId, requesterId) {
 export async function getIncomingFriendRequests(userId) {
   try {
     const { data } = await client.get('/friends/requests/incoming', {
-      headers: { 'X-User-Id': userId },
+      headers: authHeaders(userId),
     });
     return data;
   } catch (error) {

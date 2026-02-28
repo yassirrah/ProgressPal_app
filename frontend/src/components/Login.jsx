@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { loginUserByEmail, setStoredUser } from '../lib/api';
+import { loginUser, setStoredUser } from '../lib/api';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -11,8 +11,8 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const user = await loginUserByEmail(email);
-      setStoredUser(user);
+      const auth = await loginUser(email, password);
+      setStoredUser(auth.user, auth.token);
       setError('');
       navigate('/');
     } catch (err) {
@@ -46,10 +46,10 @@ const Login = () => {
         <button type="submit">Login</button>
       </form>
       <p style={{ color: '#666' }}>
-        Note: backend currently authenticates by user id header, so login uses email lookup.
+        Login now issues a bearer token and stores it for authenticated API calls.
       </p>
       <p>
-        Don't have an account? <a href="/signup">Sign up</a>
+        Don&apos;t have an account? <a href="/signup">Sign up</a>
       </p>
     </div>
   );
