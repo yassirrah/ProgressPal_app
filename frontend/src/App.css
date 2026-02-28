@@ -11,3 +11,14 @@
   background: rgba(255, 255, 255, 0.88);
   box-shadow: var(--shadow);
 }
+
+body.focus-mode-active .app-shell {
+  width: min(1120px, calc(100% - 1rem));
+  margin: 0.7rem auto 1.2rem;
+}
+
+body.focus-mode-active .app-main {
+  margin-top: 0.55rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 16px;
+}
