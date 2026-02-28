@@ -135,6 +135,21 @@ class SessionProgressApiTest {
         mvc.perform(patch("/api/sessions/{id}/progress", metricSessionId)
                         .header("X-User-Id", ownerId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void updateProgress_onPausedSession_returns409() throws Exception {
+        Session paused = sessionRepo.findById(metricSessionId).orElseThrow();
+        paused.setPausedAt(Instant.now().minusSeconds(30));
+        sessionRepo.save(paused);
+
+        String body = json.writeValueAsString(Map.of("metricCurrentValue", 3));
+
+        mvc.perform(patch("/api/sessions/{id}/progress", metricSessionId)
+                        .header("X-User-Id", ownerId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isConflict());
     }

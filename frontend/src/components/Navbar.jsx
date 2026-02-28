@@ -30,6 +30,7 @@ const Navbar = () => {
       </Link>
       <NavLink to="/" end className={navLinkClass}>Home</NavLink>
       <NavLink to="/my-sessions" className={navLinkClass}>My Sessions</NavLink>
+      <NavLink to="/activity-types" className={navLinkClass}>Activity Types</NavLink>
       <NavLink to="/feed" className={navLinkClass}>Feed</NavLink>
       <NavLink to="/friends" className={navLinkClass}>Friends</NavLink>
       {user ? (

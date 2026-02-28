@@ -1,12 +1,10 @@
 package org.progresspalbackend.progresspalbackend.service;
 
 import jakarta.annotation.Nullable;
-import jakarta.transaction.Status;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 
 
-import org.mapstruct.Mapper;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
 import org.progresspalbackend.progresspalbackend.domain.GoalType;
 import org.progresspalbackend.progresspalbackend.domain.MetricKind;
@@ -90,6 +88,8 @@ public class SessionService {
         entity.setActivityType(activityType);
         validateAndApplyGoal(entity, dto.goalType(), dto.goalTarget(), dto.goalNote());
         entity.setStartedAt(Instant.now());
+        entity.setPausedAt(null);
+        entity.setPausedDurationSeconds(0L);
         return mapper.toDto(sessionRepo.save(entity));
     }
 
@@ -149,9 +149,52 @@ public class SessionService {
         if (session.getEndedAt() != null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot update progress for a stopped session");
         }
+        if (session.getPausedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot update progress while session is paused");
+        }
 
         validateLiveMetricProgress(session.getActivityType(), body.metricCurrentValue());
         session.setMetricCurrentValue(body.metricCurrentValue());
+        return mapper.toDto(sessionRepo.save(session));
+    }
+
+    @Transactional
+    public SessionDto pause(UUID id, UUID actorUserId) {
+        Session session = sessionRepo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
+
+        if (!session.getUser().getId().equals(actorUserId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You cannot pause another user's session");
+        }
+        if (session.getEndedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Session already stopped");
+        }
+        if (session.getPausedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Session already paused");
+        }
+
+        session.setPausedAt(Instant.now());
+        return mapper.toDto(sessionRepo.save(session));
+    }
+
+    @Transactional
+    public SessionDto resume(UUID id, UUID actorUserId) {
+        Session session = sessionRepo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
+
+        if (!session.getUser().getId().equals(actorUserId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You cannot resume another user's session");
+        }
+        if (session.getEndedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Session already stopped");
+        }
+        if (session.getPausedAt() == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Session is not paused");
+        }
+
+        Instant resumedAt = Instant.now();
+        accruePausedDurationSeconds(session, resumedAt);
+        session.setPausedAt(null);
         return mapper.toDto(sessionRepo.save(session));
     }
 
@@ -172,7 +215,12 @@ public class SessionService {
             finalMetricValue = s.getMetricCurrentValue();
         }
         validateStopMetric(s.getActivityType(), finalMetricValue);
-        s.setEndedAt(Instant.now());
+        Instant endedAt = Instant.now();
+        if (s.getPausedAt() != null) {
+            accruePausedDurationSeconds(s, endedAt);
+            s.setPausedAt(null);
+        }
+        s.setEndedAt(endedAt);
         s.setMetricValue(finalMetricValue);
         return mapper.toDto(sessionRepo.save(s));
     }
@@ -483,7 +531,21 @@ public class SessionService {
 
     private long computeSessionDurationSeconds(Session session, Instant now) {
         Instant end = session.getEndedAt() == null ? now : session.getEndedAt();
-        return Math.max(0, Duration.between(session.getStartedAt(), end).getSeconds());
+        long rawDurationSeconds = Math.max(0, Duration.between(session.getStartedAt(), end).getSeconds());
+        long pausedSeconds = session.getPausedDurationSeconds() == null ? 0L : session.getPausedDurationSeconds();
+        if (session.getPausedAt() != null) {
+            pausedSeconds += Math.max(0, Duration.between(session.getPausedAt(), end).getSeconds());
+        }
+        return Math.max(0, rawDurationSeconds - pausedSeconds);
+    }
+
+    private void accruePausedDurationSeconds(Session session, Instant now) {
+        if (session.getPausedAt() == null) {
+            return;
+        }
+        long current = session.getPausedDurationSeconds() == null ? 0L : session.getPausedDurationSeconds();
+        long delta = Math.max(0, Duration.between(session.getPausedAt(), now).getSeconds());
+        session.setPausedDurationSeconds(current + delta);
     }
 
     private LocalDate bucketStartOf(Instant instant, TrendBucket bucket) {

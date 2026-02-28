@@ -48,6 +48,12 @@ public class Session {
     @Column(name = "ended_at")
     private Instant endedAt;
 
+    @Column(name = "paused_at")
+    private Instant pausedAt;
+
+    @Column(name = "paused_duration_seconds", nullable = false)
+    private Long pausedDurationSeconds = 0L;
+
     @Column(name = "metric_value")
     private BigDecimal metricValue;
 
@@ -74,5 +80,10 @@ public class Session {
     @Transient
     public boolean isLive() {
         return endedAt == null;
+    }
+
+    @Transient
+    public boolean isPaused() {
+        return pausedAt != null && endedAt == null;
     }
 }

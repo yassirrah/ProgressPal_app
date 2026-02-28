@@ -6,6 +6,7 @@ import Home from './components/Home';
 import Feed from './components/Feed';
 import Friends from './components/Friends';
 import MySessions from './components/MySessions';
+import ActivityTypes from './components/ActivityTypes';
 import Navbar from './components/Navbar';
 import './App.css';
 
@@ -18,6 +19,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/my-sessions" element={<MySessions />} />
+            <Route path="/activity-types" element={<ActivityTypes />} />
             <Route path="/feed" element={<Feed />} />
             <Route path="/friends" element={<Friends />} />
             <Route path="/login" element={<Login />} />

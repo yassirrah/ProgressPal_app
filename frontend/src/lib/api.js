@@ -142,6 +142,32 @@ export async function stopSession(userId, sessionId, payload = {}) {
   }
 }
 
+export async function pauseSession(userId, sessionId) {
+  try {
+    const { data } = await client.patch(
+      `/sessions/${sessionId}/pause`,
+      null,
+      { headers: { 'X-User-Id': userId } },
+    );
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to pause session'));
+  }
+}
+
+export async function resumeSession(userId, sessionId) {
+  try {
+    const { data } = await client.patch(
+      `/sessions/${sessionId}/resume`,
+      null,
+      { headers: { 'X-User-Id': userId } },
+    );
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to resume session'));
+  }
+}
+
 export async function updateSessionGoal(userId, sessionId, payload) {
   try {
     const { data } = await client.patch(

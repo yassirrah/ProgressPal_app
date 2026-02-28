@@ -27,6 +27,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -147,6 +148,24 @@ class SessionStopApiTest {
                         .header("X-User-Id", userId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.metricValue").value(7));
+    }
+
+    @Test
+    void stop_paused_session_clears_pause_state_and_accumulates_duration() throws Exception {
+        Session session = sessionRepo.findById(sessionId).orElseThrow();
+        session.setPausedAt(Instant.now().minusSeconds(45));
+        sessionRepo.save(session);
+
+                mvc.perform(patch("/api/sessions/{id}/stop", sessionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-User-Id", userId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paused").value(false))
+                .andExpect(jsonPath("$.pausedAt").value(nullValue()));
+
+        Session stopped = sessionRepo.findById(sessionId).orElseThrow();
+        org.junit.jupiter.api.Assertions.assertNull(stopped.getPausedAt());
+        org.junit.jupiter.api.Assertions.assertTrue(stopped.getPausedDurationSeconds() >= 45L);
     }
 
     @Test

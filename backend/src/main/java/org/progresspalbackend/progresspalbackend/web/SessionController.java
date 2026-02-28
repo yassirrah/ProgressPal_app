@@ -3,21 +3,17 @@ package org.progresspalbackend.progresspalbackend.web;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
-import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionCreateDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionGoalUpdateDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionProgressDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionStopDto;
 import org.progresspalbackend.progresspalbackend.service.SessionService;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 @RestController
@@ -65,6 +61,24 @@ public class SessionController {
             @RequestBody SessionProgressDto body
     ) {
         return service.updateProgress(id, userId, body);
+    }
+
+    @PatchMapping("/{id}/pause")
+    @ResponseStatus(HttpStatus.OK)
+    public SessionDto pause(
+            @PathVariable UUID id,
+            @RequestHeader("X-User-Id") UUID userId
+    ) {
+        return service.pause(id, userId);
+    }
+
+    @PatchMapping("/{id}/resume")
+    @ResponseStatus(HttpStatus.OK)
+    public SessionDto resume(
+            @PathVariable UUID id,
+            @RequestHeader("X-User-Id") UUID userId
+    ) {
+        return service.resume(id, userId);
     }
 
     @GetMapping("/live")
