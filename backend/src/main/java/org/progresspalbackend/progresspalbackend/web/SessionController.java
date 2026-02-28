@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionCreateDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
+import org.progresspalbackend.progresspalbackend.dto.session.SessionGoalUpdateDto;
+import org.progresspalbackend.progresspalbackend.dto.session.SessionProgressDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionStopDto;
 import org.progresspalbackend.progresspalbackend.service.SessionService;
 import org.springframework.http.HttpHeaders;
@@ -43,6 +45,26 @@ public class SessionController {
             @RequestBody(required = false) SessionStopDto body
     ){
         return service.stop(id, userId, body == null ? new SessionStopDto(null) : body);
+    }
+
+    @PatchMapping("/{id}/goal")
+    @ResponseStatus(HttpStatus.OK)
+    public SessionDto updateGoal(
+            @PathVariable UUID id,
+            @RequestHeader("X-User-Id") UUID userId,
+            @Valid @RequestBody SessionGoalUpdateDto body
+    ) {
+        return service.updateGoal(id, userId, body);
+    }
+
+    @PatchMapping("/{id}/progress")
+    @ResponseStatus(HttpStatus.OK)
+    public SessionDto updateProgress(
+            @PathVariable UUID id,
+            @RequestHeader("X-User-Id") UUID userId,
+            @RequestBody SessionProgressDto body
+    ) {
+        return service.updateProgress(id, userId, body);
     }
 
     @GetMapping("/live")

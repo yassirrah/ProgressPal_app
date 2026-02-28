@@ -1,5 +1,6 @@
 package org.progresspalbackend.progresspalbackend.dto.session;
 
+import org.progresspalbackend.progresspalbackend.domain.GoalType;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 
 import java.math.BigDecimal;
@@ -15,6 +16,12 @@ public record SessionDto(
         Instant startedAt,
         Instant endedAt,
         BigDecimal metricValue,
+        BigDecimal metricCurrentValue,
+        GoalType goalType,
+        BigDecimal goalTarget,
+        String goalNote,
+        BigDecimal goalDone,
+        Boolean goalAchieved,
         Visibility visibility,
         boolean ongoing
 ) {}

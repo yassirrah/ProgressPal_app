@@ -2,8 +2,10 @@ package org.progresspalbackend.progresspalbackend.dto.session;
 
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import org.progresspalbackend.progresspalbackend.domain.GoalType;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 public record SessionCreateDto(
@@ -17,5 +19,12 @@ public record SessionCreateDto(
         String description,
 
         @NotNull(message = "visibility is required.")
-        Visibility visibility
+        Visibility visibility,
+
+        GoalType goalType,
+
+        BigDecimal goalTarget,
+
+        @Size(max = 255, message = "goalNote must be at most 255 characters.")
+        String goalNote
 ) {}

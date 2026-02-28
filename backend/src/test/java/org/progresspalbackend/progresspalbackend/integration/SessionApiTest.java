@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
+import org.progresspalbackend.progresspalbackend.domain.GoalType;
 import org.progresspalbackend.progresspalbackend.domain.Session;
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
@@ -88,7 +89,10 @@ class SessionApiTest {
                 typeId,
                 "JUnit post",
                 "Made in integration test",
-                Visibility.PUBLIC
+                Visibility.PUBLIC,
+                GoalType.NONE,
+                null,
+                null
         );
 
         // POST
