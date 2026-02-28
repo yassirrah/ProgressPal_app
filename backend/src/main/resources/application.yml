@@ -32,4 +32,4 @@ app:
   security:
     allow-header-auth: true
     jwt:
-      secret: "progresspal-progresspal-progresspal-2026-key"
+      secret: ${APP_SECURITY_JWT_SECRET}
