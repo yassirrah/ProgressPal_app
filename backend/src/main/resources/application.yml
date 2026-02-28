@@ -27,3 +27,9 @@ server:
 logging:
   level:
     org.springframework: INFO
+
+app:
+  security:
+    allow-header-auth: true
+    jwt:
+      secret: "progresspal-progresspal-progresspal-2026-key"
