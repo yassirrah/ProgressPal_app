@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 
 import org.mapstruct.Mapper;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
+import org.progresspalbackend.progresspalbackend.domain.GoalType;
 import org.progresspalbackend.progresspalbackend.domain.MetricKind;
 import org.progresspalbackend.progresspalbackend.domain.Session;
 
@@ -22,6 +23,8 @@ import org.progresspalbackend.progresspalbackend.dto.dashboard.MetricTrendPointD
 import org.progresspalbackend.progresspalbackend.dto.dashboard.TopActivityTypeByTimeDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionCreateDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
+import org.progresspalbackend.progresspalbackend.dto.session.SessionGoalUpdateDto;
+import org.progresspalbackend.progresspalbackend.dto.session.SessionProgressDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionStopDto;
 import org.progresspalbackend.progresspalbackend.mapper.SessionMapper;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
@@ -85,6 +88,7 @@ public class SessionService {
 
         entity.setUser(user);
         entity.setActivityType(activityType);
+        validateAndApplyGoal(entity, dto.goalType(), dto.goalTarget(), dto.goalNote());
         entity.setStartedAt(Instant.now());
         return mapper.toDto(sessionRepo.save(entity));
     }
@@ -109,8 +113,46 @@ public class SessionService {
         if (!existing.getActivityType().getId().equals(dto.activityTypeId())) {
             existing.setActivityType(typeRepo.getReferenceById(dto.activityTypeId()));
         }
+        validateAndApplyGoal(existing, dto.goalType(), dto.goalTarget(), dto.goalNote());
 
         return mapper.toDto(sessionRepo.save(existing));
+    }
+
+    @Transactional
+    public SessionDto updateGoal(UUID id, UUID actorUserId, SessionGoalUpdateDto goalDto) {
+        Session session = sessionRepo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
+
+        if (!session.getUser().getId().equals(actorUserId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You cannot edit another user's session goal");
+        }
+
+        validateAndApplyGoal(session, goalDto.goalType(), goalDto.goalTarget(), goalDto.goalNote());
+        return mapper.toDto(sessionRepo.save(session));
+    }
+
+    @Transactional
+    public SessionDto updateProgress(UUID id, UUID actorUserId, SessionProgressDto body) {
+        if (body == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "metricCurrentValue is required");
+        }
+        if (body.metricCurrentValue() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "metricCurrentValue is required");
+        }
+
+        Session session = sessionRepo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
+
+        if (!session.getUser().getId().equals(actorUserId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You cannot edit another user's live progress");
+        }
+        if (session.getEndedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot update progress for a stopped session");
+        }
+
+        validateLiveMetricProgress(session.getActivityType(), body.metricCurrentValue());
+        session.setMetricCurrentValue(body.metricCurrentValue());
+        return mapper.toDto(sessionRepo.save(session));
     }
 
     @Transactional
@@ -125,9 +167,13 @@ public class SessionService {
         if(s.getEndedAt() != null){
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Session already stopped");
         }
-        validateStopMetric(s.getActivityType(), body.metricValue());
+        BigDecimal finalMetricValue = body.metricValue();
+        if (finalMetricValue == null && s.getMetricCurrentValue() != null) {
+            finalMetricValue = s.getMetricCurrentValue();
+        }
+        validateStopMetric(s.getActivityType(), finalMetricValue);
         s.setEndedAt(Instant.now());
-        s.setMetricValue(body.metricValue());
+        s.setMetricValue(finalMetricValue);
         return mapper.toDto(sessionRepo.save(s));
     }
 
@@ -373,10 +419,62 @@ public class SessionService {
         if (metricKind == MetricKind.NONE && metricValue != null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This activity type does not accept a metric value");
         }
+        if (metricValue != null && metricValue.compareTo(BigDecimal.ZERO) < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "metricValue must be greater than or equal to 0");
+        }
 
         if (metricKind == MetricKind.INTEGER && metricValue != null && metricValue.stripTrailingZeros().scale() > 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "metricValue must be a whole number for INTEGER metrics");
         }
+    }
+
+    private void validateLiveMetricProgress(ActivityType activityType, BigDecimal metricCurrentValue) {
+        MetricKind metricKind = activityType.getMetricKind() == null ? MetricKind.NONE : activityType.getMetricKind();
+        if (metricKind == MetricKind.NONE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "This activity type does not support live metric progress");
+        }
+        if (metricCurrentValue.compareTo(BigDecimal.ZERO) < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "metricCurrentValue must be greater than or equal to 0");
+        }
+        if (metricKind == MetricKind.INTEGER && metricCurrentValue.stripTrailingZeros().scale() > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "metricCurrentValue must be a whole number for INTEGER metrics");
+        }
+    }
+
+    private void validateAndApplyGoal(Session session,
+                                      @Nullable GoalType rawGoalType,
+                                      @Nullable BigDecimal rawGoalTarget,
+                                      @Nullable String rawGoalNote) {
+        GoalType goalType = rawGoalType == null ? GoalType.NONE : rawGoalType;
+        BigDecimal goalTarget = rawGoalTarget;
+
+        if (goalType == GoalType.NONE) {
+            goalTarget = null;
+        } else {
+            if (goalTarget == null || goalTarget.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "goalTarget must be greater than 0");
+            }
+            if (goalType == GoalType.METRIC) {
+                MetricKind metricKind = session.getActivityType().getMetricKind() == null
+                        ? MetricKind.NONE
+                        : session.getActivityType().getMetricKind();
+                if (metricKind == MetricKind.NONE) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "METRIC goal is not allowed for activity types without metrics");
+                }
+                if (metricKind == MetricKind.INTEGER && goalTarget.stripTrailingZeros().scale() > 0) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "goalTarget must be a whole number for INTEGER metrics");
+                }
+            }
+        }
+
+        String goalNote = rawGoalNote == null ? null : rawGoalNote.trim();
+        if (goalNote != null && goalNote.isBlank()) {
+            goalNote = null;
+        }
+
+        session.setGoalType(goalType);
+        session.setGoalTarget(goalTarget);
+        session.setGoalNote(goalNote);
     }
 
     private Specification<Session> byUserId(UUID userId) {

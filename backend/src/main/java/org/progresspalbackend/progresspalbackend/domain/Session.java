@@ -51,6 +51,20 @@ public class Session {
     @Column(name = "metric_value")
     private BigDecimal metricValue;
 
+    @Column(name = "metric_current_value")
+    private BigDecimal metricCurrentValue;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "goal_type", nullable = false, length = 16)
+    private GoalType goalType = GoalType.NONE;
+
+    @Column(name = "goal_target", precision = 19, scale = 4)
+    private BigDecimal goalTarget;
+
+    @Size(max = 255)
+    @Column(name = "goal_note", length = 255)
+    private String goalNote;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "visibility", nullable = false) // remove length
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)             // ✅ Hibernate 6 way

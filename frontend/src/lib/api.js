@@ -142,6 +142,32 @@ export async function stopSession(userId, sessionId, payload = {}) {
   }
 }
 
+export async function updateSessionGoal(userId, sessionId, payload) {
+  try {
+    const { data } = await client.patch(
+      `/sessions/${sessionId}/goal`,
+      payload,
+      { headers: { 'X-User-Id': userId } },
+    );
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to update session goal'));
+  }
+}
+
+export async function updateSessionProgress(userId, sessionId, payload) {
+  try {
+    const { data } = await client.patch(
+      `/sessions/${sessionId}/progress`,
+      payload,
+      { headers: { 'X-User-Id': userId } },
+    );
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to update session progress'));
+  }
+}
+
 export async function getMySessions(userId, filters = {}) {
   try {
     const params = {};

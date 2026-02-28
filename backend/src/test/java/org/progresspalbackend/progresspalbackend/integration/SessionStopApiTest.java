@@ -132,6 +132,24 @@ class SessionStopApiTest {
     }
 
     @Test
+    void stop_session_without_metricValue_uses_metricCurrentValue_as_final() throws Exception {
+        ActivityType type = typeRepo.findById(typeId).orElseThrow();
+        type.setMetricKind(MetricKind.INTEGER);
+        type.setMetricLabel("games");
+        typeRepo.save(type);
+
+        Session session = sessionRepo.findById(sessionId).orElseThrow();
+        session.setMetricCurrentValue(new BigDecimal("7"));
+        sessionRepo.save(session);
+
+        mvc.perform(patch("/api/sessions/{id}/stop", sessionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-User-Id", userId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.metricValue").value(7));
+    }
+
+    @Test
     void stopping_already_stopped_returns409() throws Exception {
         // stop once
         mvc.perform(patch("/api/sessions/{id}/stop", sessionId)
