@@ -15,6 +15,8 @@ public record SessionDto(
         String description,
         Instant startedAt,
         Instant endedAt,
+        Instant pausedAt,
+        Long pausedDurationSeconds,
         BigDecimal metricValue,
         BigDecimal metricCurrentValue,
         GoalType goalType,
@@ -23,5 +25,6 @@ public record SessionDto(
         BigDecimal goalDone,
         Boolean goalAchieved,
         Visibility visibility,
+        boolean paused,
         boolean ongoing
 ) {}

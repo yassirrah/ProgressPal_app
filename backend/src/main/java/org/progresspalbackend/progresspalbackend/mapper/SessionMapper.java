@@ -28,6 +28,8 @@ public interface SessionMapper {
     @Mapping(target = "activityType",  ignore = true)
     @Mapping(target = "startedAt",     ignore = true)
     @Mapping(target = "endedAt",       ignore = true)
+    @Mapping(target = "pausedAt",      ignore = true)
+    @Mapping(target = "pausedDurationSeconds", ignore = true)
     @Mapping(target = "metricValue",   ignore = true)
     Session toEntity(SessionCreateDto dto);
 
@@ -42,8 +44,7 @@ public interface SessionMapper {
     default BigDecimal computeGoalDone(Session entity) {
         GoalType goalType = entity.getGoalType() == null ? GoalType.NONE : entity.getGoalType();
         if (goalType == GoalType.TIME) {
-            Instant end = entity.getEndedAt() == null ? Instant.now() : entity.getEndedAt();
-            long durationSeconds = Math.max(0, Duration.between(entity.getStartedAt(), end).getSeconds());
+            long durationSeconds = computeEffectiveDurationSeconds(entity, Instant.now());
             return BigDecimal.valueOf(durationSeconds)
                     .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
         }
@@ -54,6 +55,17 @@ public interface SessionMapper {
             return entity.getMetricValue();
         }
         return null;
+    }
+
+    default long computeEffectiveDurationSeconds(Session entity, Instant now) {
+        Instant end = entity.getEndedAt() == null ? now : entity.getEndedAt();
+        long rawSeconds = Math.max(0, Duration.between(entity.getStartedAt(), end).getSeconds());
+
+        long pausedSeconds = entity.getPausedDurationSeconds() == null ? 0L : entity.getPausedDurationSeconds();
+        if (entity.getPausedAt() != null) {
+            pausedSeconds += Math.max(0, Duration.between(entity.getPausedAt(), end).getSeconds());
+        }
+        return Math.max(0, rawSeconds - pausedSeconds);
     }
 
     default Boolean computeGoalAchieved(Session entity) {
