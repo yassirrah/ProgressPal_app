@@ -141,12 +141,12 @@ public class ActivityTypeScopeApiTest {
     }
 
     @Test
-    void list_missing_header_returns400() throws Exception {
+    void list_missing_auth_returns401() throws Exception {
         mockMvc.perform(get("/api/activity-types")
                         .queryParam("scope", "ALL")
                         .accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401));
     }
 
     // ---------------- DELETE TESTS ----------------

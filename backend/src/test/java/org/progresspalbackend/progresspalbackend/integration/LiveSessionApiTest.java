@@ -105,10 +105,10 @@ public class LiveSessionApiTest {
     }
 
     @Test
-    void live_returns400_when_header_missing() throws Exception {
+    void live_returns401_when_auth_missing() throws Exception {
         mockMvc.perform(get("/api/sessions/live"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401));
     }
 
     // ---------- helpers ----------
