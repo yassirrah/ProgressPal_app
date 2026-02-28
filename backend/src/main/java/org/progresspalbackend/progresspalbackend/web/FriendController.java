@@ -1,11 +1,13 @@
 package org.progresspalbackend.progresspalbackend.web;
 
 
+import org.progresspalbackend.progresspalbackend.config.CurrentUser;
 import org.progresspalbackend.progresspalbackend.dto.Friendship.FriendRequestDto;
 import org.progresspalbackend.progresspalbackend.dto.Friendship.FriendShipDto;
 import org.progresspalbackend.progresspalbackend.service.FriendShipService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -17,31 +19,37 @@ public class FriendController {
 
     @Autowired
     private final FriendShipService friendShipService;
+    private final CurrentUser currentUser;
 
-    public FriendController(FriendShipService friendShipService) {
+    public FriendController(FriendShipService friendShipService, CurrentUser currentUser) {
         this.friendShipService = friendShipService;
+        this.currentUser = currentUser;
     }
 
     @GetMapping
-    List<FriendShipDto> list(@RequestHeader("X-User-Id") UUID userId){
+    List<FriendShipDto> list(Authentication authentication){
+        UUID userId = currentUser.id(authentication);
         return friendShipService.getAll(userId);
     }
 
     @GetMapping("/requests/incoming")
-    List<FriendRequestDto> incomingRequests(@RequestHeader("X-User-Id") UUID userId) {
+    List<FriendRequestDto> incomingRequests(Authentication authentication) {
+        UUID userId = currentUser.id(authentication);
         return friendShipService.getIncomingPendingRequests(userId);
     }
 
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping("/send")
-    void sendRequest(@RequestHeader("X-User-Id") UUID userId,
+    void sendRequest(Authentication authentication,
                      @RequestParam UUID receiverId){
+        UUID userId = currentUser.id(authentication);
         friendShipService.sendRequest(userId, receiverId);
     }
 
     @PatchMapping("/accept")
-    void acceptRequest(@RequestHeader("X-User-Id") UUID userId,
+    void acceptRequest(Authentication authentication,
                        @RequestParam UUID requesterId) {
+        UUID userId = currentUser.id(authentication);
         friendShipService.acceptRequest(userId, requesterId);
     }
 

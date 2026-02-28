@@ -2,6 +2,7 @@ package org.progresspalbackend.progresspalbackend.web;
 
 
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
+import org.progresspalbackend.progresspalbackend.config.CurrentUser;
 import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardByActivityTypeDto;
 import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardSummaryDto;
 import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardTrendsDto;
@@ -13,8 +14,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,19 +32,22 @@ public class MeController {
     private static final int MAX_PAGE_SIZE = 100;
 
     private final SessionService sessionService;
+    private final CurrentUser currentUser;
 
-    public MeController(SessionService sessionService) {
+    public MeController(SessionService sessionService, CurrentUser currentUser) {
         this.sessionService = sessionService;
+        this.currentUser = currentUser;
     }
 
     @GetMapping("/sessions")
-    Page<SessionDto> getSessions(@RequestHeader("X-User-Id") UUID userId,
+    Page<SessionDto> getSessions(Authentication authentication,
                                  @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                  @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
                                  @RequestParam(required = false) UUID activityTypeId,
                                  @RequestParam(required = false) Visibility visibility,
                                  @RequestParam(required = false) String status,
                                  @PageableDefault(size = DEFAULT_SIZE, sort = "startedAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        UUID userId = currentUser.id(authentication);
         return sessionService.getMySessions(
                 userId,
                 from,
@@ -56,25 +60,28 @@ public class MeController {
     }
 
     @GetMapping("/dashboard/summary")
-    MeDashboardSummaryDto getDashboardSummary(@RequestHeader("X-User-Id") UUID userId,
+    MeDashboardSummaryDto getDashboardSummary(Authentication authentication,
                                               @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                               @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        UUID userId = currentUser.id(authentication);
         return sessionService.getMyDashboardSummary(userId, from, to);
     }
 
     @GetMapping("/dashboard/by-activity-type")
-    List<MeDashboardByActivityTypeDto> getDashboardByActivityType(@RequestHeader("X-User-Id") UUID userId,
+    List<MeDashboardByActivityTypeDto> getDashboardByActivityType(Authentication authentication,
                                                                   @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                                                   @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        UUID userId = currentUser.id(authentication);
         return sessionService.getMyDashboardByActivityType(userId, from, to);
     }
 
     @GetMapping("/dashboard/trends")
-    MeDashboardTrendsDto getDashboardTrends(@RequestHeader("X-User-Id") UUID userId,
+    MeDashboardTrendsDto getDashboardTrends(Authentication authentication,
                                             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
                                             @RequestParam String bucket,
                                             @RequestParam(required = false) UUID activityTypeId) {
+        UUID userId = currentUser.id(authentication);
         return sessionService.getMyDashboardTrends(userId, from, to, bucket, activityTypeId);
     }
 

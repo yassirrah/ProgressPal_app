@@ -2,10 +2,12 @@ package org.progresspalbackend.progresspalbackend.web;
 
 import lombok.RequiredArgsConstructor;
 
+import org.progresspalbackend.progresspalbackend.config.CurrentUser;
 import org.progresspalbackend.progresspalbackend.dto.activitytype.ActivityTypeCreateDto;
 import org.progresspalbackend.progresspalbackend.dto.activitytype.ActivityTypeDto;
 import org.progresspalbackend.progresspalbackend.service.ActivityTypeService;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -17,11 +19,13 @@ import java.util.UUID;
 public class ActivityTypeController {
 
     private final ActivityTypeService service;
+    private final CurrentUser currentUser;
 
     /* ── LIST ─────────────────────────────── */
     @GetMapping
-    public List<ActivityTypeDto> list(@RequestHeader("X-User-Id") UUID userId,
+    public List<ActivityTypeDto> list(Authentication authentication,
                                       @RequestParam(defaultValue = "ALL") String scope) {
+        UUID userId = currentUser.id(authentication);
         return service.list(scope, userId);
     }
 
@@ -35,7 +39,8 @@ public class ActivityTypeController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ActivityTypeDto create(@RequestBody ActivityTypeCreateDto dto,
-                                  @RequestHeader("X-User-Id") UUID userId) {
+                                  Authentication authentication) {
+        UUID userId = currentUser.id(authentication);
         return service.create(dto, userId);
     }
 
@@ -49,7 +54,8 @@ public class ActivityTypeController {
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable UUID id,
-            @RequestHeader("X-User-Id") UUID userId) {
+            Authentication authentication) {
+        UUID userId = currentUser.id(authentication);
         service.delete(userId, id);
     }
 }
