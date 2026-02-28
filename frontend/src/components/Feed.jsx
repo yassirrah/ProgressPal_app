@@ -1,5 +1,27 @@
 import React, { useEffect, useState } from 'react';
 import { getFeed, getFriends, getStoredUser, sendFriendRequest } from '../lib/api';
+import LiveSessionEngagement from './LiveSessionEngagement';
+import SessionDetailsModal from './SessionDetailsModal';
+import SupportLiveViewModal from './SupportLiveViewModal';
+
+const hashString = (value) => {
+  let hash = 0;
+  const text = String(value || '');
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+};
+
+const buildSeededEngagement = (sessionId) => {
+  const seed = hashString(sessionId);
+  return {
+    mode: null,
+    chaseCount: seed % 4,
+    supportCount: Math.floor(seed / 7) % 6,
+  };
+};
 
 const Feed = () => {
   const currentUser = getStoredUser();
@@ -7,10 +29,13 @@ const Feed = () => {
   const [friendIds, setFriendIds] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
+  const [toast, setToast] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [kudosCounts, setKudosCounts] = useState({});
   const [kudosGiven, setKudosGiven] = useState({});
+  const [liveEngagementBySession, setLiveEngagementBySession] = useState({});
+  const [supportLiveViewSessionId, setSupportLiveViewSessionId] = useState('');
+  const [sessionDetailsId, setSessionDetailsId] = useState('');
 
   useEffect(() => {
     const loadFriends = async () => {
@@ -36,7 +61,16 @@ const Feed = () => {
       setError('');
       try {
         const response = await getFeed(currentUser.id, 0, 20);
-        setFeedItems(response.content || []);
+        const nextItems = response.content || [];
+        setFeedItems(nextItems);
+        setLiveEngagementBySession((prev) => {
+          const next = { ...prev };
+          nextItems.forEach((item) => {
+            if (item.endedAt) return;
+            if (!next[item.id]) next[item.id] = buildSeededEngagement(item.id);
+          });
+          return next;
+        });
       } catch (err) {
         setError(err.message || 'Failed to load feed');
       } finally {
@@ -57,6 +91,12 @@ const Feed = () => {
 
     return () => window.clearInterval(intervalId);
   }, [feedItems]);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timeoutId = window.setTimeout(() => setToast(null), toast.durationMs || 3200);
+    return () => window.clearTimeout(timeoutId);
+  }, [toast]);
 
   const getDurationSeconds = (item) => {
     const started = new Date(item.startedAt).getTime();
@@ -116,6 +156,20 @@ const Feed = () => {
     return metricText;
   };
 
+  const getLiveEngagement = (sessionId) => (
+    liveEngagementBySession[sessionId] || buildSeededEngagement(sessionId)
+  );
+
+  const showToast = (text, options = {}) => {
+    setToast({
+      id: Date.now(),
+      text,
+      actionLabel: options.actionLabel || null,
+      onAction: options.onAction || null,
+      durationMs: options.durationMs || 3200,
+    });
+  };
+
   const handleAddFriend = async (receiverId) => {
     if (!currentUser) {
       setError('Please log in to send friend requests');
@@ -123,10 +177,10 @@ const Feed = () => {
     }
     try {
       setError('');
-      setMessage('');
+      setToast(null);
       await sendFriendRequest(currentUser.id, receiverId);
       setFriendIds((prev) => new Set([...prev, receiverId]));
-      setMessage('Friend request sent.');
+      showToast('Friend request sent.');
     } catch (err) {
       setError(err.message || 'Failed to send friend request');
     }
@@ -137,14 +191,84 @@ const Feed = () => {
     setKudosCounts((prev) => ({ ...prev, [item.id]: (prev[item.id] || 0) + 1 }));
     setKudosGiven((prev) => ({ ...prev, [item.id]: true }));
     setError('');
-    setMessage(`👏 Kudos sent to ${item.username} (UI only)`);
+    showToast(`Kudos sent to ${item.username}.`);
   };
+
+  const setChaseMode = (item, nextMode, options = {}) => {
+    setLiveEngagementBySession((prev) => {
+      const current = prev[item.id] || buildSeededEngagement(item.id);
+      const next = { ...current };
+      if (current.mode === 'CHASE') {
+        next.mode = null;
+        next.chaseCount = Math.max(0, current.chaseCount - 1);
+      }
+      if (nextMode === 'CHASE') {
+        next.mode = 'CHASE';
+        next.chaseCount += 1;
+      }
+      return { ...prev, [item.id]: next };
+    });
+    if (options.silent) return;
+    setError('');
+    if (nextMode === 'CHASE') {
+      showToast(`You're chasing ${item.username}'s session.`, {
+        actionLabel: 'Undo',
+        durationMs: 5200,
+        onAction: () => setChaseMode(item, null, { silent: true }),
+      });
+    } else {
+      showToast(`Stopped chasing ${item.username}'s session.`);
+    }
+  };
+
+  const handleToggleChase = (item) => {
+    const currentMode = getLiveEngagement(item.id).mode;
+    setChaseMode(item, currentMode === 'CHASE' ? null : 'CHASE');
+  };
+
+  const handleOpenSupportLiveView = (item) => {
+    setSupportLiveViewSessionId(item.id);
+    setError('');
+    setToast(null);
+  };
+
+  const handleSupportReaction = (item, reaction) => {
+    setLiveEngagementBySession((prev) => {
+      const current = prev[item.id] || buildSeededEngagement(item.id);
+      return {
+        ...prev,
+        [item.id]: {
+          ...current,
+          supportCount: current.supportCount + 1,
+        },
+      };
+    });
+    setError('');
+    showToast(`Sent ${reaction} to ${item.username}.`, { durationMs: 2200 });
+  };
+
+  const handleSupportQuickMessage = (item, quickMessage) => {
+    setLiveEngagementBySession((prev) => {
+      const current = prev[item.id] || buildSeededEngagement(item.id);
+      return {
+        ...prev,
+        [item.id]: {
+          ...current,
+          supportCount: current.supportCount + 1,
+        },
+      };
+    });
+    setError('');
+    showToast(`Sent to ${item.username}: "${quickMessage}"`, { durationMs: 2800 });
+  };
+
+  const supportLiveViewSession = feedItems.find((item) => item.id === supportLiveViewSessionId) || null;
+  const sessionDetails = feedItems.find((item) => item.id === sessionDetailsId) || null;
 
   return (
     <div className="feed-page">
       <h1>Friends Feed</h1>
       {error && <p className="message-error">{error}</p>}
-      {message && <p className="message-muted">{message}</p>}
       {loading && <p>Loading...</p>}
 
       {feedItems.length === 0 ? (
@@ -152,7 +276,7 @@ const Feed = () => {
       ) : (
         <div className="feed-grid">
           {feedItems.map((item) => (
-            <article key={item.id} className="feed-card">
+            <article key={item.id} className={`feed-card ${item.endedAt ? 'feed-card--ended' : 'feed-card--live'}`}>
               <div className="feed-card-head">
                 <div className="feed-author">
                   <div className="feed-avatar" aria-hidden="true">
@@ -202,13 +326,28 @@ const Feed = () => {
                 )}
               </div>
 
+              {!item.endedAt && currentUser && currentUser.id !== item.userId && (
+                <LiveSessionEngagement
+                  username={item.username}
+                  activityTypeName={item.activityTypeName}
+                  mode={getLiveEngagement(item.id).mode}
+                  chaseCount={getLiveEngagement(item.id).chaseCount}
+                  supportCount={getLiveEngagement(item.id).supportCount}
+                  onToggleChase={() => handleToggleChase(item)}
+                  onOpenSupport={() => handleOpenSupportLiveView(item)}
+                />
+              )}
+
               <div className="feed-card-footer">
                 <button
                   type="button"
                   className={`secondary-button kudos-button ${kudosGiven[item.id] ? 'active' : ''}`}
                   onClick={() => handleKudos(item)}
                 >
-                  {kudosGiven[item.id] ? '👏 Kudos Sent' : `👏 Give Kudos • ${kudosCounts[item.id] || 0}`}
+                  <span>{kudosGiven[item.id] ? '👏 Sent' : '👏 Kudos'}</span>
+                  <span className="kudos-count-badge" aria-label={`${kudosCounts[item.id] || 0} kudos`}>
+                    {kudosCounts[item.id] || 0}
+                  </span>
                 </button>
 
                 {currentUser && currentUser.id !== item.userId && !friendIds.has(item.userId) && (
@@ -216,9 +355,65 @@ const Feed = () => {
                     Add Friend
                   </button>
                 )}
+                <button
+                  type="button"
+                  className="secondary-button feed-view-button"
+                  onClick={() => setSessionDetailsId(item.id)}
+                >
+                  View
+                </button>
               </div>
             </article>
           ))}
+        </div>
+      )}
+
+      {supportLiveViewSession && (
+        <SupportLiveViewModal
+          session={supportLiveViewSession}
+          durationLabel={formatDurationCompact(getDurationSeconds(supportLiveViewSession))}
+          metricLabel={formatMetricPill(supportLiveViewSession)}
+          onClose={() => setSupportLiveViewSessionId('')}
+          onSendReaction={(reaction) => handleSupportReaction(supportLiveViewSession, reaction)}
+          onSendQuickMessage={(quickMessage) => handleSupportQuickMessage(supportLiveViewSession, quickMessage)}
+        />
+      )}
+
+      {sessionDetails && (
+        <SessionDetailsModal
+          session={sessionDetails}
+          durationLabel={formatDurationCompact(getDurationSeconds(sessionDetails))}
+          metricLabel={formatMetricPill(sessionDetails)}
+          onClose={() => setSessionDetailsId('')}
+        />
+      )}
+
+      {toast && (
+        <div className="app-toast" role="status" aria-live="polite">
+          <span>{toast.text}</span>
+          <div className="app-toast-actions">
+            {toast.actionLabel && toast.onAction && (
+              <button
+                type="button"
+                className="app-toast-button"
+                onClick={() => {
+                  const action = toast.onAction;
+                  setToast(null);
+                  action();
+                }}
+              >
+                {toast.actionLabel}
+              </button>
+            )}
+            <button
+              type="button"
+              className="app-toast-dismiss"
+              onClick={() => setToast(null)}
+              aria-label="Dismiss message"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       )}
     </div>
