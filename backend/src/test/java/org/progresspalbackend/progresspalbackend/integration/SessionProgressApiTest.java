@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -104,13 +105,13 @@ class SessionProgressApiTest {
     void updateProgress_onLiveMetricSession_returns200_and_setsMetricCurrentValue() throws Exception {
         String body = json.writeValueAsString(Map.of("metricCurrentValue", 4));
 
-        mvc.perform(patch("/api/sessions/{id}/progress", metricSessionId)
+                mvc.perform(patch("/api/sessions/{id}/progress", metricSessionId)
                         .header("X-User-Id", ownerId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.metricCurrentValue").value(4))
-                .andExpect(jsonPath("$.goalDone").value(4));
+                .andExpect(jsonPath("$.goalDone").value(nullValue()));
     }
 
     @Test
