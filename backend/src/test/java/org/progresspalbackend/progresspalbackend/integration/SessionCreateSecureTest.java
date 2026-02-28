@@ -22,6 +22,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -77,7 +78,7 @@ public class SessionCreateSecureTest {
         );
 
         mvc.perform(post("/api/sessions")
-                .header("X-User-Id", user.getId().toString())
+                .with(jwt().jwt(jwt -> jwt.subject(user.getId().toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body)
         ).andExpect(status().isNotFound())
@@ -133,7 +134,7 @@ public class SessionCreateSecureTest {
     }
 
     @Test
-    void createSession_missingHeader_returns400_standardPayload() throws Exception {
+    void createSession_missingAuth_returns401_standardPayload() throws Exception {
         ActivityType type = persistActivityType("Study");
 
         String body = objectMapper.writeValueAsString(Map.of(
@@ -145,10 +146,10 @@ public class SessionCreateSecureTest {
         mvc.perform(post("/api/sessions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.timestamp").exists())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.error").value("Bad Request"))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.error").value("Unauthorized"))
                 .andExpect(jsonPath("$.path").value("/api/sessions"))
                 .andExpect(jsonPath("$.message").exists());
     }

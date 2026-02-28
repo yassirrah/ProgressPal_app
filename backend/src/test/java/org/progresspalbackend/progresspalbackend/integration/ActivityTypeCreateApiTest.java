@@ -173,16 +173,16 @@ class ActivityTypeCreateApiTest {
     }
 
     @Test
-    void createCustomActivityType_missingHeader_returns400_standardPayload() throws Exception {
+    void createCustomActivityType_missingAuth_returns401_standardPayload() throws Exception {
         String body = objectMapper.writeValueAsString(Map.of("name", "No Header"));
 
         mvc.perform(post("/api/activity-types")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.timestamp").exists())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.error").value("Bad Request"))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.error").value("Unauthorized"))
                 .andExpect(jsonPath("$.path").value("/api/activity-types"))
                 .andExpect(jsonPath("$.message", not(emptyOrNullString())));
     }
