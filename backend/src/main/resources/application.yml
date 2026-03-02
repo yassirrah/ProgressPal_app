@@ -1,6 +1,8 @@
 spring:
   application:
     name: ProgressPalBackend
+  config:
+    import: optional:file:./env/db.dev.env[.properties]
 
   datasource:
     url: jdbc:postgresql://localhost:5432/progresspal
@@ -30,6 +32,6 @@ logging:
 
 app:
   security:
-    allow-header-auth: true
+    allow-header-auth: ${APP_SECURITY_ALLOW_HEADER_AUTH:false}
     jwt:
       secret: ${APP_SECURITY_JWT_SECRET}

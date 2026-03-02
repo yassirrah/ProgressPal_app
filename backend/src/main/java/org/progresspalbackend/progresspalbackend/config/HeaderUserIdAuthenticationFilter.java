@@ -24,7 +24,7 @@ public class HeaderUserIdAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String USER_ID_HEADER = "X-User-Id";
 
-    @Value("${app.security.allow-header-auth:true}")
+    @Value("${app.security.allow-header-auth:false}")
     private boolean allowHeaderAuth;
 
     @Override

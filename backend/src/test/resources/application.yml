@@ -1,0 +1,5 @@
+app:
+  security:
+    allow-header-auth: true
+    jwt:
+      secret: test-jwt-secret-for-integration-tests-32chars
