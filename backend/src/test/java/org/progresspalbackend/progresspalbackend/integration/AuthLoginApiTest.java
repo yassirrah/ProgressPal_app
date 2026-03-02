@@ -49,6 +49,8 @@ class AuthLoginApiTest {
         registry.add("spring.datasource.password", db::getPassword);
         registry.add("spring.flyway.enabled", () -> "true");
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
+        registry.add("app.security.login.max-failed-attempts", () -> "3");
+        registry.add("app.security.login.lock-duration", () -> "PT30M");
     }
 
     @Autowired MockMvc mvc;
@@ -97,14 +99,9 @@ class AuthLoginApiTest {
 
     @Test
     void login_invalidPassword_returns401() throws Exception {
-        String requestBody = json.writeValueAsString(Map.of(
-                "email", persistedUser.getEmail(),
-                "password", "wrong"
-        ));
-
         mvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestBody))
+                        .content(loginRequest(persistedUser.getEmail(), "wrong")))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.message").value(containsString("Invalid credentials")));
@@ -112,17 +109,66 @@ class AuthLoginApiTest {
 
     @Test
     void login_unknownEmail_returns401() throws Exception {
-        String requestBody = json.writeValueAsString(Map.of(
-                "email", "missing@test.com",
-                "password", "pw123"
-        ));
-
         mvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(requestBody))
+                        .content(loginRequest("missing@test.com", "pw123")))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.message").value(containsString("Invalid credentials")));
+    }
+
+    @Test
+    void login_afterThreeFailedAttempts_returns429_and_blocksEvenCorrectPassword() throws Exception {
+        String wrongPasswordBody = loginRequest(persistedUser.getEmail(), "wrong");
+
+        mvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(wrongPasswordBody))
+                .andExpect(status().isUnauthorized());
+
+        mvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(wrongPasswordBody))
+                .andExpect(status().isUnauthorized());
+
+        mvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(wrongPasswordBody))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.status").value(429))
+                .andExpect(jsonPath("$.message").value(containsString("Too many failed login attempts")));
+
+        mvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginRequest(persistedUser.getEmail(), "pw123")))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.status").value(429))
+                .andExpect(jsonPath("$.message").value(containsString("Too many failed login attempts")));
+    }
+
+    @Test
+    void login_successfulAttempt_clearsFailedAttemptsCounter() throws Exception {
+        String wrongPasswordBody = loginRequest(persistedUser.getEmail(), "wrong");
+
+        mvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(wrongPasswordBody))
+                .andExpect(status().isUnauthorized());
+
+        mvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(wrongPasswordBody))
+                .andExpect(status().isUnauthorized());
+
+        mvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginRequest(persistedUser.getEmail(), "pw123")))
+                .andExpect(status().isOk());
+
+        mvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(wrongPasswordBody))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -149,5 +195,12 @@ class AuthLoginApiTest {
         User upgradedUser = userRepo.findById(legacyUser.getId()).orElseThrow();
         assertNotEquals("pw123", upgradedUser.getPassword());
         assertTrue(passwordEncoder.matches("pw123", upgradedUser.getPassword()));
+    }
+
+    private String loginRequest(String email, String password) throws Exception {
+        return json.writeValueAsString(Map.of(
+                "email", email,
+                "password", password
+        ));
     }
 }

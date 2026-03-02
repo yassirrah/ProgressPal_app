@@ -29,14 +29,20 @@ public class AuthService {
     private final UserMapper userMapper;
     private final JwtEncoder jwtEncoder;
     private final PasswordEncoder passwordEncoder;
+    private final LoginAttemptService loginAttemptService;
 
     public AuthLoginResponseDto login(AuthLoginRequestDto request) {
         User user = userRepository.findByEmailIgnoreCase(request.email().trim())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials"));
 
+        loginAttemptService.checkNotLocked(user.getId());
+
         if (!passwordMatches(request.password(), user)) {
+            loginAttemptService.recordFailure(user.getId());
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
         }
+
+        loginAttemptService.clear(user.getId());
 
         Instant issuedAt = Instant.now();
         Instant expiresAt = issuedAt.plusSeconds(TOKEN_TTL_SECONDS);
