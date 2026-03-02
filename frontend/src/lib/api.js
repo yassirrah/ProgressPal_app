@@ -42,6 +42,9 @@ function persistAuthState(state) {
   if (!state || !state.user) {
     localStorage.removeItem(AUTH_STORAGE_KEY);
     localStorage.removeItem(USER_STORAGE_KEY);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('progresspal-auth-changed'));
+    }
     return;
   }
 
@@ -52,6 +55,9 @@ function persistAuthState(state) {
 
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(normalized));
   localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(normalized.user));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('progresspal-auth-changed'));
+  }
 }
 
 function authHeaders(userId) {

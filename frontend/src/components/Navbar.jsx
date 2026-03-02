@@ -1,10 +1,20 @@
-import React, { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { clearStoredUser, getStoredUser } from '../lib/api';
 
 const Navbar = () => {
-  const user = getStoredUser();
+  const [user, setUser] = useState(getStoredUser());
   const [logoMissing, setLogoMissing] = useState(false);
+
+  useEffect(() => {
+    const syncUser = () => setUser(getStoredUser());
+    window.addEventListener('storage', syncUser);
+    window.addEventListener('progresspal-auth-changed', syncUser);
+    return () => {
+      window.removeEventListener('storage', syncUser);
+      window.removeEventListener('progresspal-auth-changed', syncUser);
+    };
+  }, []);
 
   const handleLogout = () => {
     clearStoredUser();

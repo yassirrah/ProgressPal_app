@@ -1,5 +1,4 @@
-import React from 'react';
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-dom';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import Home from './components/Home';
@@ -8,9 +7,11 @@ import Friends from './components/Friends';
 import MySessions from './components/MySessions';
 import ActivityTypes from './components/ActivityTypes';
 import Navbar from './components/Navbar';
+import { getStoredUser } from './lib/api';
 import './App.css';
 
 function App() {
+  const user = getStoredUser();
   return (
     <Router>
       <div className="app-shell">
@@ -22,8 +23,8 @@ function App() {
             <Route path="/activity-types" element={<ActivityTypes />} />
             <Route path="/feed" element={<Feed />} />
             <Route path="/friends" element={<Friends />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
+            <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+            <Route path="/signup" element={user ? <Navigate to="/" replace /> : <Signup />} />
           </Routes>
         </main>
       </div>
