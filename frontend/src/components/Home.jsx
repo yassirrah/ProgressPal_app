@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   createSession,
   getActivityTypes,
@@ -11,19 +11,50 @@ import {
   updateSessionProgress,
 } from '../lib/api';
 
-const parseHmsToMinutes = (raw) => {
-  const value = String(raw || '').trim();
-  const match = /^(\d+):(\d{1,2}):(\d{1,2})$/.exec(value);
-  if (!match) return null;
+const parseTimeTargetToMinutes = (raw) => {
+  const value = String(raw || '').trim().toLowerCase();
+  if (!value) return null;
 
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  const seconds = Number(match[3]);
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || !Number.isFinite(seconds)) return null;
-  if (minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) return null;
+  const hmsMatch = /^(\d+):(\d{1,2}):(\d{1,2})$/.exec(value);
+  if (hmsMatch) {
+    const hours = Number(hmsMatch[1]);
+    const minutes = Number(hmsMatch[2]);
+    const seconds = Number(hmsMatch[3]);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes) || !Number.isFinite(seconds)) return null;
+    if (minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) return null;
 
-  const totalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+    const totalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+    if (totalSeconds <= 0) return null;
+    return totalSeconds / 60;
+  }
+
+  const tokenPattern = /(\d+)\s*([hms])/g;
+  let totalSeconds = 0;
+  let lastIndex = 0;
+  let foundToken = false;
+  let match = tokenPattern.exec(value);
+
+  while (match) {
+    const between = value.slice(lastIndex, match.index);
+    if (between.trim() !== '') return null;
+
+    const amount = Number(match[1]);
+    if (!Number.isFinite(amount) || amount < 0) return null;
+
+    const unit = match[2];
+    if (unit === 'h') totalSeconds += amount * 3600;
+    if (unit === 'm') totalSeconds += amount * 60;
+    if (unit === 's') totalSeconds += amount;
+
+    lastIndex = tokenPattern.lastIndex;
+    foundToken = true;
+    match = tokenPattern.exec(value);
+  }
+
+  if (!foundToken) return null;
+  if (value.slice(lastIndex).trim() !== '') return null;
   if (totalSeconds <= 0) return null;
+
   return totalSeconds / 60;
 };
 
@@ -287,9 +318,9 @@ const Home = () => {
 
     if (normalizedGoalType !== 'NONE' && hasTarget) {
       if (normalizedGoalType === 'TIME') {
-        const parsedMinutes = parseHmsToMinutes(goalTarget);
+        const parsedMinutes = parseTimeTargetToMinutes(goalTarget);
         if (parsedMinutes == null) {
-          throw new Error('Time target must be in H:M:S format (example: 1:30:00)');
+          throw new Error('Time target must use H:M:S or units like 5h20m1s, 20m5s, 5m');
         }
         normalizedTarget = parsedMinutes;
       } else {
@@ -682,7 +713,7 @@ const Home = () => {
                       {liveGoalForm.goalType !== 'NONE' && (
                         <div>
                           <label>
-                            Target {liveGoalForm.goalType === 'TIME' ? '(H:M:S)' : `(${liveMetricLabel || 'units'})`}
+                            Target {liveGoalForm.goalType === 'TIME' ? '(e.g. 5h20m1s or 1:30:00)' : `(${liveMetricLabel || 'units'})`}
                           </label>
                           <input
                             type={liveGoalForm.goalType === 'TIME' ? 'text' : 'number'}
@@ -690,7 +721,7 @@ const Home = () => {
                             step={liveGoalForm.goalType === 'METRIC' && liveMetricKind === 'INTEGER' ? '1' : 'any'}
                             value={liveGoalForm.goalTarget}
                             onChange={(e) => setLiveGoalForm((prev) => ({ ...prev, goalTarget: e.target.value }))}
-                            placeholder={liveGoalForm.goalType === 'TIME' ? 'e.g. 1:30:00' : 'e.g. 10'}
+                            placeholder={liveGoalForm.goalType === 'TIME' ? 'e.g. 5h20m1s, 20m5s, 5m, or 1:30:00' : 'e.g. 10'}
                           />
                         </div>
                       )}
@@ -895,7 +926,6 @@ const Home = () => {
                               onChange={(e) => setSessionForm((prev) => ({ ...prev, visibility: e.target.value }))}
                             >
                               <option value="PRIVATE">Private</option>
-                              <option value="FRIENDS">Friends</option>
                               <option value="PUBLIC">Public</option>
                             </select>
                           </div>
@@ -997,7 +1027,7 @@ const Home = () => {
                               <div>
                                 <label>
                                   Goal value {sessionForm.goalType === 'TIME'
-                                    ? '(H:M:S)'
+                                    ? '(e.g. 5h20m1s or 1:30:00)'
                                     : `(${selectedStartActivityType?.metricLabel || 'units'})`}
                                 </label>
                                 <input
@@ -1006,7 +1036,7 @@ const Home = () => {
                                   step={sessionForm.goalType === 'METRIC' && selectedStartActivityType?.metricKind === 'INTEGER' ? '1' : 'any'}
                                   value={sessionForm.goalTarget}
                                   onChange={(e) => setSessionForm((prev) => ({ ...prev, goalTarget: e.target.value }))}
-                                  placeholder={sessionForm.goalType === 'TIME' ? 'e.g. 1:30:00' : 'e.g. 10'}
+                                  placeholder={sessionForm.goalType === 'TIME' ? 'e.g. 5h20m1s, 20m5s, 5m, or 1:30:00' : 'e.g. 10'}
                                 />
                               </div>
                             </div>
