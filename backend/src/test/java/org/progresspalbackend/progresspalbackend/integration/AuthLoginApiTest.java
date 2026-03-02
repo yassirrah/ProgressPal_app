@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -23,6 +24,8 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -51,6 +54,7 @@ class AuthLoginApiTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
     @Autowired UserRepository userRepo;
+    @Autowired PasswordEncoder passwordEncoder;
 
     User persistedUser;
 
@@ -62,7 +66,7 @@ class AuthLoginApiTest {
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
         user.setUsername("auth_" + suffix);
         user.setEmail("auth_" + suffix + "@test.com");
-        user.setPassword("pw123");
+        user.setPassword(passwordEncoder.encode("pw123"));
         user.setCreatedAt(Instant.now());
         persistedUser = userRepo.save(user);
     }
@@ -119,5 +123,31 @@ class AuthLoginApiTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.status").value(401))
                 .andExpect(jsonPath("$.message").value(containsString("Invalid credentials")));
+    }
+
+    @Test
+    void login_legacyPlaintextPassword_upgradesStoredHash() throws Exception {
+        User legacyUser = new User();
+        String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        legacyUser.setUsername("legacy_" + suffix);
+        legacyUser.setEmail("legacy_" + suffix + "@test.com");
+        legacyUser.setPassword("pw123");
+        legacyUser.setCreatedAt(Instant.now());
+        legacyUser = userRepo.save(legacyUser);
+
+        String requestBody = json.writeValueAsString(Map.of(
+                "email", legacyUser.getEmail(),
+                "password", "pw123"
+        ));
+
+        mvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isString());
+
+        User upgradedUser = userRepo.findById(legacyUser.getId()).orElseThrow();
+        assertNotEquals("pw123", upgradedUser.getPassword());
+        assertTrue(passwordEncoder.matches("pw123", upgradedUser.getPassword()));
     }
 }

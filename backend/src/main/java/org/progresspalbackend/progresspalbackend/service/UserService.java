@@ -7,6 +7,7 @@ import org.progresspalbackend.progresspalbackend.dto.user.UserDto;
 import org.progresspalbackend.progresspalbackend.mapper.UserMapper;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -20,9 +21,11 @@ public class UserService {
 
     private final UserRepository repo;
     private final UserMapper mapper;
+    private final PasswordEncoder passwordEncoder;
 
     public UserDto create(UserCreateDto dto) {
         User entity = mapper.toEntity(dto);
+        entity.setPassword(encodeRequiredPassword(dto.password()));
         entity.setCreatedAt(Instant.now());
         return mapper.toDto(repo.save(entity));
     }
@@ -56,9 +59,22 @@ public class UserService {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "User not found"));
 
+        String previousPassword = existing.getPassword();
         mapper.updateFromDto(dto, existing);
+        if (dto.password() == null || dto.password().isBlank()) {
+            existing.setPassword(previousPassword);
+        } else {
+            existing.setPassword(passwordEncoder.encode(dto.password()));
+        }
         existing.setUpdatedAt(Instant.now());
 
         return mapper.toDto(repo.save(existing));
+    }
+
+    private String encodeRequiredPassword(String rawPassword) {
+        if (rawPassword == null || rawPassword.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "password is required");
+        }
+        return passwordEncoder.encode(rawPassword);
     }
 }
