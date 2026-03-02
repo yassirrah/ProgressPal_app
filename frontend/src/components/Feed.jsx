@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getFeed, getFriends, getStoredUser, sendFriendRequest } from '../lib/api';
 import LiveSessionEngagement from './LiveSessionEngagement';
 import SessionDetailsModal from './SessionDetailsModal';
@@ -24,7 +24,7 @@ const buildSeededEngagement = (sessionId) => {
 };
 
 const Feed = () => {
-  const currentUser = getStoredUser();
+  const currentUser = useMemo(() => getStoredUser(), []);
   const [feedItems, setFeedItems] = useState([]);
   const [friendIds, setFriendIds] = useState(new Set());
   const [loading, setLoading] = useState(false);
@@ -79,7 +79,7 @@ const Feed = () => {
     };
 
     loadFeed();
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     const hasLiveSessions = feedItems.some((item) => !item.endedAt);
@@ -329,7 +329,6 @@ const Feed = () => {
               {!item.endedAt && currentUser && currentUser.id !== item.userId && (
                 <LiveSessionEngagement
                   username={item.username}
-                  activityTypeName={item.activityTypeName}
                   mode={getLiveEngagement(item.id).mode}
                   chaseCount={getLiveEngagement(item.id).chaseCount}
                   supportCount={getLiveEngagement(item.id).supportCount}

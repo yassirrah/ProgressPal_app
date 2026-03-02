@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import PropTypes from 'prop-types';
 
 const REACTIONS = ['👍', '🔥', '💪', '👏', '📚'];
 const QUICK_MESSAGES = ['You got this', 'Final push', 'Keep going'];
@@ -103,6 +104,19 @@ const SupportLiveViewModal = ({
       </div>
     </div>
   );
+};
+
+SupportLiveViewModal.propTypes = {
+  session: PropTypes.shape({
+    username: PropTypes.string,
+    activityTypeName: PropTypes.string,
+    title: PropTypes.string,
+  }),
+  durationLabel: PropTypes.string,
+  metricLabel: PropTypes.string,
+  onClose: PropTypes.func,
+  onSendReaction: PropTypes.func,
+  onSendQuickMessage: PropTypes.func,
 };
 
 export default SupportLiveViewModal;

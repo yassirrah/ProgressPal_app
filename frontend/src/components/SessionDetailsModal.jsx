@@ -1,4 +1,4 @@
-import React from 'react';
+import PropTypes from 'prop-types';
 
 const SessionDetailsModal = ({ session, durationLabel, metricLabel, onClose }) => {
   if (!session) return null;
@@ -69,6 +69,19 @@ const SessionDetailsModal = ({ session, durationLabel, metricLabel, onClose }) =
       </div>
     </div>
   );
+};
+
+SessionDetailsModal.propTypes = {
+  session: PropTypes.shape({
+    activityTypeName: PropTypes.string,
+    username: PropTypes.string,
+    title: PropTypes.string,
+    startedAt: PropTypes.string,
+    endedAt: PropTypes.string,
+  }),
+  durationLabel: PropTypes.string,
+  metricLabel: PropTypes.string,
+  onClose: PropTypes.func,
 };
 
 export default SessionDetailsModal;

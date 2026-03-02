@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import PropTypes from 'prop-types';
 
 const LiveSessionEngagement = ({
   username,
-  activityTypeName,
   mode,
   chaseCount,
   supportCount,
@@ -72,6 +72,15 @@ const LiveSessionEngagement = ({
       )}
     </div>
   );
+};
+
+LiveSessionEngagement.propTypes = {
+  username: PropTypes.string,
+  mode: PropTypes.string,
+  chaseCount: PropTypes.number,
+  supportCount: PropTypes.number,
+  onToggleChase: PropTypes.func,
+  onOpenSupport: PropTypes.func,
 };
 
 export default LiveSessionEngagement;
