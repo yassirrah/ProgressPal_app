@@ -3,8 +3,12 @@ import PropTypes from 'prop-types';
 const SessionDetailsModal = ({ session, durationLabel, metricLabel, onClose }) => {
   if (!session) return null;
 
+  const isPaused = Boolean(session.paused ?? (session.pausedAt && !session.endedAt));
+  const isOngoing = Boolean(session.ongoing ?? (!session.endedAt && !isPaused));
+  const statusLabel = isPaused ? 'Paused' : isOngoing ? 'Live' : 'Completed';
+
   const formatDateTime = (value) => {
-    if (!value) return 'Live';
+    if (!value) return 'Not ended';
     const date = new Date(value);
     return date.toLocaleString();
   };
@@ -51,7 +55,7 @@ const SessionDetailsModal = ({ session, durationLabel, metricLabel, onClose }) =
             )}
             <div className="session-details-stat">
               <span>Status</span>
-              <strong>{session.endedAt ? 'Completed' : 'Live'}</strong>
+              <strong>{statusLabel}</strong>
             </div>
           </div>
 
@@ -64,6 +68,12 @@ const SessionDetailsModal = ({ session, durationLabel, metricLabel, onClose }) =
               <span>Ended</span>
               <span>{formatDateTime(session.endedAt)}</span>
             </div>
+            {session.pausedAt && (
+              <div className="session-details-row">
+                <span>Paused At</span>
+                <span>{formatDateTime(session.pausedAt)}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -78,6 +88,9 @@ SessionDetailsModal.propTypes = {
     title: PropTypes.string,
     startedAt: PropTypes.string,
     endedAt: PropTypes.string,
+    pausedAt: PropTypes.string,
+    paused: PropTypes.bool,
+    ongoing: PropTypes.bool,
   }),
   durationLabel: PropTypes.string,
   metricLabel: PropTypes.string,
