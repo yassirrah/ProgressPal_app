@@ -105,6 +105,22 @@ public class FriendShipService {
     }
 
     @Transactional
+    public void rejectRequest(UUID actorUserId, UUID requesterId) {
+        UUID receiverId = actorUserId;
+        FriendRequest friendRequest = friendRequestRepository.findByRequester_IdAndReceiver_Id(requesterId, receiverId);
+
+        if (friendRequest == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No friend request found");
+        }
+        if (friendRequest.getStatus() != FriendshipStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Request is not pending");
+        }
+
+        friendRequest.setStatus(FriendshipStatus.REJECTED);
+        friendRequestRepository.save(friendRequest);
+    }
+
+    @Transactional
     public List<FriendShipDto> getAll(UUID userId) {
         List<FriendShipDto> fromUserSide = friendRepository.findAllByUser_Id(userId)
                 .stream()
@@ -133,5 +149,22 @@ public class FriendShipService {
                         req.getCreatedAt()
                 ))
                 .toList();
+    }
+
+    @Transactional
+    public void deleteFriend(UUID actorUserId, UUID friendId) {
+        Friendship direct = friendRepository.findByUser_IdAndFriend_Id(actorUserId, friendId);
+        Friendship reverse = friendRepository.findByUser_IdAndFriend_Id(friendId, actorUserId);
+
+        if (direct == null && reverse == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Friendship not found");
+        }
+
+        if (direct != null) {
+            friendRepository.delete(direct);
+        }
+        if (reverse != null && (direct == null || !reverse.getId().equals(direct.getId()))) {
+            friendRepository.delete(reverse);
+        }
     }
 }

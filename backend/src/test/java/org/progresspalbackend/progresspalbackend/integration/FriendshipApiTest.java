@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -154,6 +155,85 @@ class FriendshipApiTest {
         mvc.perform(patch("/api/friends/accept")
                         .header("X-User-Id", receiver.getId().toString())
                         .param("requesterId", unknownRequester.toString()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void send_then_reject_marksRequestRejected_and_notInIncomingList() throws Exception {
+        User requester = persistUser();
+        User receiver = persistUser();
+
+        mvc.perform(post("/api/friends/send")
+                        .header("X-User-Id", requester.getId().toString())
+                        .param("receiverId", receiver.getId().toString()))
+                .andExpect(status().isCreated());
+
+        mvc.perform(patch("/api/friends/reject")
+                        .header("X-User-Id", receiver.getId().toString())
+                        .param("requesterId", requester.getId().toString()))
+                .andExpect(status().isOk());
+
+        FriendRequest rejected = requestRepo.findByRequester_IdAndReceiver_Id(requester.getId(), receiver.getId());
+        assertThat(rejected).isNotNull();
+        assertThat(rejected.getStatus()).isEqualTo(FriendshipStatus.REJECTED);
+        assertThat(friendRepo.count()).isEqualTo(0);
+
+        mvc.perform(get("/api/friends/requests/incoming")
+                        .header("X-User-Id", receiver.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void rejectRequest_notFound_returns404() throws Exception {
+        User receiver = persistUser();
+        UUID unknownRequester = UUID.randomUUID();
+
+        mvc.perform(patch("/api/friends/reject")
+                        .header("X-User-Id", receiver.getId().toString())
+                        .param("requesterId", unknownRequester.toString()))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void deleteFriend_existingFriendship_returns204_and_removesForBothUsers() throws Exception {
+        User requester = persistUser();
+        User receiver = persistUser();
+
+        mvc.perform(post("/api/friends/send")
+                        .header("X-User-Id", requester.getId().toString())
+                        .param("receiverId", receiver.getId().toString()))
+                .andExpect(status().isCreated());
+
+        mvc.perform(patch("/api/friends/accept")
+                        .header("X-User-Id", receiver.getId().toString())
+                        .param("requesterId", requester.getId().toString()))
+                .andExpect(status().isOk());
+
+        mvc.perform(delete("/api/friends/{friendId}", receiver.getId())
+                        .header("X-User-Id", requester.getId().toString()))
+                .andExpect(status().isNoContent());
+
+        assertThat(friendRepo.count()).isEqualTo(0);
+
+        mvc.perform(get("/api/friends")
+                        .header("X-User-Id", requester.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        mvc.perform(get("/api/friends")
+                        .header("X-User-Id", receiver.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void deleteFriend_notFound_returns404() throws Exception {
+        User user = persistUser();
+        UUID unknownFriendId = UUID.randomUUID();
+
+        mvc.perform(delete("/api/friends/{friendId}", unknownFriendId)
+                        .header("X-User-Id", user.getId().toString()))
                 .andExpect(status().isNotFound());
     }
 
