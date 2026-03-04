@@ -1713,6 +1713,12 @@ form {
   border-color: rgba(14, 165, 168, 0.24);
 }
 
+.feed-status-badge.paused {
+  background: rgba(234, 179, 8, 0.15);
+  color: #8a5a00;
+  border-color: rgba(234, 179, 8, 0.4);
+}
+
 .feed-status-badge.ended {
   background: #f5f7f8;
   color: var(--text-muted);

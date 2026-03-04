@@ -23,6 +23,9 @@ const buildSeededEngagement = (sessionId) => {
   };
 };
 
+const isSessionPaused = (item) => Boolean(item?.paused ?? (item?.pausedAt && !item?.endedAt));
+const isSessionOngoing = (item) => Boolean(item?.ongoing ?? (!item?.endedAt && !isSessionPaused(item)));
+
 const Feed = () => {
   const currentUser = useMemo(() => getStoredUser(), []);
   const [feedItems, setFeedItems] = useState([]);
@@ -66,7 +69,7 @@ const Feed = () => {
         setLiveEngagementBySession((prev) => {
           const next = { ...prev };
           nextItems.forEach((item) => {
-            if (item.endedAt) return;
+            if (!isSessionOngoing(item)) return;
             if (!next[item.id]) next[item.id] = buildSeededEngagement(item.id);
           });
           return next;
@@ -82,7 +85,7 @@ const Feed = () => {
   }, [currentUser]);
 
   useEffect(() => {
-    const hasLiveSessions = feedItems.some((item) => !item.endedAt);
+    const hasLiveSessions = feedItems.some((item) => isSessionOngoing(item));
     if (!hasLiveSessions) return;
 
     const intervalId = window.setInterval(() => {
@@ -100,8 +103,17 @@ const Feed = () => {
 
   const getDurationSeconds = (item) => {
     const started = new Date(item.startedAt).getTime();
-    const ended = item.endedAt ? new Date(item.endedAt).getTime() : now;
-    return Math.max(0, Math.floor((ended - started) / 1000));
+    const endMs = item.endedAt ? new Date(item.endedAt).getTime() : now;
+    const rawSeconds = Math.max(0, Math.floor((endMs - started) / 1000));
+
+    const persistedPaused = Number(item.pausedDurationSeconds ?? 0);
+    let pausedSeconds = Number.isFinite(persistedPaused) ? persistedPaused : 0;
+    if (item.pausedAt) {
+      const pausedStartMs = new Date(item.pausedAt).getTime();
+      pausedSeconds += Math.max(0, Math.floor((endMs - pausedStartMs) / 1000));
+    }
+
+    return Math.max(0, rawSeconds - pausedSeconds);
   };
 
   const formatDurationCompact = (totalSeconds) => {
@@ -276,7 +288,10 @@ const Feed = () => {
       ) : (
         <div className="feed-grid">
           {feedItems.map((item) => (
-            <article key={item.id} className={`feed-card ${item.endedAt ? 'feed-card--ended' : 'feed-card--live'}`}>
+            <article
+              key={item.id}
+              className={`feed-card ${isSessionOngoing(item) ? 'feed-card--live' : 'feed-card--ended'}`}
+            >
               <div className="feed-card-head">
                 <div className="feed-author">
                   <div className="feed-avatar" aria-hidden="true">
@@ -289,10 +304,10 @@ const Feed = () => {
                     </p>
                   </div>
                 </div>
-                {!item.endedAt && (
+                {(isSessionOngoing(item) || isSessionPaused(item)) && (
                   <div className="feed-head-right">
-                    <span className="feed-status-badge live">
-                      Live
+                    <span className={`feed-status-badge ${isSessionPaused(item) ? 'paused' : 'live'}`}>
+                      {isSessionPaused(item) ? 'Paused' : 'Live'}
                     </span>
                   </div>
                 )}
@@ -326,7 +341,7 @@ const Feed = () => {
                 )}
               </div>
 
-              {!item.endedAt && currentUser && currentUser.id !== item.userId && (
+              {isSessionOngoing(item) && currentUser && currentUser.id !== item.userId && (
                 <LiveSessionEngagement
                   username={item.username}
                   mode={getLiveEngagement(item.id).mode}

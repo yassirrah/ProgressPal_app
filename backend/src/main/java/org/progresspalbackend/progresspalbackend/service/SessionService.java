@@ -263,6 +263,10 @@ public class SessionService {
                     s.getActivityType().getMetricLabel(),
                     s.getStartedAt(),
                     s.getEndedAt(),
+                    s.getPausedAt(),
+                    s.getPausedDurationSeconds(),
+                    s.isPaused(),
+                    s.isLive() && !s.isPaused(),
                     s.getVisibility())
                 );
     }
