@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   acceptFriendRequest,
+  deleteFriend,
   getFriends,
   getIncomingFriendRequests,
   getStoredUser,
+  rejectFriendRequest,
   searchUsersByUsername,
   sendFriendRequest,
 } from '../lib/api';
@@ -20,6 +22,8 @@ const Friends = () => {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [acceptingRequesterId, setAcceptingRequesterId] = useState('');
+  const [rejectingRequesterId, setRejectingRequesterId] = useState('');
+  const [deletingFriendId, setDeletingFriendId] = useState('');
   const [sendSuccessPulse, setSendSuccessPulse] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -151,6 +155,38 @@ const Friends = () => {
       setError(err.message || 'Failed to accept friend request');
     } finally {
       setAcceptingRequesterId('');
+    }
+  };
+
+  const handleRejectRequest = async (requesterId) => {
+    if (!user) return;
+    try {
+      setRejectingRequesterId(requesterId);
+      setError('');
+      setMessage('');
+      await rejectFriendRequest(user.id, requesterId);
+      setMessage('Friend request rejected.');
+      await loadFriends();
+    } catch (err) {
+      setError(err.message || 'Failed to reject friend request');
+    } finally {
+      setRejectingRequesterId('');
+    }
+  };
+
+  const handleDeleteFriend = async (friendId) => {
+    if (!user) return;
+    try {
+      setDeletingFriendId(friendId);
+      setError('');
+      setMessage('');
+      await deleteFriend(user.id, friendId);
+      setMessage('Friend removed.');
+      await loadFriends();
+    } catch (err) {
+      setError(err.message || 'Failed to delete friend');
+    } finally {
+      setDeletingFriendId('');
     }
   };
 
@@ -286,10 +322,24 @@ const Friends = () => {
                     <button
                       type="button"
                       className="compact-button"
-                      disabled={acceptingRequesterId === request.requesterId}
+                      disabled={
+                        acceptingRequesterId === request.requesterId
+                        || rejectingRequesterId === request.requesterId
+                      }
                       onClick={() => handleAcceptRequest(request.requesterId)}
                     >
                       {acceptingRequesterId === request.requesterId ? 'Accepting...' : 'Accept'}
+                    </button>
+                    <button
+                      type="button"
+                      className="compact-button secondary-button"
+                      disabled={
+                        acceptingRequesterId === request.requesterId
+                        || rejectingRequesterId === request.requesterId
+                      }
+                      onClick={() => handleRejectRequest(request.requesterId)}
+                    >
+                      {rejectingRequesterId === request.requesterId ? 'Rejecting...' : 'Reject'}
                     </button>
                   </div>
                 </article>
@@ -327,6 +377,16 @@ const Friends = () => {
                       <p className="friend-name">{username}</p>
                       <p className="friend-meta">Friend</p>
                     </div>
+                  </div>
+                  <div className="friend-row-actions">
+                    <button
+                      type="button"
+                      className="compact-button secondary-button"
+                      disabled={deletingFriendId === friend.FriendId}
+                      onClick={() => handleDeleteFriend(friend.FriendId)}
+                    >
+                      {deletingFriendId === friend.FriendId ? 'Deleting...' : 'Delete'}
+                    </button>
                   </div>
                 </article>
               );
