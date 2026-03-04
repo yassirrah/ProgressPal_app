@@ -503,16 +503,8 @@ const Home = () => {
 
   const handleStopClick = () => {
     if (!liveSession) return;
-    if (!stopPanelOpen) {
-      const confirmed = window.confirm(
-        isSessionPaused
-          ? 'Session is paused. End it now?'
-          : 'End this session now?',
-      );
-      if (!confirmed) return;
-    }
     setSessionError('');
-    setStopPanelOpen((prev) => !prev);
+    setStopPanelOpen(true);
   };
 
   const handleResumeFromToast = async (sessionId) => {
