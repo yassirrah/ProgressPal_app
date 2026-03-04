@@ -16,4 +16,8 @@ public record FeedSessionDto(UUID id,
                              String metricLabel,
                              Instant startedAt,
                              Instant endedAt,
+                             Instant pausedAt,
+                             Long pausedDurationSeconds,
+                             boolean paused,
+                             boolean ongoing,
                              Visibility visibility) {}

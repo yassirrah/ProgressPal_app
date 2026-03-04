@@ -102,6 +102,10 @@ public class FeedApiTest {
 
         // friend public (newest)
         Session pub2 = sessionRepo.save(session(friendB, t2, Visibility.PUBLIC, Instant.parse("2026-01-04T10:00:00Z")));
+        Session paused = session(friendA, t1, Visibility.PUBLIC, Instant.parse("2026-01-06T10:00:00Z"));
+        paused.setPausedAt(Instant.parse("2026-01-06T11:00:00Z"));
+        paused.setPausedDurationSeconds(300L);
+        paused = sessionRepo.save(paused);
 
         // stranger public (should not appear even if public)
         sessionRepo.save(session(stranger, t3, Visibility.PUBLIC, Instant.parse("2026-01-05T10:00:00Z")));
@@ -110,10 +114,11 @@ public class FeedApiTest {
                 .header("X-User-Id", viewer.getId().toString())
                 .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content.length()").value(2))
-                // order desc: pub2 then pub1
-                .andExpect(jsonPath("$.content[0].id").value(pub2.getId().toString()))
-                .andExpect(jsonPath("$.content[1].id").value(pub1.getId().toString()))
+                .andExpect(jsonPath("$.content.length()").value(3))
+                // order desc: paused then pub2 then pub1
+                .andExpect(jsonPath("$.content[0].id").value(paused.getId().toString()))
+                .andExpect(jsonPath("$.content[1].id").value(pub2.getId().toString()))
+                .andExpect(jsonPath("$.content[2].id").value(pub1.getId().toString()))
                 // sanity fields
                 .andExpect(jsonPath("$.content[0].visibility").value("PUBLIC"))
                 .andExpect(jsonPath("$.content[1].visibility").value("PUBLIC"))
@@ -121,8 +126,14 @@ public class FeedApiTest {
                 .andExpect(jsonPath("$.content[0].username").exists())
                 .andExpect(jsonPath("$.content[0].activityTypeId").exists())
                 .andExpect(jsonPath("$.content[0].activityTypeName").exists())
-                .andExpect(jsonPath("$.content[1].metricValue").value(10))
-                .andExpect(jsonPath("$.content[1].metricLabel").value("games"));
+                .andExpect(jsonPath("$.content[0].paused").value(true))
+                .andExpect(jsonPath("$.content[0].ongoing").value(false))
+                .andExpect(jsonPath("$.content[0].pausedAt").exists())
+                .andExpect(jsonPath("$.content[0].pausedDurationSeconds").value(300))
+                .andExpect(jsonPath("$.content[1].paused").value(false))
+                .andExpect(jsonPath("$.content[1].ongoing").value(true))
+                .andExpect(jsonPath("$.content[2].metricValue").value(10))
+                .andExpect(jsonPath("$.content[2].metricLabel").value("games"));
     }
 
     private User persistUser(){
