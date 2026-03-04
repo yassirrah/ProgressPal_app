@@ -94,12 +94,15 @@ const Feed = () => {
   useEffect(() => {
     if (!currentUser?.id) return undefined;
 
+    const hasActiveSessions = feedItems.some((item) => isSessionOngoing(item) || isSessionPaused(item));
+    const pollIntervalMs = hasActiveSessions ? 4000 : 15000;
+
     const refreshSilently = () => {
       if (document.visibilityState !== 'visible') return;
       refreshFeed();
     };
 
-    const intervalId = window.setInterval(refreshSilently, 15000);
+    const intervalId = window.setInterval(refreshSilently, pollIntervalMs);
     const handleFocus = () => refreshFeed();
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
@@ -115,7 +118,7 @@ const Feed = () => {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [currentUser, refreshFeed]);
+  }, [currentUser, feedItems, refreshFeed]);
 
   useEffect(() => {
     const hasLiveSessions = feedItems.some((item) => isSessionOngoing(item));

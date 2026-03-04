@@ -126,8 +126,16 @@ export async function loginUserByEmail(email, password) {
 export async function getFeed(userId, page = 0, size = 10) {
   try {
     const { data } = await client.get('/feed', {
-      headers: authHeaders(userId),
-      params: { page, size },
+      headers: {
+        ...authHeaders(userId),
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+      params: {
+        page,
+        size,
+        _t: Date.now(),
+      },
     });
     return data;
   } catch (error) {
