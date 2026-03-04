@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getFeed, getFriends, getStoredUser, sendFriendRequest } from '../lib/api';
 import LiveSessionEngagement from './LiveSessionEngagement';
 import SessionDetailsModal from './SessionDetailsModal';
@@ -40,6 +40,42 @@ const Feed = () => {
   const [supportLiveViewSessionId, setSupportLiveViewSessionId] = useState('');
   const [sessionDetailsId, setSessionDetailsId] = useState('');
 
+  const refreshFeed = useCallback(async ({ showLoading = false } = {}) => {
+    if (!currentUser?.id) {
+      setFeedItems([]);
+      setLoading(false);
+      setError('Please log in to view your friends feed');
+      return;
+    }
+
+    if (showLoading) {
+      setLoading(true);
+    }
+
+    try {
+      if (showLoading) {
+        setError('');
+      }
+      const response = await getFeed(currentUser.id, 0, 20);
+      const nextItems = response.content || [];
+      setFeedItems(nextItems);
+      setLiveEngagementBySession((prev) => {
+        const next = { ...prev };
+        nextItems.forEach((item) => {
+          if (!isSessionOngoing(item)) return;
+          if (!next[item.id]) next[item.id] = buildSeededEngagement(item.id);
+        });
+        return next;
+      });
+    } catch (err) {
+      setError(err.message || 'Failed to load feed');
+    } finally {
+      if (showLoading) {
+        setLoading(false);
+      }
+    }
+  }, [currentUser]);
+
   useEffect(() => {
     const loadFriends = async () => {
       if (!currentUser) return;
@@ -52,37 +88,34 @@ const Feed = () => {
     };
 
     loadFriends();
+    refreshFeed({ showLoading: true });
+  }, [currentUser, refreshFeed]);
 
-    const loadFeed = async () => {
-      if (!currentUser?.id) {
-        setFeedItems([]);
-        setLoading(false);
-        setError('Please log in to view your friends feed');
-        return;
-      }
-      setLoading(true);
-      setError('');
-      try {
-        const response = await getFeed(currentUser.id, 0, 20);
-        const nextItems = response.content || [];
-        setFeedItems(nextItems);
-        setLiveEngagementBySession((prev) => {
-          const next = { ...prev };
-          nextItems.forEach((item) => {
-            if (!isSessionOngoing(item)) return;
-            if (!next[item.id]) next[item.id] = buildSeededEngagement(item.id);
-          });
-          return next;
-        });
-      } catch (err) {
-        setError(err.message || 'Failed to load feed');
-      } finally {
-        setLoading(false);
+  useEffect(() => {
+    if (!currentUser?.id) return undefined;
+
+    const refreshSilently = () => {
+      if (document.visibilityState !== 'visible') return;
+      refreshFeed();
+    };
+
+    const intervalId = window.setInterval(refreshSilently, 15000);
+    const handleFocus = () => refreshFeed();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshFeed();
       }
     };
 
-    loadFeed();
-  }, [currentUser]);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [currentUser, refreshFeed]);
 
   useEffect(() => {
     const hasLiveSessions = feedItems.some((item) => isSessionOngoing(item));
