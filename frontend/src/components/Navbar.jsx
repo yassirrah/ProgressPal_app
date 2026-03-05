@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { clearStoredUser, getStoredUser } from '../lib/api';
 
 const Navbar = () => {
   const [user, setUser] = useState(getStoredUser());
+  const [menuOpen, setMenuOpen] = useState(false);
   const [logoMissing, setLogoMissing] = useState(false);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     const syncUser = () => setUser(getStoredUser());
@@ -16,7 +18,32 @@ const Navbar = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (!menuRef.current?.contains(event.target)) {
+        setMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [menuOpen]);
+
   const handleLogout = () => {
+    setMenuOpen(false);
     clearStoredUser();
     window.location.href = '/login';
   };
@@ -44,13 +71,40 @@ const Navbar = () => {
       <NavLink to="/feed" className={navLinkClass}>Feed</NavLink>
       <NavLink to="/friends" className={navLinkClass}>Friends</NavLink>
       {user ? (
-        <>
-          <div className="nav-user-chip" title={user.username}>
+        <div className="nav-user-menu" ref={menuRef}>
+          <button
+            type="button"
+            className="nav-user-chip nav-user-chip-button"
+            title={user.username}
+            onClick={() => setMenuOpen((prev) => !prev)}
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+          >
             <span className="nav-user-avatar" aria-hidden="true">{userInitial}</span>
             <span className="nav-user-name">{user.username}</span>
-          </div>
-          <button onClick={handleLogout}>Logout</button>
-        </>
+            <span className="nav-user-caret" aria-hidden="true">{menuOpen ? '▴' : '▾'}</span>
+          </button>
+          {menuOpen && (
+            <div className="nav-user-dropdown" role="menu">
+              <Link
+                to="/account"
+                className="nav-user-dropdown-item"
+                role="menuitem"
+                onClick={() => setMenuOpen(false)}
+              >
+                Account settings
+              </Link>
+              <button
+                type="button"
+                className="nav-user-dropdown-item nav-user-dropdown-button"
+                role="menuitem"
+                onClick={handleLogout}
+              >
+                Logout
+              </button>
+            </div>
+          )}
+        </div>
       ) : (
         <>
           <NavLink to="/login" className={navLinkClass}>Login</NavLink>
