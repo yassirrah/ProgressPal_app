@@ -7,12 +7,23 @@ import {
   updateMyAccount,
 } from '../lib/api';
 
+const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
+
+const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result || ''));
+  reader.onerror = () => reject(new Error('Failed to read image file'));
+  reader.readAsDataURL(file);
+});
+
 const Account = () => {
   const user = useMemo(() => getStoredUser(), []);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [profileImageUrl, setProfileImageUrl] = useState('');
+  const [selectedImageFileName, setSelectedImageFileName] = useState('');
   const [form, setForm] = useState({
     username: '',
     email: '',
@@ -30,13 +41,16 @@ const Account = () => {
       setError('');
       try {
         const account = await getMyAccount(user.id);
+        const initialProfileImage = account.profileImage || '';
         setForm((prev) => ({
           ...prev,
           username: account.username || '',
           email: account.email || '',
-          profileImage: account.profileImage || '',
+          profileImage: initialProfileImage,
           bio: account.bio || '',
         }));
+        setProfileImageUrl(initialProfileImage.startsWith('data:image/') ? '' : initialProfileImage);
+        setSelectedImageFileName('');
       } catch (err) {
         setError(err.message || 'Failed to load account');
       } finally {
@@ -49,6 +63,44 @@ const Account = () => {
 
   const onChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const onProfileImageUrlChange = (value) => {
+    setProfileImageUrl(value);
+    onChange('profileImage', value);
+  };
+
+  const onProfileImageFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!file.type || !file.type.startsWith('image/')) {
+      setError('Please select an image file');
+      return;
+    }
+
+    if (file.size > MAX_PROFILE_IMAGE_BYTES) {
+      setError('Profile image must be 2MB or less');
+      return;
+    }
+
+    try {
+      setError('');
+      const dataUrl = await readFileAsDataUrl(file);
+      onChange('profileImage', dataUrl);
+      setProfileImageUrl('');
+      setSelectedImageFileName(file.name || '');
+      setMessage('Image selected. Save changes to update your profile photo.');
+    } catch (err) {
+      setError(err.message || 'Failed to load selected image');
+    }
+  };
+
+  const clearProfileImage = () => {
+    onChange('profileImage', '');
+    setProfileImageUrl('');
+    setSelectedImageFileName('');
   };
 
   const handleSave = async (e) => {
@@ -106,6 +158,45 @@ const Account = () => {
       <section className="home-card">
         <form onSubmit={handleSave}>
           <div>
+            <label>Profile Photo</label>
+            <div className="account-photo-row">
+              {form.profileImage ? (
+                <img src={form.profileImage} alt="Profile preview" className="account-photo-preview" />
+              ) : (
+                <div className="account-photo-placeholder" aria-hidden="true">
+                  {(form.username || '?').trim().charAt(0).toUpperCase() || '?'}
+                </div>
+              )}
+              <div className="account-photo-actions">
+                <input
+                  id="account-profile-file"
+                  className="account-photo-file-input"
+                  type="file"
+                  accept="image/*"
+                  onChange={onProfileImageFileChange}
+                />
+                <div className="account-photo-upload-row">
+                  <label htmlFor="account-profile-file" className="compact-button account-photo-upload-button">
+                    Choose photo
+                  </label>
+                  <span className="account-photo-file-name">
+                    {selectedImageFileName || 'No file selected'}
+                  </span>
+                </div>
+                {form.profileImage && (
+                  <button
+                    type="button"
+                    className="compact-button secondary-button"
+                    onClick={clearProfileImage}
+                  >
+                    Remove photo
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div>
             <label htmlFor="account-username">Username</label>
             <input
               id="account-username"
@@ -128,12 +219,12 @@ const Account = () => {
           </div>
 
           <div>
-            <label htmlFor="account-profile-image">Profile Image URL</label>
+            <label htmlFor="account-profile-image">Profile Image URL (optional)</label>
             <input
               id="account-profile-image"
               type="url"
-              value={form.profileImage}
-              onChange={(e) => onChange('profileImage', e.target.value)}
+              value={profileImageUrl}
+              onChange={(e) => onProfileImageUrlChange(e.target.value)}
               placeholder="https://..."
             />
           </div>
