@@ -18,6 +18,9 @@ public interface SessionRepository extends JpaRepository<Session, UUID>, JpaSpec
     // examples of useful custom finders  (optional)
     Page<Session> findByUserIdOrderByStartedAtDesc(UUID userId, Pageable pageable);
     Page<Session> findByUserIdAndVisibilityOrderByStartedAtDesc(UUID userId, Visibility visibility, Pageable pageable);
+    Page<Session> findByUserIdAndVisibilityInOrderByStartedAtDesc(UUID userId, List<Visibility> visibilities, Pageable pageable);
+    List<Session> findByUserId(UUID userId);
+    List<Session> findByUserIdAndVisibilityIn(UUID userId, List<Visibility> visibilities);
     List<Session> findByActivityTypeId(UUID activityTypeId);
     boolean existsByActivityType_Id(UUID activityTypeId);
     boolean existsByUser_IdAndEndedAtIsNull(UUID userId);
@@ -27,6 +30,9 @@ public interface SessionRepository extends JpaRepository<Session, UUID>, JpaSpec
 
     @EntityGraph(attributePaths = {"user", "activityType"})
     Page<Session> findByUser_IdInAndVisibilityOrderByStartedAtDesc(List<UUID> userIds, Visibility visibility, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"user", "activityType"})
+    Page<Session> findByUser_IdInAndVisibilityInOrderByStartedAtDesc(List<UUID> userIds, List<Visibility> visibilities, Pageable pageable);
 
     Optional<Session> findFirstByUser_IdAndEndedAtIsNullOrderByStartedAtDesc(UUID userId);
 
