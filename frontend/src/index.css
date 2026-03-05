@@ -302,6 +302,69 @@ form {
   box-shadow: var(--shadow);
 }
 
+.account-photo-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.account-photo-preview,
+.account-photo-placeholder {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+
+.account-photo-preview {
+  object-fit: cover;
+}
+
+.account-photo-placeholder {
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  color: var(--accent-strong);
+  background: rgba(14, 165, 168, 0.1);
+}
+
+.account-photo-actions {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.account-photo-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.account-photo-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.account-photo-upload-button {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  margin: 0;
+}
+
+.account-photo-file-name {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .home-no-live-card {
   padding: 0.85rem 0.95rem;
 }
