@@ -1519,26 +1519,41 @@ form {
 
 .friends-typeahead-item {
   width: 100%;
-  border: 0;
   border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.6rem;
+}
+
+.friends-typeahead-profile {
+  border: 0;
   background: transparent;
+  color: inherit;
+  cursor: pointer;
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: center;
   gap: 0.55rem;
-  padding: 0.55rem 0.7rem;
+  padding: 0.35rem 0.2rem;
   text-align: left;
-  cursor: pointer;
-  color: inherit;
+  min-width: 0;
+  flex: 1;
 }
 
 .friends-typeahead-item:last-child {
   border-bottom: 0;
 }
 
-.friends-typeahead-item:hover,
-.friends-typeahead-item:focus-visible {
+.friends-typeahead-item:hover {
   background: rgba(14, 165, 168, 0.06);
+}
+
+.friends-typeahead-profile:focus-visible {
+  outline: 2px solid rgba(14, 165, 168, 0.35);
+  border-radius: 8px;
 }
 
 .friends-typeahead-text {
@@ -1559,6 +1574,12 @@ form {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.friends-typeahead-use {
+  flex-shrink: 0;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.76rem;
 }
 
 .friends-form-actions {
@@ -1984,6 +2005,13 @@ form {
   width: fit-content;
 }
 
+.user-profile-actions {
+  margin-top: 0.55rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
 .user-profile-stats-grid {
   display: grid;
   gap: 0.65rem;
@@ -2042,9 +2070,171 @@ form {
   font-size: 0.74rem;
 }
 
+.user-profile-chart-card {
+  overflow: hidden;
+}
+
+.user-profile-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.user-profile-chart-panel {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 168, 0.08), transparent 52%),
+    rgba(255, 255, 255, 0.95);
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.user-profile-chart-title {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.user-profile-donut-wrap {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.user-profile-donut {
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  padding: 10px;
+  display: grid;
+  place-items: center;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+}
+
+.user-profile-donut-center {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 0.35rem;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.user-profile-donut-center strong {
+  color: var(--text);
+  font-size: 0.93rem;
+}
+
+.user-profile-donut-center span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.user-profile-donut-legend {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.user-profile-donut-legend-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+}
+
+.user-profile-donut-legend-item strong {
+  color: var(--text);
+}
+
+.user-profile-donut-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.user-profile-sparkline {
+  width: 100%;
+  height: 96px;
+  display: block;
+  border-radius: 10px;
+  background:
+    linear-gradient(to bottom, rgba(14, 165, 168, 0.08), rgba(14, 165, 168, 0.01));
+  border: 1px solid rgba(14, 165, 168, 0.2);
+}
+
+.user-profile-sparkline polyline {
+  fill: none;
+  stroke: #0ea5a8;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.user-profile-sparkline-axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.user-profile-bars {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.user-profile-bar-row {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.user-profile-bar-label-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.79rem;
+  color: var(--text);
+}
+
+.user-profile-bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e8eef2;
+  overflow: hidden;
+}
+
+.user-profile-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 280ms ease-out;
+}
+
 @media (max-width: 680px) {
   .user-profile-stats-grid {
     grid-template-columns: 1fr;
+  }
+
+  .user-profile-chart-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .user-profile-donut-wrap {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .user-profile-donut-legend {
+    width: 100%;
   }
 }
 
