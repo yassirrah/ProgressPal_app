@@ -396,6 +396,27 @@ export async function acceptFriendRequest(userId, requesterId) {
   }
 }
 
+export async function rejectFriendRequest(userId, requesterId) {
+  try {
+    await client.patch('/friends/reject', null, {
+      headers: authHeaders(userId),
+      params: { requesterId },
+    });
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to reject friend request'));
+  }
+}
+
+export async function deleteFriend(userId, friendId) {
+  try {
+    await client.delete(`/friends/${friendId}`, {
+      headers: authHeaders(userId),
+    });
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to delete friend'));
+  }
+}
+
 export async function getIncomingFriendRequests(userId) {
   try {
     const { data } = await client.get('/friends/requests/incoming', {

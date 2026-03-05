@@ -2,6 +2,7 @@ package org.progresspalbackend.progresspalbackend.web;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.progresspalbackend.progresspalbackend.dto.error.ErrorResponse;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -50,6 +51,11 @@ public class AdviceController{
                 ? ex.getBody().getDetail()
                 : status.getReasonPhrase();
         return build(status, msg, request.getRequestURI());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest request) {
+        return build(HttpStatus.CONFLICT, "Data conflict", request.getRequestURI());
     }
 
     @ExceptionHandler(Exception.class)

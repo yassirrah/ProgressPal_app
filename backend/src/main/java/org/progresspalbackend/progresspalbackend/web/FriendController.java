@@ -53,4 +53,19 @@ public class FriendController {
         friendShipService.acceptRequest(userId, requesterId);
     }
 
+    @PatchMapping("/reject")
+    void rejectRequest(Authentication authentication,
+                       @RequestParam UUID requesterId) {
+        UUID userId = currentUser.id(authentication);
+        friendShipService.rejectRequest(userId, requesterId);
+    }
+
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/{friendId}")
+    void deleteFriend(Authentication authentication,
+                      @PathVariable UUID friendId) {
+        UUID userId = currentUser.id(authentication);
+        friendShipService.deleteFriend(userId, friendId);
+    }
+
 }

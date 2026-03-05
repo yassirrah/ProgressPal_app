@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   acceptFriendRequest,
+  deleteFriend,
   getFriends,
   getIncomingFriendRequests,
   getStoredUser,
+  rejectFriendRequest,
   searchUsersByUsername,
   sendFriendRequest,
 } from '../lib/api';
 
 const Friends = () => {
+  const navigate = useNavigate();
   const user = useMemo(() => getStoredUser(), []);
   const [friends, setFriends] = useState([]);
   const [incomingRequests, setIncomingRequests] = useState([]);
@@ -20,7 +24,11 @@ const Friends = () => {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [acceptingRequesterId, setAcceptingRequesterId] = useState('');
+  const [rejectingRequesterId, setRejectingRequesterId] = useState('');
+  const [deletingFriendId, setDeletingFriendId] = useState('');
   const [sendSuccessPulse, setSendSuccessPulse] = useState(false);
+  const [showAddPanel, setShowAddPanel] = useState(false);
+  const [showRequestsPanel, setShowRequestsPanel] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
@@ -154,6 +162,38 @@ const Friends = () => {
     }
   };
 
+  const handleRejectRequest = async (requesterId) => {
+    if (!user) return;
+    try {
+      setRejectingRequesterId(requesterId);
+      setError('');
+      setMessage('');
+      await rejectFriendRequest(user.id, requesterId);
+      setMessage('Friend request rejected.');
+      await loadFriends();
+    } catch (err) {
+      setError(err.message || 'Failed to reject friend request');
+    } finally {
+      setRejectingRequesterId('');
+    }
+  };
+
+  const handleDeleteFriend = async (friendId) => {
+    if (!user) return;
+    try {
+      setDeletingFriendId(friendId);
+      setError('');
+      setMessage('');
+      await deleteFriend(user.id, friendId);
+      setMessage('Friend removed.');
+      await loadFriends();
+    } catch (err) {
+      setError(err.message || 'Failed to delete friend');
+    } finally {
+      setDeletingFriendId('');
+    }
+  };
+
   const getInitial = (value) => (value || '?').trim().charAt(0).toUpperCase() || '?';
 
   const avatarStyleFor = (value) => {
@@ -171,6 +211,22 @@ const Friends = () => {
     };
   };
 
+  const friendPreviewFor = (friendId) => {
+    const seed = String(friendId || '').split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+    if (seed % 2 === 0) {
+      return {
+        meta: 'Studying • 45 min session',
+        actionLabel: 'Join',
+        onAction: () => navigate('/feed'),
+      };
+    }
+    return {
+      meta: 'Last active 2h ago',
+      actionLabel: 'View profile',
+      onAction: () => setMessage('Profile view is coming soon.'),
+    };
+  };
+
   if (!user) {
     return <p>Please log in to manage friendships.</p>;
   }
@@ -178,141 +234,152 @@ const Friends = () => {
   return (
     <div className="friends-page">
       <h1>Friends</h1>
-      <p className="message-muted" style={{ marginTop: '-0.25rem' }}>
-        Manage your network, accept requests, and add new friends.
-      </p>
+      <div className="friends-toolbar">
+        <button
+          type="button"
+          className={`compact-button ${showAddPanel ? 'secondary-button' : ''}`}
+          onClick={() => setShowAddPanel((prev) => !prev)}
+        >
+          Add Friend
+        </button>
+        <button
+          type="button"
+          className={`compact-button ${showRequestsPanel ? 'secondary-button' : ''}`}
+          onClick={() => setShowRequestsPanel((prev) => !prev)}
+        >
+          Requests ({incomingRequests.length})
+        </button>
+      </div>
+      <div className="friends-divider" />
       {error && <p className="message-error">{error}</p>}
       {message && <p className="message-muted">{message}</p>}
       {loading && <p>Loading...</p>}
 
-      <section className="friends-section-card friends-section-card--accent">
-        <div className="friends-section-head">
-          <div>
-            <p className="friends-section-kicker">ADD FRIEND</p>
-            <h2>Send Friend Request</h2>
-          </div>
-        </div>
-        <form onSubmit={handleSendRequest} className="friends-form">
-          <div>
-            <label>Search by Username or User ID</label>
-            <div className="friends-lookup">
-              <input
-                type="text"
-                value={friendLookup}
-                onChange={(e) => handleLookupChange(e.target.value)}
-                onFocus={() => setLookupFocused(true)}
-                onBlur={() => window.setTimeout(() => setLookupFocused(false), 100)}
-                placeholder="Type a username or paste a UUID"
-                required
-                autoComplete="off"
-              />
-              {lookupFocused && (visibleSuggestions.length > 0 || searchingUsers) && (
-                <div className="friends-typeahead-list" role="listbox" aria-label="User suggestions">
-                  {searchingUsers && (
-                    <div className="friends-typeahead-status">Searching usernames...</div>
-                  )}
-                  {!searchingUsers && visibleSuggestions.map((candidate) => (
-                    <button
-                      key={candidate.id}
-                      type="button"
-                      className="friends-typeahead-item"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        handleSelectSuggestion(candidate);
-                      }}
-                    >
-                      <span
-                        className="friend-avatar friend-avatar--mini"
-                        style={avatarStyleFor(candidate.username)}
+      {showAddPanel && (
+        <section className="friends-section-card friends-section-card--accent">
+          <form onSubmit={handleSendRequest} className="friends-form">
+            <div>
+              <label>Search by Username or User ID</label>
+              <div className="friends-lookup">
+                <input
+                  type="text"
+                  value={friendLookup}
+                  onChange={(e) => handleLookupChange(e.target.value)}
+                  onFocus={() => setLookupFocused(true)}
+                  onBlur={() => window.setTimeout(() => setLookupFocused(false), 100)}
+                  placeholder="Type a username or paste a UUID"
+                  required
+                  autoComplete="off"
+                />
+                {lookupFocused && (visibleSuggestions.length > 0 || searchingUsers) && (
+                  <div className="friends-typeahead-list" role="listbox" aria-label="User suggestions">
+                    {searchingUsers && (
+                      <div className="friends-typeahead-status">Searching usernames...</div>
+                    )}
+                    {!searchingUsers && visibleSuggestions.map((candidate) => (
+                      <button
+                        key={candidate.id}
+                        type="button"
+                        className="friends-typeahead-item"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          handleSelectSuggestion(candidate);
+                        }}
+                      >
+                        <span
+                          className="friend-avatar friend-avatar--mini"
+                          style={avatarStyleFor(candidate.username)}
+                          aria-hidden="true"
+                        >
+                          {getInitial(candidate.username)}
+                        </span>
+                        <span className="friends-typeahead-text">
+                          <span className="friends-typeahead-name">{candidate.username}</span>
+                          <span className="friends-typeahead-meta">Select user</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="friends-form-actions">
+              <button
+                type="submit"
+                disabled={sending || !friendLookup.trim()}
+                className={sendSuccessPulse ? 'button-success-pulse' : ''}
+              >
+                {sending ? 'Sending...' : sendSuccessPulse ? '✓ Request Sent' : 'Send Request'}
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
+
+      {showRequestsPanel && (
+        <section className="friends-section-card">
+          {incomingRequests.length === 0 ? (
+            <p className="message-muted">No new requests right now.</p>
+          ) : (
+            <div className="friends-list">
+              {incomingRequests.map((request) => {
+                const username = request.requesterUsername || 'Unknown user';
+                return (
+                  <article key={`${request.requesterId}-${request.createdAt || ''}`} className="friend-row-card">
+                    <div className="friend-row-main">
+                      <div
+                        className="friend-avatar"
+                        style={avatarStyleFor(username)}
                         aria-hidden="true"
                       >
-                        {getInitial(candidate.username)}
-                      </span>
-                      <span className="friends-typeahead-text">
-                        <span className="friends-typeahead-name">{candidate.username}</span>
-                        <span className="friends-typeahead-meta">Select user</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
+                        {getInitial(username)}
+                      </div>
+                      <div>
+                        <p className="friend-name">{username}</p>
+                        <p className="friend-meta">Sent you a friend request</p>
+                      </div>
+                    </div>
+                    <div className="friend-row-actions">
+                      <button
+                        type="button"
+                        className="compact-button"
+                        disabled={
+                          acceptingRequesterId === request.requesterId
+                          || rejectingRequesterId === request.requesterId
+                        }
+                        onClick={() => handleAcceptRequest(request.requesterId)}
+                      >
+                        {acceptingRequesterId === request.requesterId ? 'Accepting...' : 'Accept'}
+                      </button>
+                      <button
+                        type="button"
+                        className="compact-button secondary-button"
+                        disabled={
+                          acceptingRequesterId === request.requesterId
+                          || rejectingRequesterId === request.requesterId
+                        }
+                        onClick={() => handleRejectRequest(request.requesterId)}
+                      >
+                        {rejectingRequesterId === request.requesterId ? 'Rejecting...' : 'Reject'}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
-            <p className="message-muted" style={{ margin: '6px 0 0' }}>
-              Type a username to autocomplete, or paste a user ID directly.
-            </p>
-          </div>
-          <div className="friends-form-actions">
-            <button
-              type="submit"
-              disabled={sending || !friendLookup.trim()}
-              className={sendSuccessPulse ? 'button-success-pulse' : ''}
-            >
-              {sending ? 'Sending...' : sendSuccessPulse ? '✓ Request Sent' : 'Send Request'}
-            </button>
-          </div>
-        </form>
-      </section>
+          )}
+        </section>
+      )}
 
       <section className="friends-section-card">
-        <div className="friends-section-head">
-          <div>
-            <p className="friends-section-kicker">INCOMING REQUESTS</p>
-            <h2>Incoming Friend Requests</h2>
-          </div>
-        </div>
-
-        {incomingRequests.length === 0 ? (
-          <p className="message-muted">No new requests right now.</p>
-        ) : (
-          <div className="friends-list">
-            {incomingRequests.map((request) => {
-              const username = request.requesterUsername || 'Unknown user';
-              return (
-                <article key={`${request.requesterId}-${request.createdAt || ''}`} className="friend-row-card">
-                  <div className="friend-row-main">
-                    <div
-                      className="friend-avatar"
-                      style={avatarStyleFor(username)}
-                      aria-hidden="true"
-                    >
-                      {getInitial(username)}
-                    </div>
-                    <div>
-                      <p className="friend-name">{username}</p>
-                      <p className="friend-meta">Sent you a friend request</p>
-                    </div>
-                  </div>
-                  <div className="friend-row-actions">
-                    <button
-                      type="button"
-                      className="compact-button"
-                      disabled={acceptingRequesterId === request.requesterId}
-                      onClick={() => handleAcceptRequest(request.requesterId)}
-                    >
-                      {acceptingRequesterId === request.requesterId ? 'Accepting...' : 'Accept'}
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <section className="friends-section-card">
-        <div className="friends-section-head">
-          <div>
-            <p className="friends-section-kicker">YOUR FRIENDS</p>
-            <h2>Your Friends</h2>
-          </div>
-        </div>
-
+        <h2 className="friends-title">Your Friends</h2>
         {friends.length === 0 ? (
           <p className="message-muted">No friends yet. Add someone from the feed or send a request above.</p>
         ) : (
           <div className="friends-list">
             {friends.map((friend) => {
               const username = friend.friendusername || 'Unknown user';
+              const preview = friendPreviewFor(friend.FriendId);
               return (
                 <article key={`${friend.FriendId}-${friend.createdAt || ''}`} className="friend-row-card">
                   <div className="friend-row-main">
@@ -325,8 +392,25 @@ const Friends = () => {
                     </div>
                     <div>
                       <p className="friend-name">{username}</p>
-                      <p className="friend-meta">Friend</p>
+                      <p className="friend-meta">{preview.meta}</p>
                     </div>
+                  </div>
+                  <div className="friend-row-actions">
+                    <button
+                      type="button"
+                      className="compact-button"
+                      onClick={preview.onAction}
+                    >
+                      {preview.actionLabel}
+                    </button>
+                    <button
+                      type="button"
+                      className="compact-button secondary-button"
+                      disabled={deletingFriendId === friend.FriendId}
+                      onClick={() => handleDeleteFriend(friend.FriendId)}
+                    >
+                      {deletingFriendId === friend.FriendId ? 'Deleting...' : 'Remove'}
+                    </button>
                   </div>
                 </article>
               );
