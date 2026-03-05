@@ -3,6 +3,7 @@ package org.progresspalbackend.progresspalbackend.integration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
+import org.progresspalbackend.progresspalbackend.domain.Friendship;
 import org.progresspalbackend.progresspalbackend.domain.Session;
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
@@ -17,6 +18,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
+import org.progresspalbackend.progresspalbackend.repository.FriendRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.http.MediaType;
@@ -50,11 +52,13 @@ public class UserSessionsPaginationApiTest {
 
     @Autowired SessionRepository sessionRepo;
     @Autowired ActivityTypeRepository activityTypeRepo;
+    @Autowired FriendRepository friendRepo;
     @Autowired UserRepository userRepo;
 
     @BeforeEach
     void cleanDb() {
         sessionRepo.deleteAll();
+        friendRepo.deleteAll();
         activityTypeRepo.deleteAll();
         userRepo.deleteAll();
     }
@@ -128,13 +132,15 @@ public class UserSessionsPaginationApiTest {
     }
 
     @Test
-    void nonOwner_ignoresVisibilityParam_and_returnsPublicOnly_paginated() throws Exception {
+    void nonFriend_nonOwner_ignoresVisibilityParam_and_returnsPublicOnly_paginated() throws Exception {
         User target = persistUser();
         User actor = persistUser();
         ActivityType type = persistActivityType("Reading");
 
         // PUBLIC (old)
         Session pub1 = sessionRepo.save(session(target, type, Visibility.PUBLIC,  Instant.parse("2026-01-01T10:00:00Z")));
+        // FRIENDS (newer but must NOT appear for non-friend)
+        sessionRepo.save(session(target, type, Visibility.FRIENDS, Instant.parse("2026-01-02T10:00:00Z")));
         // PRIVATE (newer but must NOT appear)
         sessionRepo.save(session(target, type, Visibility.PRIVATE, Instant.parse("2026-01-03T10:00:00Z")));
         // PUBLIC (newest)
@@ -152,6 +158,30 @@ public class UserSessionsPaginationApiTest {
                 .andExpect(jsonPath("$.content[0].id").value(pub2.getId().toString()))
                 .andExpect(jsonPath("$.content[1].id").value(pub1.getId().toString()))
                 .andExpect(jsonPath("$.content[0].visibility").value("PUBLIC"))
+                .andExpect(jsonPath("$.content[1].visibility").value("PUBLIC"));
+    }
+
+    @Test
+    void friend_nonOwner_withoutFilter_returnsPublicAndFriends_paginated() throws Exception {
+        User target = persistUser();
+        User actor = persistUser();
+        ActivityType type = persistActivityType("Reading");
+        friendRepo.save(friendship(actor, target));
+
+        Session publicSession = sessionRepo.save(session(target, type, Visibility.PUBLIC, Instant.parse("2026-01-01T10:00:00Z")));
+        Session friendsSession = sessionRepo.save(session(target, type, Visibility.FRIENDS, Instant.parse("2026-01-02T10:00:00Z")));
+        sessionRepo.save(session(target, type, Visibility.PRIVATE, Instant.parse("2026-01-03T10:00:00Z")));
+
+        mvc.perform(get("/api/users/{userId}/sessions", target.getId())
+                        .queryParam("page", "0")
+                        .queryParam("size", "10")
+                        .header("X-User-Id", actor.getId().toString())
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].id").value(friendsSession.getId().toString()))
+                .andExpect(jsonPath("$.content[1].id").value(publicSession.getId().toString()))
+                .andExpect(jsonPath("$.content[0].visibility").value("FRIENDS"))
                 .andExpect(jsonPath("$.content[1].visibility").value("PUBLIC"));
     }
 
@@ -184,5 +214,13 @@ public class UserSessionsPaginationApiTest {
         s.setEndedAt(null);
         s.setTitle("t");
         return s;
+    }
+
+    private Friendship friendship(User user, User friend) {
+        Friendship f = new Friendship();
+        f.setUser(user);
+        f.setFriend(friend);
+        f.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z"));
+        return f;
     }
 }

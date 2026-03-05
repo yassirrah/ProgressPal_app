@@ -7,6 +7,7 @@ import Friends from './components/Friends';
 import Account from './components/Account';
 import MySessions from './components/MySessions';
 import ActivityTypes from './components/ActivityTypes';
+import UserProfile from './components/UserProfile';
 import Navbar from './components/Navbar';
 import { getStoredUser } from './lib/api';
 import './App.css';
@@ -25,6 +26,7 @@ function App() {
             <Route path="/feed" element={<Feed />} />
             <Route path="/friends" element={<Friends />} />
             <Route path="/account" element={<Account />} />
+            <Route path="/users/:userId/profile" element={<UserProfile />} />
             <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
             <Route path="/signup" element={user ? <Navigate to="/" replace /> : <Signup />} />
           </Routes>

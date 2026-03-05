@@ -138,12 +138,9 @@ const Friends = () => {
     }
   };
 
-  const handleSelectSuggestion = (candidate) => {
-    setFriendLookup(candidate.username);
-    setReceiverId(candidate.id);
-    setUserSuggestions([]);
+  const handleOpenCandidateProfile = (candidateId) => {
     setLookupFocused(false);
-    setError('');
+    navigate(`/users/${candidateId}/profile`);
   };
 
   const handleAcceptRequest = async (requesterId) => {
@@ -223,7 +220,7 @@ const Friends = () => {
     return {
       meta: 'Last active 2h ago',
       actionLabel: 'View profile',
-      onAction: () => setMessage('Profile view is coming soon.'),
+      onAction: () => navigate(`/users/${friendId}/profile`),
     };
   };
 
@@ -277,27 +274,28 @@ const Friends = () => {
                       <div className="friends-typeahead-status">Searching usernames...</div>
                     )}
                     {!searchingUsers && visibleSuggestions.map((candidate) => (
-                      <button
-                        key={candidate.id}
-                        type="button"
-                        className="friends-typeahead-item"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          handleSelectSuggestion(candidate);
-                        }}
-                      >
-                        <span
-                          className="friend-avatar friend-avatar--mini"
-                          style={avatarStyleFor(candidate.username)}
-                          aria-hidden="true"
+                      <div key={candidate.id} className="friends-typeahead-item">
+                        <button
+                          type="button"
+                          className="friends-typeahead-profile"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleOpenCandidateProfile(candidate.id);
+                          }}
                         >
-                          {getInitial(candidate.username)}
-                        </span>
-                        <span className="friends-typeahead-text">
-                          <span className="friends-typeahead-name">{candidate.username}</span>
-                          <span className="friends-typeahead-meta">Select user</span>
-                        </span>
-                      </button>
+                          <span
+                            className="friend-avatar friend-avatar--mini"
+                            style={avatarStyleFor(candidate.username)}
+                            aria-hidden="true"
+                          >
+                            {getInitial(candidate.username)}
+                          </span>
+                          <span className="friends-typeahead-text">
+                            <span className="friends-typeahead-name">{candidate.username}</span>
+                            <span className="friends-typeahead-meta">Open profile</span>
+                          </span>
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}

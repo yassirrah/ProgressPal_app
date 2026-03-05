@@ -56,6 +56,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/users", "/api/users/search", "/api/users/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/users/*/profile").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/sessions").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/activity-types/*").permitAll()
                         .requestMatchers(HttpMethod.PUT, "/api/activity-types/*").permitAll()

@@ -235,7 +235,16 @@ public class SessionService {
                 sessions = sessionRepo.findByUserIdAndVisibilityOrderByStartedAtDesc(targetUserId, visibility, pageable);
             }
         }else{
-            sessions = sessionRepo.findByUserIdAndVisibilityOrderByStartedAtDesc(targetUserId, Visibility.PUBLIC, pageable);
+            boolean areFriends = areUsersFriends(actorUserId, targetUserId);
+            if (areFriends) {
+                sessions = sessionRepo.findByUserIdAndVisibilityInOrderByStartedAtDesc(
+                        targetUserId,
+                        List.of(Visibility.PUBLIC, Visibility.FRIENDS),
+                        pageable
+                );
+            } else {
+                sessions = sessionRepo.findByUserIdAndVisibilityOrderByStartedAtDesc(targetUserId, Visibility.PUBLIC, pageable);
+            }
         }
         return sessions.map(mapper::toDto);
     }
@@ -251,7 +260,11 @@ public class SessionService {
             return Page.empty(pageable);
         }
 
-        return sessionRepo.findByUser_IdInAndVisibilityOrderByStartedAtDesc(List.copyOf(friendIds), Visibility.PUBLIC, pageable)
+        return sessionRepo.findByUser_IdInAndVisibilityInOrderByStartedAtDesc(
+                List.copyOf(friendIds),
+                List.of(Visibility.PUBLIC, Visibility.FRIENDS),
+                pageable
+        )
                 .map(s -> new FeedSessionDto(
                     s.getId(),
                     s.getUser().getId(),
@@ -269,6 +282,11 @@ public class SessionService {
                     s.isLive() && !s.isPaused(),
                     s.getVisibility())
                 );
+    }
+
+    private boolean areUsersFriends(UUID actorUserId, UUID targetUserId) {
+        return friendRepository.existsByUser_IdAndFriend_Id(actorUserId, targetUserId)
+                || friendRepository.existsByUser_IdAndFriend_Id(targetUserId, actorUserId);
     }
 
     public Optional<SessionDto> getLiveSessionOfUser(UUID actorUserId) {
