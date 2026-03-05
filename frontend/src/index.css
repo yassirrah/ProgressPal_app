@@ -1789,6 +1789,16 @@ form {
   flex-shrink: 0;
 }
 
+.feed-avatar-image {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  object-fit: cover;
+  display: block;
+  flex-shrink: 0;
+}
+
 .feed-avatar-button {
   border: 0;
   padding: 0;

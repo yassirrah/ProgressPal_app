@@ -269,6 +269,7 @@ public class SessionService {
                     s.getId(),
                     s.getUser().getId(),
                     s.getUser().getUsername(),
+                    s.getUser().getProfileImage(),
                     s.getActivityType().getId(),
                     s.getActivityType().getName(),
                     s.getTitle(),

@@ -343,9 +343,18 @@ const Feed = () => {
                     onClick={() => handleViewProfile(item.userId)}
                     aria-label={`View ${item.username}'s profile`}
                   >
-                    <span className="feed-avatar" aria-hidden="true">
-                      {getInitial(item.username)}
-                    </span>
+                    {item.profileImage ? (
+                      <img
+                        src={item.profileImage}
+                        alt=""
+                        className="feed-avatar-image"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <span className="feed-avatar" aria-hidden="true">
+                        {getInitial(item.username)}
+                      </span>
+                    )}
                   </button>
                   <div className="feed-user-row">
                     <p className="feed-user-line">
