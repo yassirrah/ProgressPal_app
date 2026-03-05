@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { clearStoredUser, getStoredUser } from '../lib/api';
 
 const Navbar = () => {
+  const location = useLocation();
   const [user, setUser] = useState(getStoredUser());
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [logoMissing, setLogoMissing] = useState(false);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     const syncUser = () => setUser(getStoredUser());
@@ -16,13 +20,45 @@ const Navbar = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (!menuRef.current?.contains(event.target)) {
+        setMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [menuOpen]);
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+    setMenuOpen(false);
+  }, [location.pathname]);
+
   const handleLogout = () => {
+    setMenuOpen(false);
+    setMobileNavOpen(false);
     clearStoredUser();
     window.location.href = '/login';
   };
 
   const navLinkClass = ({ isActive }) => `nav-link${isActive ? ' active' : ''}`;
   const userInitial = (user?.username || '?').trim().charAt(0).toUpperCase() || '?';
+  const closeMobileNav = () => setMobileNavOpen(false);
 
   return (
     <nav>
@@ -38,25 +74,65 @@ const Navbar = () => {
           <span className="brand-text">ProgressPal</span>
         )}
       </Link>
-      <NavLink to="/" end className={navLinkClass}>Home</NavLink>
-      <NavLink to="/my-sessions" className={navLinkClass}>My Sessions</NavLink>
-      <NavLink to="/activity-types" className={navLinkClass}>Activity Types</NavLink>
-      <NavLink to="/feed" className={navLinkClass}>Feed</NavLink>
-      <NavLink to="/friends" className={navLinkClass}>Friends</NavLink>
+      <button
+        type="button"
+        className="nav-mobile-toggle"
+        onClick={() => setMobileNavOpen((prev) => !prev)}
+        aria-expanded={mobileNavOpen}
+        aria-controls="main-nav-links"
+        aria-label="Toggle navigation"
+      >
+        {mobileNavOpen ? '✕' : '☰'}
+      </button>
+      <div id="main-nav-links" className={`nav-links${mobileNavOpen ? ' open' : ''}`}>
+        <NavLink to="/" end className={navLinkClass} onClick={closeMobileNav}>Home</NavLink>
+        <NavLink to="/my-sessions" className={navLinkClass} onClick={closeMobileNav}>My Sessions</NavLink>
+        <NavLink to="/activity-types" className={navLinkClass} onClick={closeMobileNav}>Activity Types</NavLink>
+        <NavLink to="/feed" className={navLinkClass} onClick={closeMobileNav}>Feed</NavLink>
+        <NavLink to="/friends" className={navLinkClass} onClick={closeMobileNav}>Friends</NavLink>
+        {!user && (
+          <>
+            <NavLink to="/login" className={navLinkClass} onClick={closeMobileNav}>Login</NavLink>
+            <NavLink to="/signup" className={navLinkClass} onClick={closeMobileNav}>Sign Up</NavLink>
+          </>
+        )}
+      </div>
       {user ? (
-        <>
-          <div className="nav-user-chip" title={user.username}>
+        <div className="nav-user-menu" ref={menuRef}>
+          <button
+            type="button"
+            className="nav-user-chip nav-user-chip-button"
+            title={user.username}
+            onClick={() => setMenuOpen((prev) => !prev)}
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+          >
             <span className="nav-user-avatar" aria-hidden="true">{userInitial}</span>
             <span className="nav-user-name">{user.username}</span>
-          </div>
-          <button onClick={handleLogout}>Logout</button>
-        </>
-      ) : (
-        <>
-          <NavLink to="/login" className={navLinkClass}>Login</NavLink>
-          <NavLink to="/signup" className={navLinkClass}>Sign Up</NavLink>
-        </>
-      )}
+            <span className="nav-user-caret" aria-hidden="true">{menuOpen ? '▴' : '▾'}</span>
+          </button>
+          {menuOpen && (
+            <div className="nav-user-dropdown" role="menu">
+              <Link
+                to="/account"
+                className="nav-user-dropdown-item"
+                role="menuitem"
+                onClick={() => setMenuOpen(false)}
+              >
+                Account settings
+              </Link>
+              <button
+                type="button"
+                className="nav-user-dropdown-item nav-user-dropdown-button"
+                role="menuitem"
+                onClick={handleLogout}
+              >
+                Logout
+              </button>
+            </div>
+          )}
+        </div>
+      ) : null}
     </nav>
   );
 };

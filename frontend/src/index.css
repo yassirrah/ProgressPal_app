@@ -37,6 +37,7 @@ nav {
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
+  flex-wrap: wrap;
   padding: 1rem;
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.88);
@@ -48,6 +49,24 @@ nav {
 nav a,
 nav button {
   margin: 0;
+}
+
+.nav-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.nav-mobile-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+  border-radius: 10px;
 }
 
 .nav-link {
@@ -128,6 +147,109 @@ nav button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.nav-user-menu {
+  position: relative;
+  margin-left: 0.25rem;
+}
+
+.nav-user-chip-button {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  padding: 0.3rem 0.45rem 0.3rem 0.3rem;
+}
+
+.nav-user-chip-button:hover {
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.nav-user-caret {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.nav-user-dropdown {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  min-width: 180px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  z-index: 20;
+  display: grid;
+}
+
+.nav-user-dropdown-item {
+  width: 100%;
+  border: 0;
+  background: #fff;
+  color: var(--text);
+  text-align: left;
+  text-decoration: none;
+  font-weight: 600;
+  padding: 0.55rem 0.72rem;
+  cursor: pointer;
+}
+
+.nav-user-dropdown-item:hover,
+.nav-user-dropdown-item:focus-visible {
+  background: rgba(14, 165, 168, 0.09);
+}
+
+.nav-user-dropdown-button {
+  font: inherit;
+}
+
+@media (max-width: 900px) {
+  nav {
+    justify-content: flex-start;
+    gap: 0.5rem;
+    padding: 0.75rem;
+  }
+
+  .brand-logo {
+    height: 44px;
+    max-width: 150px;
+  }
+
+  .nav-mobile-toggle {
+    display: inline-flex;
+    margin-left: auto;
+  }
+
+  .nav-user-menu {
+    margin-left: 0;
+  }
+
+  .nav-links {
+    order: 3;
+    width: 100%;
+    display: none;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.15rem;
+    padding-top: 0.55rem;
+    margin-top: 0.15rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .nav-links.open {
+    display: flex;
+  }
+
+  .nav-link {
+    width: 100%;
+    padding: 0.45rem 0.2rem;
+  }
+
+  .nav-link.active::after {
+    bottom: 0.1rem;
+  }
 }
 
 h1,
@@ -1309,6 +1431,22 @@ form {
 .friends-page {
   display: grid;
   gap: 0.9rem;
+}
+
+.friends-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.friends-divider {
+  height: 1px;
+  background: var(--border);
+}
+
+.friends-title {
+  margin: 0 0 0.3rem;
 }
 
 .friends-section-card {

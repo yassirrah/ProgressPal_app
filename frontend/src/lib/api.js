@@ -427,3 +427,25 @@ export async function getIncomingFriendRequests(userId) {
     throw new Error(toErrorMessage(error, 'Failed to load incoming requests'));
   }
 }
+
+export async function getMyAccount(userId) {
+  try {
+    const { data } = await client.get('/me/account', {
+      headers: authHeaders(userId),
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load account'));
+  }
+}
+
+export async function updateMyAccount(userId, payload) {
+  try {
+    const { data } = await client.patch('/me/account', payload, {
+      headers: authHeaders(userId),
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to update account'));
+  }
+}
