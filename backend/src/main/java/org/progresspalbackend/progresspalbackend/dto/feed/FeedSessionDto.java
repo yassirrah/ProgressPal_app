@@ -9,6 +9,7 @@ import java.util.UUID;
 public record FeedSessionDto(UUID id,
                              UUID userId,
                              String username,
+                             String profileImage,
                              UUID activityTypeId,
                              String activityTypeName,
                              String title,

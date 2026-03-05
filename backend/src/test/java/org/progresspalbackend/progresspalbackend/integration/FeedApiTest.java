@@ -81,6 +81,8 @@ public class FeedApiTest {
         User friendA = persistUser();
         User friendB = persistUser();
         User stranger = persistUser();
+        friendA.setProfileImage("https://cdn.test/profiles/friend-a.png");
+        friendA = userRepo.save(friendA);
 
         ActivityType t1 = persistActivityType("Study");
         ActivityType t2 = persistActivityType("Gym");
@@ -124,6 +126,7 @@ public class FeedApiTest {
                 .andExpect(jsonPath("$.content[1].visibility").value("PUBLIC"))
                 .andExpect(jsonPath("$.content[0].userId").exists())
                 .andExpect(jsonPath("$.content[0].username").exists())
+                .andExpect(jsonPath("$.content[0].profileImage").value("https://cdn.test/profiles/friend-a.png"))
                 .andExpect(jsonPath("$.content[0].activityTypeId").exists())
                 .andExpect(jsonPath("$.content[0].activityTypeName").exists())
                 .andExpect(jsonPath("$.content[0].paused").value(true))
