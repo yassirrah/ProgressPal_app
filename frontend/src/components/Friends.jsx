@@ -223,7 +223,7 @@ const Friends = () => {
     return {
       meta: 'Last active 2h ago',
       actionLabel: 'View profile',
-      onAction: () => setMessage('Profile view is coming soon.'),
+      onAction: () => navigate(`/users/${friendId}/profile`),
     };
   };
 

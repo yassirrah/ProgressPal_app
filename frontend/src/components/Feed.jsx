@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getFeed, getFriends, getStoredUser, sendFriendRequest } from '../lib/api';
 import LiveSessionEngagement from './LiveSessionEngagement';
 import SessionDetailsModal from './SessionDetailsModal';
@@ -27,6 +28,7 @@ const isSessionPaused = (item) => Boolean(item?.paused ?? (item?.pausedAt && !it
 const isSessionOngoing = (item) => Boolean(item?.ongoing ?? (!item?.endedAt && !isSessionPaused(item)));
 
 const Feed = () => {
+  const navigate = useNavigate();
   const currentUser = useMemo(() => getStoredUser(), []);
   const [feedItems, setFeedItems] = useState([]);
   const [friendIds, setFriendIds] = useState(new Set());
@@ -310,6 +312,11 @@ const Feed = () => {
     showToast(`Sent to ${item.username}: "${quickMessage}"`, { durationMs: 2800 });
   };
 
+  const handleViewProfile = (targetUserId) => {
+    if (!targetUserId) return;
+    navigate(`/users/${targetUserId}/profile`);
+  };
+
   const supportLiveViewSession = feedItems.find((item) => item.id === supportLiveViewSessionId) || null;
   const sessionDetails = feedItems.find((item) => item.id === sessionDetailsId) || null;
 
@@ -330,12 +337,25 @@ const Feed = () => {
             >
               <div className="feed-card-head">
                 <div className="feed-author">
-                  <div className="feed-avatar" aria-hidden="true">
-                    {getInitial(item.username)}
-                  </div>
+                  <button
+                    type="button"
+                    className="feed-avatar-button"
+                    onClick={() => handleViewProfile(item.userId)}
+                    aria-label={`View ${item.username}'s profile`}
+                  >
+                    <span className="feed-avatar" aria-hidden="true">
+                      {getInitial(item.username)}
+                    </span>
+                  </button>
                   <div className="feed-user-row">
                     <p className="feed-user-line">
-                      <span className="feed-user">{item.username}</span>
+                      <button
+                        type="button"
+                        className="feed-user-link"
+                        onClick={() => handleViewProfile(item.userId)}
+                      >
+                        {item.username}
+                      </button>
                       <span className="feed-ago-inline">{formatRelativeFromNow(item.startedAt)}</span>
                     </p>
                   </div>
@@ -407,10 +427,17 @@ const Feed = () => {
                 )}
                 <button
                   type="button"
+                  className="secondary-button"
+                  onClick={() => handleViewProfile(item.userId)}
+                >
+                  View profile
+                </button>
+                <button
+                  type="button"
                   className="secondary-button feed-view-button"
                   onClick={() => setSessionDetailsId(item.id)}
                 >
-                  View
+                  View session
                 </button>
               </div>
             </article>

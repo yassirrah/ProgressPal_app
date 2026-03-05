@@ -363,6 +363,17 @@ export async function getFriends(userId) {
   }
 }
 
+export async function getUserProfile(userId, targetUserId) {
+  try {
+    const { data } = await client.get(`/users/${targetUserId}/profile`, {
+      headers: authHeaders(userId),
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load user profile'));
+  }
+}
+
 export async function searchUsersByUsername(query) {
   try {
     const { data } = await client.get('/users/search', {
