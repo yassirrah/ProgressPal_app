@@ -4,6 +4,7 @@ import Signup from './components/Signup';
 import Home from './components/Home';
 import Feed from './components/Feed';
 import Friends from './components/Friends';
+import Account from './components/Account';
 import MySessions from './components/MySessions';
 import ActivityTypes from './components/ActivityTypes';
 import Navbar from './components/Navbar';
@@ -23,6 +24,7 @@ function App() {
             <Route path="/activity-types" element={<ActivityTypes />} />
             <Route path="/feed" element={<Feed />} />
             <Route path="/friends" element={<Friends />} />
+            <Route path="/account" element={<Account />} />
             <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
             <Route path="/signup" element={user ? <Navigate to="/" replace /> : <Signup />} />
           </Routes>
