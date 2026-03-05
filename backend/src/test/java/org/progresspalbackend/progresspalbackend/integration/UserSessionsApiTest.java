@@ -3,10 +3,12 @@ package org.progresspalbackend.progresspalbackend.integration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
+import org.progresspalbackend.progresspalbackend.domain.Friendship;
 import org.progresspalbackend.progresspalbackend.domain.Session;
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
+import org.progresspalbackend.progresspalbackend.repository.FriendRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,12 +55,15 @@ public class UserSessionsApiTest {
     @Autowired ObjectMapper objectMapper;
     @Autowired SessionRepository sessionRepo;
     @Autowired ActivityTypeRepository activityTypeRepo;
+    @Autowired FriendRepository friendRepo;
     @Autowired UserRepository userRepo;
 
     @BeforeEach
     void cleanDb() {
         sessionRepo.deleteAll();
+        friendRepo.deleteAll();
         activityTypeRepo.deleteAll();
+        userRepo.deleteAll();
     }
 
     @Test
@@ -116,7 +121,7 @@ public class UserSessionsApiTest {
     }
 
     @Test
-    void nonOwner_alwaysGetsPublicOnly_evenIfVisibilityParamProvided() throws Exception {
+    void nonFriend_nonOwner_getsPublicOnly_evenIfVisibilityParamProvided() throws Exception {
         User target = persistUser();
         User actor = persistUser();
 
@@ -124,6 +129,8 @@ public class UserSessionsApiTest {
 
         Session pub = sessionRepo.save(session(target, type, Visibility.PUBLIC,
                 Instant.parse("2026-01-02T10:00:00Z")));
+        sessionRepo.save(session(target, type, Visibility.FRIENDS,
+                Instant.parse("2026-01-02T11:00:00Z")));
 
         sessionRepo.save(session(target, type, Visibility.PRIVATE,
                 Instant.parse("2026-01-03T10:00:00Z")));
@@ -136,6 +143,58 @@ public class UserSessionsApiTest {
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.content[0].id").value(pub.getId().toString()))
                 .andExpect(jsonPath("$.content[0].visibility").value("PUBLIC"));
+    }
+
+    @Test
+    void friend_nonOwner_noFilter_getsPublicAndFriends_only() throws Exception {
+        User target = persistUser();
+        User actor = persistUser();
+
+        ActivityType type = persistActivityType("Reading");
+        friendRepo.save(friendship(actor, target));
+
+        Session publicSession = sessionRepo.save(session(target, type, Visibility.PUBLIC,
+                Instant.parse("2026-01-01T10:00:00Z")));
+        Session friendsSession = sessionRepo.save(session(target, type, Visibility.FRIENDS,
+                Instant.parse("2026-01-02T10:00:00Z")));
+        sessionRepo.save(session(target, type, Visibility.PRIVATE,
+                Instant.parse("2026-01-03T10:00:00Z")));
+
+        mvc.perform(get("/api/users/{userId}/sessions", target.getId())
+                        .header("X-User-Id", actor.getId().toString())
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].id").value(friendsSession.getId().toString()))
+                .andExpect(jsonPath("$.content[1].id").value(publicSession.getId().toString()))
+                .andExpect(jsonPath("$.content[0].visibility").value("FRIENDS"))
+                .andExpect(jsonPath("$.content[1].visibility").value("PUBLIC"));
+    }
+
+    @Test
+    void friend_nonOwner_visibilityParam_isIgnored_andReturnsPublicAndFriends() throws Exception {
+        User target = persistUser();
+        User actor = persistUser();
+
+        ActivityType type = persistActivityType("Reading");
+        friendRepo.save(friendship(target, actor));
+
+        Session friendsSession = sessionRepo.save(session(target, type, Visibility.FRIENDS,
+                Instant.parse("2026-01-02T10:00:00Z")));
+        sessionRepo.save(session(target, type, Visibility.PUBLIC,
+                Instant.parse("2026-01-01T10:00:00Z")));
+        sessionRepo.save(session(target, type, Visibility.PRIVATE,
+                Instant.parse("2026-01-03T10:00:00Z")));
+
+        mvc.perform(get("/api/users/{userId}/sessions", target.getId())
+                        .queryParam("visibility", "FRIENDS")
+                        .header("X-User-Id", actor.getId().toString())
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].id").value(friendsSession.getId().toString()))
+                .andExpect(jsonPath("$.content[0].visibility").value("FRIENDS"))
+                .andExpect(jsonPath("$.content[1].visibility").value("PUBLIC"));
     }
 
     private User persistUser() {
@@ -180,5 +239,13 @@ public class UserSessionsApiTest {
 
         // Set any other required fields (title/note/etc.) if your entity enforces them
         return s;
+    }
+
+    private Friendship friendship(User user, User friend) {
+        Friendship f = new Friendship();
+        f.setUser(user);
+        f.setFriend(friend);
+        f.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z"));
+        return f;
     }
 }

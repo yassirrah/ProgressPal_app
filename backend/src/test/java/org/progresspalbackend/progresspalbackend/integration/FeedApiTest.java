@@ -136,6 +136,31 @@ public class FeedApiTest {
                 .andExpect(jsonPath("$.content[2].metricLabel").value("games"));
     }
 
+    @Test
+    void feed_includesFriendsVisibility_forFriendsOnly() throws Exception {
+        User viewer = persistUser();
+        User friend = persistUser();
+        User stranger = persistUser();
+        ActivityType type = persistActivityType("Study");
+
+        friendRepo.save(friendship(viewer, friend));
+
+        Session friendOnly = sessionRepo.save(session(friend, type, Visibility.FRIENDS, Instant.parse("2026-01-03T10:00:00Z")));
+        Session friendPublic = sessionRepo.save(session(friend, type, Visibility.PUBLIC, Instant.parse("2026-01-02T10:00:00Z")));
+        sessionRepo.save(session(friend, type, Visibility.PRIVATE, Instant.parse("2026-01-01T10:00:00Z")));
+        sessionRepo.save(session(stranger, type, Visibility.FRIENDS, Instant.parse("2026-01-04T10:00:00Z")));
+
+        mockMvc.perform(get("/api/feed")
+                        .header("X-User-Id", viewer.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].id").value(friendOnly.getId().toString()))
+                .andExpect(jsonPath("$.content[1].id").value(friendPublic.getId().toString()))
+                .andExpect(jsonPath("$.content[0].visibility").value("FRIENDS"))
+                .andExpect(jsonPath("$.content[1].visibility").value("PUBLIC"));
+    }
+
     private User persistUser(){
         User u = new User();
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 10);
