@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { clearStoredUser, getStoredUser } from '../lib/api';
 
 const Navbar = () => {
+  const location = useLocation();
   const [user, setUser] = useState(getStoredUser());
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [logoMissing, setLogoMissing] = useState(false);
   const menuRef = useRef(null);
 
@@ -42,14 +44,21 @@ const Navbar = () => {
     };
   }, [menuOpen]);
 
+  useEffect(() => {
+    setMobileNavOpen(false);
+    setMenuOpen(false);
+  }, [location.pathname]);
+
   const handleLogout = () => {
     setMenuOpen(false);
+    setMobileNavOpen(false);
     clearStoredUser();
     window.location.href = '/login';
   };
 
   const navLinkClass = ({ isActive }) => `nav-link${isActive ? ' active' : ''}`;
   const userInitial = (user?.username || '?').trim().charAt(0).toUpperCase() || '?';
+  const closeMobileNav = () => setMobileNavOpen(false);
 
   return (
     <nav>
@@ -65,11 +74,29 @@ const Navbar = () => {
           <span className="brand-text">ProgressPal</span>
         )}
       </Link>
-      <NavLink to="/" end className={navLinkClass}>Home</NavLink>
-      <NavLink to="/my-sessions" className={navLinkClass}>My Sessions</NavLink>
-      <NavLink to="/activity-types" className={navLinkClass}>Activity Types</NavLink>
-      <NavLink to="/feed" className={navLinkClass}>Feed</NavLink>
-      <NavLink to="/friends" className={navLinkClass}>Friends</NavLink>
+      <button
+        type="button"
+        className="nav-mobile-toggle"
+        onClick={() => setMobileNavOpen((prev) => !prev)}
+        aria-expanded={mobileNavOpen}
+        aria-controls="main-nav-links"
+        aria-label="Toggle navigation"
+      >
+        {mobileNavOpen ? '✕' : '☰'}
+      </button>
+      <div id="main-nav-links" className={`nav-links${mobileNavOpen ? ' open' : ''}`}>
+        <NavLink to="/" end className={navLinkClass} onClick={closeMobileNav}>Home</NavLink>
+        <NavLink to="/my-sessions" className={navLinkClass} onClick={closeMobileNav}>My Sessions</NavLink>
+        <NavLink to="/activity-types" className={navLinkClass} onClick={closeMobileNav}>Activity Types</NavLink>
+        <NavLink to="/feed" className={navLinkClass} onClick={closeMobileNav}>Feed</NavLink>
+        <NavLink to="/friends" className={navLinkClass} onClick={closeMobileNav}>Friends</NavLink>
+        {!user && (
+          <>
+            <NavLink to="/login" className={navLinkClass} onClick={closeMobileNav}>Login</NavLink>
+            <NavLink to="/signup" className={navLinkClass} onClick={closeMobileNav}>Sign Up</NavLink>
+          </>
+        )}
+      </div>
       {user ? (
         <div className="nav-user-menu" ref={menuRef}>
           <button
@@ -105,12 +132,7 @@ const Navbar = () => {
             </div>
           )}
         </div>
-      ) : (
-        <>
-          <NavLink to="/login" className={navLinkClass}>Login</NavLink>
-          <NavLink to="/signup" className={navLinkClass}>Sign Up</NavLink>
-        </>
-      )}
+      ) : null}
     </nav>
   );
 };
