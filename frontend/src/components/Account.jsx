@@ -16,6 +16,78 @@ const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
   reader.readAsDataURL(file);
 });
 
+const loadImageFromFile = (file) => new Promise((resolve, reject) => {
+  const imageUrl = URL.createObjectURL(file);
+  const image = new Image();
+  image.onload = () => {
+    URL.revokeObjectURL(imageUrl);
+    resolve(image);
+  };
+  image.onerror = () => {
+    URL.revokeObjectURL(imageUrl);
+    reject(new Error('Failed to decode image file'));
+  };
+  image.src = imageUrl;
+});
+
+const canvasToBlob = (canvas, type, quality) => new Promise((resolve, reject) => {
+  canvas.toBlob((blob) => {
+    if (!blob) {
+      reject(new Error('Failed to compress image'));
+      return;
+    }
+    resolve(blob);
+  }, type, quality);
+});
+
+const compressImageFileIfNeeded = async (file, maxBytes) => {
+  if (file.size <= maxBytes) return { file, compressed: false };
+
+  const image = await loadImageFromFile(file);
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Failed to initialize image compressor');
+
+  const MAX_DIMENSION = 2200;
+  const largestSide = Math.max(image.width, image.height);
+  const baseScale = largestSide > MAX_DIMENSION ? (MAX_DIMENSION / largestSide) : 1;
+
+  let scale = baseScale;
+  let quality = 0.9;
+  let bestBlob = null;
+
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const width = Math.max(1, Math.round(image.width * scale));
+    const height = Math.max(1, Math.round(image.height * scale));
+    canvas.width = width;
+    canvas.height = height;
+    context.clearRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+
+    const blob = await canvasToBlob(canvas, 'image/jpeg', quality);
+    bestBlob = blob;
+
+    if (blob.size <= maxBytes) {
+      break;
+    }
+
+    if (quality > 0.45) {
+      quality -= 0.1;
+    } else {
+      scale *= 0.85;
+      quality = 0.82;
+    }
+  }
+
+  if (!bestBlob) {
+    throw new Error('Failed to compress image');
+  }
+
+  const compressedFileName = file.name.replace(/\.[^.]+$/, '') || 'profile';
+  const compressedFile = new File([bestBlob], `${compressedFileName}.jpg`, { type: 'image/jpeg' });
+  return { file: compressedFile, compressed: true };
+};
+
 const Account = () => {
   const user = useMemo(() => getStoredUser(), []);
   const [loading, setLoading] = useState(false);
@@ -80,18 +152,18 @@ const Account = () => {
       return;
     }
 
-    if (file.size > MAX_PROFILE_IMAGE_BYTES) {
-      setError('Profile image must be 2MB or less');
-      return;
-    }
-
     try {
       setError('');
-      const dataUrl = await readFileAsDataUrl(file);
+      const { file: preparedFile, compressed } = await compressImageFileIfNeeded(file, MAX_PROFILE_IMAGE_BYTES);
+      const dataUrl = await readFileAsDataUrl(preparedFile);
       onChange('profileImage', dataUrl);
       setProfileImageUrl('');
-      setSelectedImageFileName(file.name || '');
-      setMessage('Image selected. Save changes to update your profile photo.');
+      setSelectedImageFileName(preparedFile.name || file.name || '');
+      setMessage(
+        compressed
+          ? 'Image was automatically compressed. Save changes to update your profile photo.'
+          : 'Image selected. Save changes to update your profile photo.',
+      );
     } catch (err) {
       setError(err.message || 'Failed to load selected image');
     }
