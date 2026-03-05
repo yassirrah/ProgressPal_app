@@ -11,6 +11,7 @@ import org.progresspalbackend.progresspalbackend.mapper.FriendshipMapper;
 import org.progresspalbackend.progresspalbackend.repository.FriendRepository;
 import org.progresspalbackend.progresspalbackend.repository.FriendRequestRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -70,13 +71,16 @@ public class FriendShipService {
     @Transactional
     public void acceptRequest(UUID actorUserId, UUID requesterId){
         UUID receiverId = actorUserId;
-        FriendRequest friendRequest = friendRequestRepository.findByRequester_IdAndReceiver_Id(requesterId, receiverId);
+        FriendRequest friendRequest = friendRequestRepository
+                .findFirstByRequester_IdAndReceiver_IdAndStatusOrderByCreatedAtDesc(
+                        requesterId,
+                        receiverId,
+                        FriendshipStatus.PENDING
+                )
+                .orElse(null);
 
-        if(friendRequest == null){
+        if (friendRequest == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No friend request found");
-        }
-        if(friendRequest.getStatus() != FriendshipStatus.PENDING){
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Request is not pending");
         }
 
         boolean alreadyFriends =
@@ -101,19 +105,26 @@ public class FriendShipService {
                 receiver,
                 Instant.now()
         );
-        friendRepository.save(new_friendship);
+        try {
+            friendRepository.saveAndFlush(new_friendship);
+        } catch (DataIntegrityViolationException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Users are already friends");
+        }
     }
 
     @Transactional
     public void rejectRequest(UUID actorUserId, UUID requesterId) {
         UUID receiverId = actorUserId;
-        FriendRequest friendRequest = friendRequestRepository.findByRequester_IdAndReceiver_Id(requesterId, receiverId);
+        FriendRequest friendRequest = friendRequestRepository
+                .findFirstByRequester_IdAndReceiver_IdAndStatusOrderByCreatedAtDesc(
+                        requesterId,
+                        receiverId,
+                        FriendshipStatus.PENDING
+                )
+                .orElse(null);
 
         if (friendRequest == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No friend request found");
-        }
-        if (friendRequest.getStatus() != FriendshipStatus.PENDING) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Request is not pending");
         }
 
         friendRequest.setStatus(FriendshipStatus.REJECTED);
