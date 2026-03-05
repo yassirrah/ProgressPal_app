@@ -7,7 +7,10 @@ import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardByActi
 import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardSummaryDto;
 import org.progresspalbackend.progresspalbackend.dto.dashboard.MeDashboardTrendsDto;
 import org.progresspalbackend.progresspalbackend.dto.session.SessionDto;
+import org.progresspalbackend.progresspalbackend.dto.user.UserAccountUpdateDto;
+import org.progresspalbackend.progresspalbackend.dto.user.UserDto;
 import org.progresspalbackend.progresspalbackend.service.SessionService;
+import org.progresspalbackend.progresspalbackend.service.UserService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -15,6 +18,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -32,11 +37,26 @@ public class MeController {
     private static final int MAX_PAGE_SIZE = 100;
 
     private final SessionService sessionService;
+    private final UserService userService;
     private final CurrentUser currentUser;
 
-    public MeController(SessionService sessionService, CurrentUser currentUser) {
+    public MeController(SessionService sessionService, UserService userService, CurrentUser currentUser) {
         this.sessionService = sessionService;
+        this.userService = userService;
         this.currentUser = currentUser;
+    }
+
+    @GetMapping("/account")
+    UserDto getAccount(Authentication authentication) {
+        UUID userId = currentUser.id(authentication);
+        return userService.getAccount(userId);
+    }
+
+    @PatchMapping("/account")
+    UserDto updateAccount(Authentication authentication,
+                          @RequestBody UserAccountUpdateDto dto) {
+        UUID userId = currentUser.id(authentication);
+        return userService.updateAccount(userId, dto);
     }
 
     @GetMapping("/sessions")
