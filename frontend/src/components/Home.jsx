@@ -918,6 +918,7 @@ const Home = () => {
                               onChange={(e) => setSessionForm((prev) => ({ ...prev, visibility: e.target.value }))}
                             >
                               <option value="PRIVATE">Private</option>
+                              <option value="FRIENDS">Friends</option>
                               <option value="PUBLIC">Public</option>
                             </select>
                           </div>
