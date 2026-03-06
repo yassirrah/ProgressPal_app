@@ -27,13 +27,18 @@ public class FriendShipService {
     private final FriendRequestRepository friendRequestRepository;
     private final FriendshipMapper mapper;
     private final UserRepository userRepo;
+    private final NotificationService notificationService;
 
-    public FriendShipService(FriendRepository friendRepository, FriendshipMapper mapper, UserRepository userRepo,FriendRequestRepository friendRequestRepository) {
+    public FriendShipService(FriendRepository friendRepository,
+                             FriendshipMapper mapper,
+                             UserRepository userRepo,
+                             FriendRequestRepository friendRequestRepository,
+                             NotificationService notificationService) {
         this.friendRepository = friendRepository;
         this.mapper = mapper;
         this.userRepo = userRepo;
         this.friendRequestRepository = friendRequestRepository;
-
+        this.notificationService = notificationService;
     }
 
     public void sendRequest(UUID requesterId, UUID receiverId){
@@ -65,7 +70,8 @@ public class FriendShipService {
                 FriendshipStatus.PENDING,
                 Instant.now()
         );
-        friendRequestRepository.save(friendRequest);
+        friendRequest = friendRequestRepository.save(friendRequest);
+        notificationService.notifyFriendRequestReceived(friend, requester, friendRequest.getId());
     }
 
     @Transactional
@@ -110,6 +116,8 @@ public class FriendShipService {
         } catch (DataIntegrityViolationException ex) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Users are already friends");
         }
+
+        notificationService.notifyFriendRequestAccepted(requester, receiver, friendRequest.getId());
     }
 
     @Transactional
