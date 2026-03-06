@@ -11,6 +11,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -53,5 +54,12 @@ public class NotificationController {
     public void markAllRead(Authentication authentication) {
         UUID userId = currentUser.id(authentication);
         notificationService.markAllRead(userId);
+    }
+
+    @DeleteMapping
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void clearAll(Authentication authentication) {
+        UUID userId = currentUser.id(authentication);
+        notificationService.clearAll(userId);
     }
 }

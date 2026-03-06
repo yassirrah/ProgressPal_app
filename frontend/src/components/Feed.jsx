@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getFeed, getFriends, getStoredUser, sendFriendRequest } from '../lib/api';
+import {
+  getFeed,
+  getFriends,
+  getSessionLikes,
+  getStoredUser,
+  likeSession,
+  sendFriendRequest,
+  unlikeSession,
+} from '../lib/api';
 import LiveSessionEngagement from './LiveSessionEngagement';
 import SessionDetailsModal from './SessionDetailsModal';
 import SupportLiveViewModal from './SupportLiveViewModal';
@@ -36,15 +44,49 @@ const Feed = () => {
   const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
   const [now, setNow] = useState(Date.now());
-  const [kudosCounts, setKudosCounts] = useState({});
-  const [kudosGiven, setKudosGiven] = useState({});
+  const [likesBySession, setLikesBySession] = useState({});
+  const [likePendingBySession, setLikePendingBySession] = useState({});
   const [liveEngagementBySession, setLiveEngagementBySession] = useState({});
   const [supportLiveViewSessionId, setSupportLiveViewSessionId] = useState('');
   const [sessionDetailsId, setSessionDetailsId] = useState('');
 
+  const loadLikeSummaries = useCallback(async (items) => {
+    if (!currentUser?.id || !Array.isArray(items) || items.length === 0) {
+      setLikesBySession({});
+      return;
+    }
+
+    const summaries = await Promise.all(items.map(async (item) => {
+      try {
+        const summary = await getSessionLikes(currentUser.id, item.id);
+        return {
+          sessionId: item.id,
+          likesCount: Number(summary?.likesCount || 0),
+          likedByMe: Boolean(summary?.likedByMe),
+        };
+      } catch {
+        return {
+          sessionId: item.id,
+          likesCount: 0,
+          likedByMe: false,
+        };
+      }
+    }));
+
+    const next = {};
+    summaries.forEach((summary) => {
+      next[summary.sessionId] = {
+        likesCount: summary.likesCount,
+        likedByMe: summary.likedByMe,
+      };
+    });
+    setLikesBySession(next);
+  }, [currentUser]);
+
   const refreshFeed = useCallback(async ({ showLoading = false } = {}) => {
     if (!currentUser?.id) {
       setFeedItems([]);
+      setLikesBySession({});
       setLoading(false);
       setError('Please log in to view your friends feed');
       return;
@@ -61,6 +103,7 @@ const Feed = () => {
       const response = await getFeed(currentUser.id, 0, 20);
       const nextItems = response.content || [];
       setFeedItems(nextItems);
+      void loadLikeSummaries(nextItems);
       setLiveEngagementBySession((prev) => {
         const next = { ...prev };
         nextItems.forEach((item) => {
@@ -76,7 +119,7 @@ const Feed = () => {
         setLoading(false);
       }
     }
-  }, [currentUser]);
+  }, [currentUser, loadLikeSummaries]);
 
   useEffect(() => {
     const loadFriends = async () => {
@@ -236,12 +279,36 @@ const Feed = () => {
     }
   };
 
-  const handleKudos = (item) => {
-    if (kudosGiven[item.id]) return;
-    setKudosCounts((prev) => ({ ...prev, [item.id]: (prev[item.id] || 0) + 1 }));
-    setKudosGiven((prev) => ({ ...prev, [item.id]: true }));
-    setError('');
-    showToast(`Kudos sent to ${item.username}.`);
+  const handleToggleLike = async (item) => {
+    if (!currentUser?.id) {
+      setError('Please log in to like sessions');
+      return;
+    }
+    if (likePendingBySession[item.id]) return;
+
+    const current = likesBySession[item.id] || { likesCount: 0, likedByMe: false };
+
+    try {
+      setLikePendingBySession((prev) => ({ ...prev, [item.id]: true }));
+      setError('');
+      const summary = current.likedByMe
+        ? await unlikeSession(currentUser.id, item.id)
+        : await likeSession(currentUser.id, item.id);
+
+      setLikesBySession((prev) => ({
+        ...prev,
+        [item.id]: {
+          likesCount: Number(summary?.likesCount || 0),
+          likedByMe: Boolean(summary?.likedByMe),
+        },
+      }));
+
+      showToast(current.likedByMe ? 'Like removed.' : `You liked ${item.username}'s session.`);
+    } catch (err) {
+      setError(err.message || 'Failed to update like');
+    } finally {
+      setLikePendingBySession((prev) => ({ ...prev, [item.id]: false }));
+    }
   };
 
   const setChaseMode = (item, nextMode, options = {}) => {
@@ -330,7 +397,9 @@ const Feed = () => {
         <p>No friend sessions yet.</p>
       ) : (
         <div className="feed-grid">
-          {feedItems.map((item) => (
+          {feedItems.map((item) => {
+            const likeState = likesBySession[item.id] || { likesCount: 0, likedByMe: false };
+            return (
             <article
               key={item.id}
               className={`feed-card ${isSessionOngoing(item) ? 'feed-card--live' : 'feed-card--ended'}`}
@@ -420,12 +489,13 @@ const Feed = () => {
               <div className="feed-card-footer">
                 <button
                   type="button"
-                  className={`secondary-button kudos-button ${kudosGiven[item.id] ? 'active' : ''}`}
-                  onClick={() => handleKudos(item)}
+                  className={`secondary-button kudos-button ${likeState.likedByMe ? 'active' : ''}`}
+                  onClick={() => handleToggleLike(item)}
+                  disabled={likePendingBySession[item.id]}
                 >
-                  <span>{kudosGiven[item.id] ? '👏 Sent' : '👏 Kudos'}</span>
-                  <span className="kudos-count-badge" aria-label={`${kudosCounts[item.id] || 0} kudos`}>
-                    {kudosCounts[item.id] || 0}
+                  <span>{likeState.likedByMe ? '❤️ Liked' : '🤍 Like'}</span>
+                  <span className="kudos-count-badge" aria-label={`${likeState.likesCount || 0} likes`}>
+                    {likeState.likesCount || 0}
                   </span>
                 </button>
 
@@ -450,7 +520,8 @@ const Feed = () => {
                 </button>
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       )}
 

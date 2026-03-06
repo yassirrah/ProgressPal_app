@@ -1,6 +1,5 @@
 package org.progresspalbackend.progresspalbackend.service;
 
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.progresspalbackend.progresspalbackend.domain.Notification;
 import org.progresspalbackend.progresspalbackend.domain.NotificationResourceType;
@@ -13,6 +12,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
@@ -68,6 +68,7 @@ public class NotificationService {
         );
     }
 
+    @Transactional(readOnly = true)
     public Page<NotificationDto> list(UUID recipientId, Pageable pageable) {
         return notificationRepository.findAllByRecipient_IdOrderByCreatedAtDesc(recipientId, pageable)
                 .map(this::toDto);
@@ -94,6 +95,11 @@ public class NotificationService {
     @Transactional
     public void markAllRead(UUID recipientId) {
         notificationRepository.markAllUnreadAsRead(recipientId, Instant.now());
+    }
+
+    @Transactional
+    public void clearAll(UUID recipientId) {
+        notificationRepository.deleteByRecipient_Id(recipientId);
     }
 
     private void create(User recipient,

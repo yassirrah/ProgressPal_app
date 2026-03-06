@@ -29,6 +29,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.time.Instant;
 import java.util.UUID;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -165,6 +166,53 @@ class NotificationApiTest {
                         .header("X-User-Id", actor.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(0));
+    }
+
+    @Test
+    void clearAll_removesOnlyCurrentUsersNotifications() throws Exception {
+        User requesterA = persistUser();
+        User requesterB = persistUser();
+        User receiver = persistUser();
+        User otherReceiver = persistUser();
+
+        mvc.perform(post("/api/friends/send")
+                        .header("X-User-Id", requesterA.getId().toString())
+                        .param("receiverId", receiver.getId().toString()))
+                .andExpect(status().isCreated());
+
+        mvc.perform(post("/api/friends/send")
+                        .header("X-User-Id", requesterB.getId().toString())
+                        .param("receiverId", receiver.getId().toString()))
+                .andExpect(status().isCreated());
+
+        mvc.perform(post("/api/friends/send")
+                        .header("X-User-Id", requesterA.getId().toString())
+                        .param("receiverId", otherReceiver.getId().toString()))
+                .andExpect(status().isCreated());
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", receiver.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2));
+
+        mvc.perform(delete("/api/me/notifications")
+                        .header("X-User-Id", receiver.getId().toString()))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", receiver.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(0));
+
+        mvc.perform(get("/api/me/notifications/unread-count")
+                        .header("X-User-Id", receiver.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(0));
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", otherReceiver.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1));
     }
 
     private User persistUser() {

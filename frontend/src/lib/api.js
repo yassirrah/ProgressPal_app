@@ -460,3 +460,90 @@ export async function updateMyAccount(userId, payload) {
     throw new Error(toErrorMessage(error, 'Failed to update account'));
   }
 }
+
+export async function getMyNotifications(userId, page = 0, size = 12) {
+  try {
+    const { data } = await client.get('/me/notifications', {
+      headers: authHeaders(userId),
+      params: { page, size },
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load notifications'));
+  }
+}
+
+export async function getUnreadNotificationsCount(userId) {
+  try {
+    const { data } = await client.get('/me/notifications/unread-count', {
+      headers: authHeaders(userId),
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load unread notifications'));
+  }
+}
+
+export async function markNotificationRead(userId, notificationId) {
+  try {
+    const { data } = await client.patch(`/me/notifications/${notificationId}/read`, null, {
+      headers: authHeaders(userId),
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to mark notification as read'));
+  }
+}
+
+export async function markAllNotificationsRead(userId) {
+  try {
+    await client.patch('/me/notifications/read-all', null, {
+      headers: authHeaders(userId),
+    });
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to mark all notifications as read'));
+  }
+}
+
+export async function clearMyNotifications(userId) {
+  try {
+    await client.delete('/me/notifications', {
+      headers: authHeaders(userId),
+    });
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to clear notifications'));
+  }
+}
+
+export async function getSessionLikes(userId, sessionId) {
+  try {
+    const { data } = await client.get(`/sessions/${sessionId}/likes`, {
+      headers: authHeaders(userId),
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load likes'));
+  }
+}
+
+export async function likeSession(userId, sessionId) {
+  try {
+    const { data } = await client.put(`/sessions/${sessionId}/likes`, null, {
+      headers: authHeaders(userId),
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to like session'));
+  }
+}
+
+export async function unlikeSession(userId, sessionId) {
+  try {
+    const { data } = await client.delete(`/sessions/${sessionId}/likes`, {
+      headers: authHeaders(userId),
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to unlike session'));
+  }
+}

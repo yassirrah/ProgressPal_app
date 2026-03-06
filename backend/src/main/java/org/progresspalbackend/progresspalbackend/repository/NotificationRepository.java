@@ -20,6 +20,8 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 
     Optional<Notification> findByIdAndRecipient_Id(UUID id, UUID recipientId);
 
+    long deleteByRecipient_Id(UUID recipientId);
+
     @Modifying
     @Query("""
             update Notification n
