@@ -10,6 +10,7 @@ import org.progresspalbackend.progresspalbackend.repository.SessionCommentReposi
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
@@ -27,6 +28,7 @@ public class SessionCommentService {
     private final UserRepository userRepository;
     private final NotificationService notificationService;
 
+    @Transactional(readOnly = true)
     public List<SessionCommentDto> list(UUID actorUserId, UUID sessionId) {
         Session session = sessionAccessService.requireVisibleSession(actorUserId, sessionId);
         return sessionCommentRepository.findAllBySession_IdOrderByCreatedAtDesc(session.getId())

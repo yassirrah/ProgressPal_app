@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  createSessionComment,
+  getActivityTypes,
   getFeed,
   getFriends,
+  getMySessions,
+  getSessionComments,
   getSessionLikes,
   getStoredUser,
   likeSession,
@@ -10,7 +14,6 @@ import {
   unlikeSession,
 } from '../lib/api';
 import LiveSessionEngagement from './LiveSessionEngagement';
-import SessionDetailsModal from './SessionDetailsModal';
 import SupportLiveViewModal from './SupportLiveViewModal';
 
 const hashString = (value) => {
@@ -39,6 +42,9 @@ const Feed = () => {
   const navigate = useNavigate();
   const currentUser = useMemo(() => getStoredUser(), []);
   const [feedItems, setFeedItems] = useState([]);
+  const [activityTypesById, setActivityTypesById] = useState({});
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [sortOrder, setSortOrder] = useState('RECENT');
   const [friendIds, setFriendIds] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -46,9 +52,14 @@ const Feed = () => {
   const [now, setNow] = useState(Date.now());
   const [likesBySession, setLikesBySession] = useState({});
   const [likePendingBySession, setLikePendingBySession] = useState({});
+  const [commentsBySession, setCommentsBySession] = useState({});
+  const [commentComposerOpenBySession, setCommentComposerOpenBySession] = useState({});
+  const [commentDraftBySession, setCommentDraftBySession] = useState({});
+  const [commentLoadingBySession, setCommentLoadingBySession] = useState({});
+  const [commentSubmittingBySession, setCommentSubmittingBySession] = useState({});
+  const [commentErrorBySession, setCommentErrorBySession] = useState({});
   const [liveEngagementBySession, setLiveEngagementBySession] = useState({});
   const [supportLiveViewSessionId, setSupportLiveViewSessionId] = useState('');
-  const [sessionDetailsId, setSessionDetailsId] = useState('');
 
   const loadLikeSummaries = useCallback(async (items) => {
     if (!currentUser?.id || !Array.isArray(items) || items.length === 0) {
@@ -83,6 +94,18 @@ const Feed = () => {
     setLikesBySession(next);
   }, [currentUser]);
 
+  const mapMySessionToFeedItem = useCallback((session) => {
+    const activityType = activityTypesById[session.activityTypeId];
+    return {
+      ...session,
+      username: currentUser?.username || 'You',
+      profileImage: currentUser?.profileImage || null,
+      activityTypeName: activityType?.name || 'Activity',
+      metricLabel: activityType?.metricLabel || null,
+      metricValue: session.metricValue ?? session.metricCurrentValue ?? null,
+    };
+  }, [activityTypesById, currentUser]);
+
   const refreshFeed = useCallback(async ({ showLoading = false } = {}) => {
     if (!currentUser?.id) {
       setFeedItems([]);
@@ -100,8 +123,17 @@ const Feed = () => {
       if (showLoading) {
         setError('');
       }
-      const response = await getFeed(currentUser.id, 0, 20);
-      const nextItems = response.content || [];
+      const [feedResponse, mySessionsResponse] = await Promise.all([
+        getFeed(currentUser.id, 0, 20),
+        getMySessions(currentUser.id, { page: 0, size: 20, status: 'ALL' }),
+      ]);
+
+      const friendItems = feedResponse.content || [];
+      const myItems = (mySessionsResponse?.content || []).map(mapMySessionToFeedItem);
+      const mergedItems = [...friendItems, ...myItems];
+      const dedupedItems = Array.from(new Map(mergedItems.map((item) => [item.id, item])).values());
+
+      const nextItems = dedupedItems;
       setFeedItems(nextItems);
       void loadLikeSummaries(nextItems);
       setLiveEngagementBySession((prev) => {
@@ -119,7 +151,7 @@ const Feed = () => {
         setLoading(false);
       }
     }
-  }, [currentUser, loadLikeSummaries]);
+  }, [currentUser, loadLikeSummaries, mapMySessionToFeedItem]);
 
   useEffect(() => {
     const loadFriends = async () => {
@@ -135,6 +167,27 @@ const Feed = () => {
     loadFriends();
     refreshFeed({ showLoading: true });
   }, [currentUser, refreshFeed]);
+
+  useEffect(() => {
+    const loadActivityTypes = async () => {
+      if (!currentUser?.id) {
+        setActivityTypesById({});
+        return;
+      }
+      try {
+        const types = await getActivityTypes(currentUser.id, 'ALL');
+        const next = {};
+        (types || []).forEach((type) => {
+          next[type.id] = type;
+        });
+        setActivityTypesById(next);
+      } catch {
+        // Keep feed usable even if activity types fail to load.
+      }
+    };
+
+    loadActivityTypes();
+  }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser?.id) return undefined;
@@ -311,6 +364,65 @@ const Feed = () => {
     }
   };
 
+  const loadCommentsForSession = useCallback(async (sessionId) => {
+    if (!currentUser?.id || !sessionId) return;
+    if (commentLoadingBySession[sessionId]) return;
+
+    setCommentLoadingBySession((prev) => ({ ...prev, [sessionId]: true }));
+    setCommentErrorBySession((prev) => ({ ...prev, [sessionId]: '' }));
+    try {
+      const comments = await getSessionComments(currentUser.id, sessionId);
+      setCommentsBySession((prev) => ({
+        ...prev,
+        [sessionId]: Array.isArray(comments) ? comments : [],
+      }));
+    } catch (err) {
+      setCommentErrorBySession((prev) => ({
+        ...prev,
+        [sessionId]: err.message || 'Failed to load comments',
+      }));
+    } finally {
+      setCommentLoadingBySession((prev) => ({ ...prev, [sessionId]: false }));
+    }
+  }, [commentLoadingBySession, currentUser]);
+
+  const handleToggleCommentComposer = (sessionId) => {
+    setCommentComposerOpenBySession((prev) => ({
+      ...prev,
+      [sessionId]: !prev[sessionId],
+    }));
+    if (commentsBySession[sessionId] !== undefined) return;
+    void loadCommentsForSession(sessionId);
+  };
+
+  const handlePostComment = async (sessionId, event) => {
+    event.preventDefault();
+    if (!currentUser?.id || !sessionId) return;
+    if (commentSubmittingBySession[sessionId]) return;
+
+    const draft = commentDraftBySession[sessionId] || '';
+    const content = draft.trim();
+    if (!content) return;
+
+    setCommentSubmittingBySession((prev) => ({ ...prev, [sessionId]: true }));
+    setCommentErrorBySession((prev) => ({ ...prev, [sessionId]: '' }));
+    try {
+      const created = await createSessionComment(currentUser.id, sessionId, content);
+      setCommentsBySession((prev) => ({
+        ...prev,
+        [sessionId]: [...(prev[sessionId] || []), created],
+      }));
+      setCommentDraftBySession((prev) => ({ ...prev, [sessionId]: '' }));
+    } catch (err) {
+      setCommentErrorBySession((prev) => ({
+        ...prev,
+        [sessionId]: err.message || 'Failed to post comment',
+      }));
+    } finally {
+      setCommentSubmittingBySession((prev) => ({ ...prev, [sessionId]: false }));
+    }
+  };
+
   const setChaseMode = (item, nextMode, options = {}) => {
     setLiveEngagementBySession((prev) => {
       const current = prev[item.id] || buildSeededEngagement(item.id);
@@ -385,20 +497,91 @@ const Feed = () => {
   };
 
   const supportLiveViewSession = feedItems.find((item) => item.id === supportLiveViewSessionId) || null;
-  const sessionDetails = feedItems.find((item) => item.id === sessionDetailsId) || null;
+  const visibleFeedItems = useMemo(() => {
+    const filtered = feedItems.filter((item) => {
+      if (statusFilter === 'LIVE') {
+        return isSessionOngoing(item) || isSessionPaused(item);
+      }
+      if (statusFilter === 'FINISHED') {
+        return !isSessionOngoing(item) && !isSessionPaused(item);
+      }
+      return true;
+    });
+
+    filtered.sort((a, b) => {
+      const left = new Date(a.startedAt).getTime();
+      const right = new Date(b.startedAt).getTime();
+      return sortOrder === 'RECENT' ? right - left : left - right;
+    });
+
+    return filtered;
+  }, [feedItems, sortOrder, statusFilter]);
+
+  useEffect(() => {
+    if (!currentUser?.id || visibleFeedItems.length === 0) return;
+    visibleFeedItems.forEach((item) => {
+      if (commentsBySession[item.id] !== undefined || commentLoadingBySession[item.id]) return;
+      void loadCommentsForSession(item.id);
+    });
+  }, [commentLoadingBySession, commentsBySession, currentUser, loadCommentsForSession, visibleFeedItems]);
 
   return (
     <div className="feed-page">
-      <h1>Friends Feed</h1>
+      <div className="feed-top">
+        <h1 className="feed-title">Friends Feed</h1>
+        <p className="message-muted" style={{ margin: 0 }}>
+          See what you and your friends are doing and join live sessions.
+        </p>
+      </div>
+      <section className="feed-toolbar">
+        <div className="feed-status-filters" role="tablist" aria-label="Feed status filter">
+          <button
+            type="button"
+            className={`feed-status-chip ${statusFilter === 'ALL' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('ALL')}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            className={`feed-status-chip ${statusFilter === 'LIVE' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('LIVE')}
+          >
+            Live
+          </button>
+          <button
+            type="button"
+            className={`feed-status-chip ${statusFilter === 'FINISHED' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('FINISHED')}
+          >
+            Finished
+          </button>
+        </div>
+        <label className="feed-sort-control">
+          <span>Sort:</span>
+          <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)}>
+            <option value="RECENT">Recent</option>
+            <option value="OLDEST">Oldest</option>
+          </select>
+        </label>
+      </section>
+      <div className="friends-divider" />
       {error && <p className="message-error">{error}</p>}
       {loading && <p>Loading...</p>}
 
-      {feedItems.length === 0 ? (
-        <p>No friend sessions yet.</p>
+      {visibleFeedItems.length === 0 ? (
+        <p>No sessions for this filter yet.</p>
       ) : (
         <div className="feed-grid">
-          {feedItems.map((item) => {
+          {visibleFeedItems.map((item) => {
             const likeState = likesBySession[item.id] || { likesCount: 0, likedByMe: false };
+            const isCommentComposerOpen = Boolean(commentComposerOpenBySession[item.id]);
+            const orderedComments = [...(commentsBySession[item.id] || [])]
+              .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+            const shouldShowCommentsPanel = isCommentComposerOpen
+              || Boolean(commentLoadingBySession[item.id])
+              || Boolean(commentErrorBySession[item.id])
+              || orderedComments.length > 0;
             return (
             <article
               key={item.id}
@@ -493,7 +676,7 @@ const Feed = () => {
                   onClick={() => handleToggleLike(item)}
                   disabled={likePendingBySession[item.id]}
                 >
-                  <span>{likeState.likedByMe ? '❤️ Liked' : '🤍 Like'}</span>
+                  <span>{likeState.likedByMe ? '❤️ Like' : '🤍 Like'}</span>
                   <span className="kudos-count-badge" aria-label={`${likeState.likesCount || 0} likes`}>
                     {likeState.likesCount || 0}
                   </span>
@@ -506,19 +689,66 @@ const Feed = () => {
                 )}
                 <button
                   type="button"
-                  className="secondary-button"
-                  onClick={() => handleViewProfile(item.userId)}
+                  className="secondary-button feed-comment-button"
+                  onClick={() => handleToggleCommentComposer(item.id)}
+                  aria-label={isCommentComposerOpen ? 'Hide comment form' : 'Add comment'}
+                  title="Comments"
                 >
-                  View profile
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button feed-view-button"
-                  onClick={() => setSessionDetailsId(item.id)}
-                >
-                  View session
+                  💬
                 </button>
               </div>
+
+              {shouldShowCommentsPanel && (
+                <section className="feed-comments-panel" aria-label="Comments">
+                  {isCommentComposerOpen && (
+                    <form className="feed-comment-form" onSubmit={(event) => handlePostComment(item.id, event)}>
+                      <textarea
+                        className="feed-comment-input"
+                        rows={2}
+                        value={commentDraftBySession[item.id] || ''}
+                        onChange={(event) => setCommentDraftBySession((prev) => ({
+                          ...prev,
+                          [item.id]: event.target.value.slice(0, 1000),
+                        }))}
+                        placeholder="Write a comment..."
+                      />
+                      <button
+                        type="submit"
+                        className="secondary-button compact-button"
+                        disabled={commentSubmittingBySession[item.id] || !(commentDraftBySession[item.id] || '').trim()}
+                      >
+                        {commentSubmittingBySession[item.id] ? 'Posting...' : 'Comment'}
+                      </button>
+                    </form>
+                  )}
+
+                  {commentErrorBySession[item.id] && (
+                    <p className="message-error">{commentErrorBySession[item.id]}</p>
+                  )}
+
+                  {commentLoadingBySession[item.id] && (
+                    <p className="message-muted">Loading comments...</p>
+                  )}
+
+                  {!commentLoadingBySession[item.id] && orderedComments.length > 0 && (
+                    <div className="feed-comments-list">
+                      {orderedComments.map((comment) => (
+                        <article key={comment.id} className="feed-comment-item">
+                          <p className="feed-comment-meta">
+                            <strong>{comment.authorUsername || 'User'}</strong>
+                            <span>{formatRelativeFromNow(comment.createdAt)}</span>
+                          </p>
+                          <p className="feed-comment-content">{comment.content}</p>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+
+                  {!commentLoadingBySession[item.id] && isCommentComposerOpen && orderedComments.length === 0 && (
+                    <p className="message-muted" style={{ margin: 0 }}>No comments yet.</p>
+                  )}
+                </section>
+              )}
             </article>
             );
           })}
@@ -533,15 +763,6 @@ const Feed = () => {
           onClose={() => setSupportLiveViewSessionId('')}
           onSendReaction={(reaction) => handleSupportReaction(supportLiveViewSession, reaction)}
           onSendQuickMessage={(quickMessage) => handleSupportQuickMessage(supportLiveViewSession, quickMessage)}
-        />
-      )}
-
-      {sessionDetails && (
-        <SessionDetailsModal
-          session={sessionDetails}
-          durationLabel={formatDurationCompact(getDurationSeconds(sessionDetails))}
-          metricLabel={formatMetricPill(sessionDetails)}
-          onClose={() => setSessionDetailsId('')}
         />
       )}
 
