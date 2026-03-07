@@ -4,13 +4,11 @@ import {
   createSessionComment,
   getActivityTypes,
   getFeed,
-  getFriends,
   getMySessions,
   getSessionComments,
   getSessionLikes,
   getStoredUser,
   likeSession,
-  sendFriendRequest,
   unlikeSession,
 } from '../lib/api';
 import LiveSessionEngagement from './LiveSessionEngagement';
@@ -42,10 +40,10 @@ const Feed = () => {
   const navigate = useNavigate();
   const currentUser = useMemo(() => getStoredUser(), []);
   const [feedItems, setFeedItems] = useState([]);
+  const [mySessions, setMySessions] = useState([]);
   const [activityTypesById, setActivityTypesById] = useState({});
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [sortOrder, setSortOrder] = useState('RECENT');
-  const [friendIds, setFriendIds] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
@@ -109,6 +107,7 @@ const Feed = () => {
   const refreshFeed = useCallback(async ({ showLoading = false } = {}) => {
     if (!currentUser?.id) {
       setFeedItems([]);
+      setMySessions([]);
       setLikesBySession({});
       setLoading(false);
       setError('Please log in to view your friends feed');
@@ -129,7 +128,9 @@ const Feed = () => {
       ]);
 
       const friendItems = feedResponse.content || [];
-      const myItems = (mySessionsResponse?.content || []).map(mapMySessionToFeedItem);
+      const mySessionItems = mySessionsResponse?.content || [];
+      setMySessions(mySessionItems);
+      const myItems = mySessionItems.map(mapMySessionToFeedItem);
       const mergedItems = [...friendItems, ...myItems];
       const dedupedItems = Array.from(new Map(mergedItems.map((item) => [item.id, item])).values());
 
@@ -154,19 +155,8 @@ const Feed = () => {
   }, [currentUser, loadLikeSummaries, mapMySessionToFeedItem]);
 
   useEffect(() => {
-    const loadFriends = async () => {
-      if (!currentUser) return;
-      try {
-        const friends = await getFriends(currentUser.id);
-        setFriendIds(new Set((friends || []).map((friend) => friend.FriendId)));
-      } catch (err) {
-        setError(err.message || 'Failed to load friends');
-      }
-    };
-
-    loadFriends();
     refreshFeed({ showLoading: true });
-  }, [currentUser, refreshFeed]);
+  }, [refreshFeed]);
 
   useEffect(() => {
     const loadActivityTypes = async () => {
@@ -235,7 +225,7 @@ const Feed = () => {
     return () => window.clearTimeout(timeoutId);
   }, [toast]);
 
-  const getDurationSeconds = (item) => {
+  const getDurationSeconds = useCallback((item) => {
     const started = new Date(item.startedAt).getTime();
     const endMs = item.endedAt ? new Date(item.endedAt).getTime() : now;
     const rawSeconds = Math.max(0, Math.floor((endMs - started) / 1000));
@@ -248,7 +238,7 @@ const Feed = () => {
     }
 
     return Math.max(0, rawSeconds - pausedSeconds);
-  };
+  }, [now]);
 
   const formatDurationCompact = (totalSeconds) => {
     const seconds = Math.max(0, totalSeconds);
@@ -314,22 +304,6 @@ const Feed = () => {
       onAction: options.onAction || null,
       durationMs: options.durationMs || 3200,
     });
-  };
-
-  const handleAddFriend = async (receiverId) => {
-    if (!currentUser) {
-      setError('Please log in to send friend requests');
-      return;
-    }
-    try {
-      setError('');
-      setToast(null);
-      await sendFriendRequest(currentUser.id, receiverId);
-      setFriendIds((prev) => new Set([...prev, receiverId]));
-      showToast('Friend request sent.');
-    } catch (err) {
-      setError(err.message || 'Failed to send friend request');
-    }
   };
 
   const handleToggleLike = async (item) => {
@@ -525,59 +499,188 @@ const Feed = () => {
     });
   }, [commentLoadingBySession, commentsBySession, currentUser, loadCommentsForSession, visibleFeedItems]);
 
-  return (
-    <div className="feed-page">
-      <div className="feed-top">
-        <h1 className="feed-title">Friends Feed</h1>
-        <p className="message-muted" style={{ margin: 0 }}>
-          See what you and your friends are doing and join live sessions.
-        </p>
-      </div>
-      <section className="feed-toolbar">
-        <div className="feed-status-filters" role="tablist" aria-label="Feed status filter">
-          <button
-            type="button"
-            className={`feed-status-chip ${statusFilter === 'ALL' ? 'active' : ''}`}
-            onClick={() => setStatusFilter('ALL')}
-          >
-            All
-          </button>
-          <button
-            type="button"
-            className={`feed-status-chip ${statusFilter === 'LIVE' ? 'active' : ''}`}
-            onClick={() => setStatusFilter('LIVE')}
-          >
-            Live
-          </button>
-          <button
-            type="button"
-            className={`feed-status-chip ${statusFilter === 'FINISHED' ? 'active' : ''}`}
-            onClick={() => setStatusFilter('FINISHED')}
-          >
-            Finished
-          </button>
-        </div>
-        <label className="feed-sort-control">
-          <span>Sort:</span>
-          <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)}>
-            <option value="RECENT">Recent</option>
-            <option value="OLDEST">Oldest</option>
-          </select>
-        </label>
-      </section>
-      <div className="friends-divider" />
-      {error && <p className="message-error">{error}</p>}
-      {loading && <p>Loading...</p>}
+  const sidebarStats = useMemo(() => {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const nowMs = now;
+    const sevenDaysAgo = nowMs - (7 * dayMs);
+    const fourteenDaysAgo = nowMs - (14 * dayMs);
+    const allActiveDayKeys = new Set();
+    const recentActiveDayKeys = new Set();
 
-      {visibleFeedItems.length === 0 ? (
-        <p>No sessions for this filter yet.</p>
-      ) : (
-        <div className="feed-grid">
-          {visibleFeedItems.map((item) => {
+    let sessionsLast7 = 0;
+    let sessionsPrev7 = 0;
+    let visibleDurationLast7 = 0;
+    let liveStatus = 'Offline';
+
+    mySessions.forEach((session) => {
+      if (!session?.startedAt) return;
+      const startedMs = new Date(session.startedAt).getTime();
+      if (Number.isNaN(startedMs)) return;
+
+      const started = new Date(startedMs);
+      const dayKey = `${started.getFullYear()}-${started.getMonth() + 1}-${started.getDate()}`;
+      allActiveDayKeys.add(dayKey);
+
+      if (startedMs >= sevenDaysAgo) {
+        sessionsLast7 += 1;
+        recentActiveDayKeys.add(dayKey);
+        visibleDurationLast7 += getDurationSeconds(session);
+      } else if (startedMs >= fourteenDaysAgo) {
+        sessionsPrev7 += 1;
+      }
+
+      if (isSessionPaused(session)) {
+        liveStatus = 'Paused now';
+      } else if (isSessionOngoing(session) && liveStatus !== 'Paused now') {
+        liveStatus = 'Live now';
+      }
+    });
+
+    let streak = 0;
+    const cursor = new Date(nowMs);
+    cursor.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 365; i += 1) {
+      const key = `${cursor.getFullYear()}-${cursor.getMonth() + 1}-${cursor.getDate()}`;
+      if (!allActiveDayKeys.has(key)) break;
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+
+    const trendDelta = sessionsLast7 - sessionsPrev7;
+    let trendText = 'Same rhythm as last week';
+    let trendTone = 'neutral';
+    if (trendDelta > 0) {
+      trendText = `${trendDelta} more sessions than last week`;
+      trendTone = 'up';
+    } else if (trendDelta < 0) {
+      trendText = `${Math.abs(trendDelta)} fewer sessions than last week`;
+      trendTone = 'down';
+    }
+
+    return {
+      totalSessions: mySessions.length,
+      sessionsLast7,
+      activeDaysLast7: recentActiveDayKeys.size,
+      visibleDurationLast7,
+      streak,
+      trendText,
+      trendTone,
+      liveStatus,
+    };
+  }, [getDurationSeconds, mySessions, now]);
+
+  const identityBio = (currentUser?.bio || '').trim();
+
+  return (
+    <div className="feed-layout">
+      <aside className="feed-sidebar" aria-label="Identity and momentum">
+        <article className="feed-side-card">
+          <p className="feed-side-kicker">Profile</p>
+          <div className="feed-identity-row">
+            {currentUser?.profileImage ? (
+              <img
+                src={currentUser.profileImage}
+                alt=""
+                className="feed-identity-avatar-image"
+                aria-hidden="true"
+              />
+            ) : (
+              <span className="feed-identity-avatar" aria-hidden="true">
+                {getInitial(currentUser?.username)}
+              </span>
+            )}
+            <div className="feed-identity-text">
+              <p className="feed-identity-name">{currentUser?.username || 'Guest'}</p>
+              <p className="feed-side-muted">Small steps compound.</p>
+            </div>
+          </div>
+          {identityBio && <p className="feed-identity-bio">{identityBio}</p>}
+        </article>
+
+        <article className="feed-side-card">
+          <p className="feed-side-kicker">Momentum</p>
+          <p className="feed-momentum-main">{sidebarStats.streak} day streak</p>
+          <p className="feed-side-muted">Active on {sidebarStats.activeDaysLast7} of the last 7 days</p>
+          <p className={`feed-momentum-trend ${sidebarStats.trendTone}`}>{sidebarStats.trendText}</p>
+        </article>
+
+        <article className="feed-side-card">
+          <p className="feed-side-kicker">This Week</p>
+          <div className="feed-quick-grid">
+            <div>
+              <span>Sessions</span>
+              <strong>{sidebarStats.sessionsLast7}</strong>
+            </div>
+            <div>
+              <span>Focus time</span>
+              <strong>{formatDurationCompact(sidebarStats.visibleDurationLast7)}</strong>
+            </div>
+            <div>
+              <span>Current status</span>
+              <strong>{sidebarStats.liveStatus}</strong>
+            </div>
+            <div>
+              <span>Total sessions</span>
+              <strong>{sidebarStats.totalSessions}</strong>
+            </div>
+          </div>
+        </article>
+      </aside>
+
+      <div className="feed-page">
+        <div className="feed-top">
+          <h1 className="feed-title">Friends Feed</h1>
+          <p className="message-muted" style={{ margin: 0 }}>
+            See what you and your friends are doing and join live sessions.
+          </p>
+        </div>
+        <section className="feed-toolbar">
+          <div className="feed-status-filters" role="tablist" aria-label="Feed status filter">
+            <button
+              type="button"
+              className={`feed-status-chip ${statusFilter === 'ALL' ? 'active' : ''}`}
+              onClick={() => setStatusFilter('ALL')}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              className={`feed-status-chip ${statusFilter === 'LIVE' ? 'active' : ''}`}
+              onClick={() => setStatusFilter('LIVE')}
+            >
+              Live
+            </button>
+            <button
+              type="button"
+              className={`feed-status-chip ${statusFilter === 'FINISHED' ? 'active' : ''}`}
+              onClick={() => setStatusFilter('FINISHED')}
+            >
+              Finished
+            </button>
+          </div>
+          <label className="feed-sort-control">
+            <span>Sort:</span>
+            <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)}>
+              <option value="RECENT">Recent</option>
+              <option value="OLDEST">Oldest</option>
+            </select>
+          </label>
+        </section>
+        <div className="friends-divider" />
+        {error && <p className="message-error">{error}</p>}
+        {loading && <p>Loading...</p>}
+
+        {visibleFeedItems.length === 0 ? (
+          <p>No sessions for this filter yet.</p>
+        ) : (
+          <div className="feed-grid">
+            {visibleFeedItems.map((item) => {
             const likeState = likesBySession[item.id] || { likesCount: 0, likedByMe: false };
             const isCommentComposerOpen = Boolean(commentComposerOpenBySession[item.id]);
             const orderedComments = [...(commentsBySession[item.id] || [])]
               .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+            const commentsCount = orderedComments.length;
+            const commentsLabel = `${commentsCount} comment${commentsCount === 1 ? '' : 's'}`;
             const shouldShowCommentsPanel = isCommentComposerOpen
               || Boolean(commentLoadingBySession[item.id])
               || Boolean(commentErrorBySession[item.id])
@@ -636,11 +739,7 @@ const Feed = () => {
                 </div>
                 <div>
                   <p className="feed-title-large">{item.activityTypeName}</p>
-                  {item.title ? (
-                    <p className="feed-title">{item.title}</p>
-                  ) : (
-                    <p className="feed-title-placeholder">No notes added</p>
-                  )}
+                  {item.title && <p className="feed-title">{item.title}</p>}
                 </div>
               </div>
 
@@ -670,32 +769,71 @@ const Feed = () => {
               )}
 
               <div className="feed-card-footer">
-                <button
-                  type="button"
-                  className={`secondary-button kudos-button ${likeState.likedByMe ? 'active' : ''}`}
-                  onClick={() => handleToggleLike(item)}
-                  disabled={likePendingBySession[item.id]}
-                >
-                  <span>{likeState.likedByMe ? '❤️ Like' : '🤍 Like'}</span>
-                  <span className="kudos-count-badge" aria-label={`${likeState.likesCount || 0} likes`}>
+                <div className="feed-engagement-summary">
+                  {item.profileImage ? (
+                    <img
+                      src={item.profileImage}
+                      alt=""
+                      className="feed-engagement-avatar-image"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <span className="feed-engagement-avatar" aria-hidden="true">
+                      {getInitial(item.username)}
+                    </span>
+                  )}
+                  <span className="feed-engagement-text">
                     {likeState.likesCount || 0}
+                    {' '}
+                    kudos
+                    {' '}
+                    ·
+                    {' '}
+                    {commentsLabel}
                   </span>
-                </button>
+                </div>
 
-                {currentUser && currentUser.id !== item.userId && !friendIds.has(item.userId) && (
-                  <button type="button" onClick={() => handleAddFriend(item.userId)}>
-                    Add Friend
+                <div className="feed-engagement-actions">
+                  <button
+                    type="button"
+                    className={`secondary-button feed-action-icon-button kudos-button ${likeState.likedByMe ? 'active' : ''}`}
+                    onClick={() => handleToggleLike(item)}
+                    disabled={likePendingBySession[item.id]}
+                    aria-label={likeState.likedByMe ? 'Unlike session' : 'Like session'}
+                    title={likeState.likedByMe ? 'Unlike' : 'Like'}
+                  >
+                    <span className="feed-action-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" focusable="false">
+                        <path
+                          d="M12.001 20.727l-.886-.808C6.12 15.36 3 12.527 3 9.045 3 6.207 5.239 4 8.032 4c1.579 0 3.094.734 3.969 1.904C12.874 4.734 14.389 4 15.968 4 18.761 4 21 6.207 21 9.045c0 3.482-3.12 6.315-8.115 10.874z"
+                          fill={likeState.likedByMe ? 'currentColor' : 'none'}
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </span>
                   </button>
-                )}
-                <button
-                  type="button"
-                  className="secondary-button feed-comment-button"
-                  onClick={() => handleToggleCommentComposer(item.id)}
-                  aria-label={isCommentComposerOpen ? 'Hide comment form' : 'Add comment'}
-                  title="Comments"
-                >
-                  💬
-                </button>
+                  <button
+                    type="button"
+                    className={`secondary-button feed-action-icon-button feed-comment-button ${isCommentComposerOpen ? 'active' : ''}`}
+                    onClick={() => handleToggleCommentComposer(item.id)}
+                    aria-label={isCommentComposerOpen ? 'Hide comment form' : 'Add comment'}
+                    title="Comment"
+                  >
+                    <span className="feed-action-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" focusable="false">
+                        <path
+                          d="M4 5.5h16a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 20 17.5H9l-4.5 3v-3H4A1.5 1.5 0 0 1 2.5 16V7A1.5 1.5 0 0 1 4 5.5z"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </span>
+                  </button>
+                </div>
               </div>
 
               {shouldShowCommentsPanel && (
@@ -734,10 +872,24 @@ const Feed = () => {
                     <div className="feed-comments-list">
                       {orderedComments.map((comment) => (
                         <article key={comment.id} className="feed-comment-item">
-                          <p className="feed-comment-meta">
-                            <strong>{comment.authorUsername || 'User'}</strong>
+                          <div className="feed-comment-meta">
+                            <div className="feed-comment-author">
+                              {comment.authorProfileImage ? (
+                                <img
+                                  src={comment.authorProfileImage}
+                                  alt=""
+                                  className="feed-comment-avatar-image"
+                                  aria-hidden="true"
+                                />
+                              ) : (
+                                <span className="feed-comment-avatar" aria-hidden="true">
+                                  {getInitial(comment.authorUsername)}
+                                </span>
+                              )}
+                              <strong>{comment.authorUsername || 'User'}</strong>
+                            </div>
                             <span>{formatRelativeFromNow(comment.createdAt)}</span>
-                          </p>
+                          </div>
                           <p className="feed-comment-content">{comment.content}</p>
                         </article>
                       ))}
@@ -751,9 +903,10 @@ const Feed = () => {
               )}
             </article>
             );
-          })}
-        </div>
-      )}
+            })}
+          </div>
+        )}
+      </div>
 
       {supportLiveViewSession && (
         <SupportLiveViewModal
