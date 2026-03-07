@@ -547,3 +547,27 @@ export async function unlikeSession(userId, sessionId) {
     throw new Error(toErrorMessage(error, 'Failed to unlike session'));
   }
 }
+
+export async function getSessionComments(userId, sessionId) {
+  try {
+    const { data } = await client.get(`/sessions/${sessionId}/comments`, {
+      headers: authHeaders(userId),
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load comments'));
+  }
+}
+
+export async function createSessionComment(userId, sessionId, content) {
+  try {
+    const { data } = await client.post(
+      `/sessions/${sessionId}/comments`,
+      { content },
+      { headers: authHeaders(userId) },
+    );
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to add comment'));
+  }
+}
