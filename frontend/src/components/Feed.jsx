@@ -785,7 +785,7 @@ const Feed = () => {
                   <span className="feed-engagement-text">
                     {likeState.likesCount || 0}
                     {' '}
-                    kudos
+                    likes
                     {' '}
                     ·
                     {' '}
@@ -796,7 +796,7 @@ const Feed = () => {
                 <div className="feed-engagement-actions">
                   <button
                     type="button"
-                    className={`secondary-button feed-action-icon-button kudos-button ${likeState.likedByMe ? 'active' : ''}`}
+                    className={`feed-action-icon-button kudos-button ${likeState.likedByMe ? 'active' : ''}`}
                     onClick={() => handleToggleLike(item)}
                     disabled={likePendingBySession[item.id]}
                     aria-label={likeState.likedByMe ? 'Unlike session' : 'Like session'}
@@ -816,7 +816,7 @@ const Feed = () => {
                   </button>
                   <button
                     type="button"
-                    className={`secondary-button feed-action-icon-button feed-comment-button ${isCommentComposerOpen ? 'active' : ''}`}
+                    className={`feed-action-icon-button feed-comment-button ${isCommentComposerOpen ? 'active' : ''}`}
                     onClick={() => handleToggleCommentComposer(item.id)}
                     aria-label={isCommentComposerOpen ? 'Hide comment form' : 'Add comment'}
                     title="Comment"
@@ -840,9 +840,9 @@ const Feed = () => {
                 <section className="feed-comments-panel" aria-label="Comments">
                   {isCommentComposerOpen && (
                     <form className="feed-comment-form" onSubmit={(event) => handlePostComment(item.id, event)}>
-                      <textarea
+                      <input
+                        type="text"
                         className="feed-comment-input"
-                        rows={2}
                         value={commentDraftBySession[item.id] || ''}
                         onChange={(event) => setCommentDraftBySession((prev) => ({
                           ...prev,
@@ -852,10 +852,10 @@ const Feed = () => {
                       />
                       <button
                         type="submit"
-                        className="secondary-button compact-button"
+                        className="secondary-button compact-button feed-comment-submit"
                         disabled={commentSubmittingBySession[item.id] || !(commentDraftBySession[item.id] || '').trim()}
                       >
-                        {commentSubmittingBySession[item.id] ? 'Posting...' : 'Comment'}
+                        {commentSubmittingBySession[item.id] ? 'Posting...' : 'Post'}
                       </button>
                     </form>
                   )}
