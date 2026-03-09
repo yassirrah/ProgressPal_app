@@ -2,11 +2,21 @@ package org.progresspalbackend.progresspalbackend.integration;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.progresspalbackend.progresspalbackend.domain.ActivityType;
 import org.progresspalbackend.progresspalbackend.domain.FriendRequest;
+import org.progresspalbackend.progresspalbackend.domain.Friendship;
 import org.progresspalbackend.progresspalbackend.domain.FriendshipStatus;
+import org.progresspalbackend.progresspalbackend.domain.Session;
+import org.progresspalbackend.progresspalbackend.domain.SessionComment;
 import org.progresspalbackend.progresspalbackend.domain.User;
+import org.progresspalbackend.progresspalbackend.domain.Visibility;
+import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
 import org.progresspalbackend.progresspalbackend.repository.FriendRepository;
 import org.progresspalbackend.progresspalbackend.repository.FriendRequestRepository;
+import org.progresspalbackend.progresspalbackend.repository.NotificationRepository;
+import org.progresspalbackend.progresspalbackend.repository.SessionCommentRepository;
+import org.progresspalbackend.progresspalbackend.repository.SessionReactionRepository;
+import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -18,6 +28,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,10 +73,30 @@ class FriendshipApiTest {
     @Autowired
     FriendRepository friendRepo;
 
+    @Autowired
+    SessionRepository sessionRepo;
+
+    @Autowired
+    SessionCommentRepository commentRepo;
+
+    @Autowired
+    SessionReactionRepository reactionRepo;
+
+    @Autowired
+    ActivityTypeRepository activityTypeRepo;
+
+    @Autowired
+    NotificationRepository notificationRepo;
+
     @BeforeEach
     void cleanDb() {
+        commentRepo.deleteAll();
+        reactionRepo.deleteAll();
+        sessionRepo.deleteAll();
         friendRepo.deleteAll();
         requestRepo.deleteAll();
+        notificationRepo.deleteAll();
+        userRepo.deleteAll();
     }
 
     @Test
@@ -237,6 +270,54 @@ class FriendshipApiTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void suggestions_rank_and_exclude_friends_and_pending_requests() throws Exception {
+        User actor = persistUser();
+        User mutual = persistUser();
+        User strongCandidate = persistUser();
+        User weakCandidate = persistUser();
+        User existingFriend = persistUser();
+        User pendingOutgoing = persistUser();
+        User pendingIncoming = persistUser();
+
+        friendRepo.save(new Friendship(null, actor, mutual, Instant.now()));
+        friendRepo.save(new Friendship(null, strongCandidate, mutual, Instant.now()));
+        friendRepo.save(new Friendship(null, actor, existingFriend, Instant.now()));
+
+        requestRepo.save(new FriendRequest(null, actor, pendingOutgoing, FriendshipStatus.PENDING, Instant.now()));
+        requestRepo.save(new FriendRequest(null, pendingIncoming, actor, FriendshipStatus.PENDING, Instant.now()));
+
+        List<ActivityType> defaults = activityTypeRepo.findByCustomFalseOrderByNameAsc();
+        ActivityType typeA = defaults.get(0);
+        ActivityType typeB = defaults.size() > 1 ? defaults.get(1) : defaults.get(0);
+
+        persistSession(actor, typeA, Instant.now().minus(1, ChronoUnit.DAYS));
+        Session strongSession = persistSession(strongCandidate, typeA, Instant.now().minus(2, ChronoUnit.DAYS));
+        persistSession(weakCandidate, typeB, Instant.now().minus(3, ChronoUnit.DAYS));
+
+        SessionComment comment = new SessionComment();
+        comment.setSession(strongSession);
+        comment.setAuthor(actor);
+        comment.setContent("Nice session");
+        comment.setCreatedAt(Instant.now().minus(1, ChronoUnit.DAYS));
+        commentRepo.save(comment);
+
+        mvc.perform(get("/api/friends/suggestions")
+                        .header("X-User-Id", actor.getId().toString())
+                        .param("limit", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].userId").value(strongCandidate.getId().toString()))
+                .andExpect(jsonPath("$[0].score").value(12))
+                .andExpect(jsonPath("$[0].mutualFriends").value(1))
+                .andExpect(jsonPath("$[0].sharedActivityTypes").value(1))
+                .andExpect(jsonPath("$[0].interactionCount").value(1))
+                .andExpect(jsonPath("$[0].recentlyActive").value(true))
+                .andExpect(jsonPath("$[1].userId").value(weakCandidate.getId().toString()))
+                .andExpect(jsonPath("$[1].score").value(1))
+                .andExpect(jsonPath("$[1].recentlyActive").value(true));
+    }
+
     private User persistUser() {
         User user = new User();
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 10);
@@ -244,5 +325,14 @@ class FriendshipApiTest {
         user.setEmail("friend_user_" + suffix + "@test.com");
         user.setPassword("password_" + suffix);
         return userRepo.save(user);
+    }
+
+    private Session persistSession(User user, ActivityType activityType, Instant startedAt) {
+        Session session = new Session();
+        session.setUser(user);
+        session.setActivityType(activityType);
+        session.setStartedAt(startedAt);
+        session.setVisibility(Visibility.PUBLIC);
+        return sessionRepo.save(session);
     }
 }
