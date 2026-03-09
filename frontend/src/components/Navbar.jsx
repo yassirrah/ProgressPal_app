@@ -241,148 +241,157 @@ const Navbar = () => {
 
   return (
     <nav>
-      <Link to="/" className="brand-link" aria-label="ProgressPal home">
-        {!logoMissing ? (
-          <img
-            src="/progresspal-logo.png"
-            alt="ProgressPal"
-            className="brand-logo"
-            onError={() => setLogoMissing(true)}
-          />
+      <div className="nav-inner">
+        <div className="nav-zone nav-zone-left">
+          <Link to="/" className="brand-link" aria-label="ProgressPal home">
+            {!logoMissing ? (
+              <img
+                src="/progresspal-logo.png"
+                alt="ProgressPal"
+                className="brand-logo"
+                onError={() => setLogoMissing(true)}
+              />
+            ) : (
+              <span className="brand-text">ProgressPal</span>
+            )}
+          </Link>
+        </div>
+
+        <button
+          type="button"
+          className="nav-mobile-toggle"
+          onClick={() => setMobileNavOpen((prev) => !prev)}
+          aria-expanded={mobileNavOpen}
+          aria-controls="main-nav-links"
+          aria-label="Toggle navigation"
+        >
+          {mobileNavOpen ? '✕' : '☰'}
+        </button>
+
+        <div id="main-nav-links" className={`nav-links${mobileNavOpen ? ' open' : ''}`}>
+          <NavLink to="/" end className={navLinkClass} onClick={closeMobileNav}>Home</NavLink>
+          <NavLink to="/my-sessions" className={navLinkClass} onClick={closeMobileNav}>My Sessions</NavLink>
+          <NavLink to="/activity-types" className={navLinkClass} onClick={closeMobileNav}>Activity Types</NavLink>
+          <NavLink to="/feed" className={navLinkClass} onClick={closeMobileNav}>Feed</NavLink>
+          <NavLink to="/friends" className={navLinkClass} onClick={closeMobileNav}>Friends</NavLink>
+          {!user && (
+            <>
+              <NavLink to="/login" className={navLinkClass} onClick={closeMobileNav}>Login</NavLink>
+              <NavLink to="/signup" className={navLinkClass} onClick={closeMobileNav}>Sign Up</NavLink>
+            </>
+          )}
+        </div>
+
+        {user ? (
+          <div className="nav-zone nav-zone-right nav-user-actions">
+            <div className="nav-notifications" ref={notificationsRef}>
+              <button
+                type="button"
+                className="nav-notification-button"
+                onClick={handleToggleNotifications}
+                aria-expanded={notificationsOpen}
+                aria-haspopup="menu"
+                aria-label="Open notifications"
+              >
+                <span className="nav-notification-icon" aria-hidden="true">🔔</span>
+                {unreadCount > 0 && (
+                  <span className="nav-notification-badge" aria-label={`${unreadCount} unread notifications`}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+              {notificationsOpen && (
+                <div className="nav-notifications-dropdown" role="menu">
+                  <div className="nav-notifications-head">
+                    <p>Notifications</p>
+                    <div className="nav-notifications-actions">
+                      <button
+                        type="button"
+                        className="nav-notifications-mark-all"
+                        onClick={handleMarkAllRead}
+                        disabled={unreadCount === 0}
+                      >
+                        Mark all read
+                      </button>
+                      <button
+                        type="button"
+                        className="nav-notifications-clear"
+                        onClick={handleClearAll}
+                        disabled={notifications.length === 0}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  {notificationsError && <p className="nav-notifications-error">{notificationsError}</p>}
+                  {notificationsLoading && <p className="nav-notifications-empty">Loading...</p>}
+                  {!notificationsLoading && notifications.length === 0 && (
+                    <p className="nav-notifications-empty">No notifications yet.</p>
+                  )}
+
+                  {notifications.length > 0 && (
+                    <ul className="nav-notifications-list">
+                      {notifications.map((notification) => (
+                        <li key={notification.id}>
+                          <button
+                            type="button"
+                            className={`nav-notification-item ${notification.readAt ? '' : 'unread'}`}
+                            onClick={() => handleNotificationClick(notification)}
+                          >
+                            <span className="nav-notification-message">{notification.message}</span>
+                            <span className="nav-notification-time">{formatRelativeFromNow(notification.createdAt)}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="nav-user-menu" ref={menuRef}>
+              <button
+                type="button"
+                className="nav-user-chip nav-user-chip-button"
+                title={user.username}
+                onClick={() => {
+                  setNotificationsOpen(false);
+                  setMenuOpen((prev) => !prev);
+                }}
+                aria-expanded={menuOpen}
+                aria-haspopup="menu"
+              >
+                <span className="nav-user-avatar" aria-hidden="true">{userInitial}</span>
+                <span className="nav-user-name">{user.username}</span>
+                <span className="nav-user-caret" aria-hidden="true">{menuOpen ? '▴' : '▾'}</span>
+              </button>
+              {menuOpen && (
+                <div className="nav-user-dropdown" role="menu">
+                  <Link
+                    to="/account"
+                    className="nav-user-dropdown-item"
+                    role="menuitem"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    Account settings
+                  </Link>
+                  <button
+                    type="button"
+                    className="nav-user-dropdown-item nav-user-dropdown-button"
+                    role="menuitem"
+                    onClick={handleLogout}
+                  >
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         ) : (
-          <span className="brand-text">ProgressPal</span>
-        )}
-      </Link>
-      <button
-        type="button"
-        className="nav-mobile-toggle"
-        onClick={() => setMobileNavOpen((prev) => !prev)}
-        aria-expanded={mobileNavOpen}
-        aria-controls="main-nav-links"
-        aria-label="Toggle navigation"
-      >
-        {mobileNavOpen ? '✕' : '☰'}
-      </button>
-      <div id="main-nav-links" className={`nav-links${mobileNavOpen ? ' open' : ''}`}>
-        <NavLink to="/" end className={navLinkClass} onClick={closeMobileNav}>Home</NavLink>
-        <NavLink to="/my-sessions" className={navLinkClass} onClick={closeMobileNav}>My Sessions</NavLink>
-        <NavLink to="/activity-types" className={navLinkClass} onClick={closeMobileNav}>Activity Types</NavLink>
-        <NavLink to="/feed" className={navLinkClass} onClick={closeMobileNav}>Feed</NavLink>
-        <NavLink to="/friends" className={navLinkClass} onClick={closeMobileNav}>Friends</NavLink>
-        {!user && (
-          <>
-            <NavLink to="/login" className={navLinkClass} onClick={closeMobileNav}>Login</NavLink>
-            <NavLink to="/signup" className={navLinkClass} onClick={closeMobileNav}>Sign Up</NavLink>
-          </>
+          <div className="nav-zone nav-zone-right" />
         )}
       </div>
-      {user ? (
-        <div className="nav-user-actions">
-          <div className="nav-notifications" ref={notificationsRef}>
-            <button
-              type="button"
-              className="nav-notification-button"
-              onClick={handleToggleNotifications}
-              aria-expanded={notificationsOpen}
-              aria-haspopup="menu"
-              aria-label="Open notifications"
-            >
-              <span className="nav-notification-icon" aria-hidden="true">🔔</span>
-              {unreadCount > 0 && (
-                <span className="nav-notification-badge" aria-label={`${unreadCount} unread notifications`}>
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </span>
-              )}
-            </button>
-            {notificationsOpen && (
-              <div className="nav-notifications-dropdown" role="menu">
-                <div className="nav-notifications-head">
-                  <p>Notifications</p>
-                  <div className="nav-notifications-actions">
-                    <button
-                      type="button"
-                      className="nav-notifications-mark-all"
-                      onClick={handleMarkAllRead}
-                      disabled={unreadCount === 0}
-                    >
-                      Mark all read
-                    </button>
-                    <button
-                      type="button"
-                      className="nav-notifications-clear"
-                      onClick={handleClearAll}
-                      disabled={notifications.length === 0}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                </div>
-
-                {notificationsError && <p className="nav-notifications-error">{notificationsError}</p>}
-                {notificationsLoading && <p className="nav-notifications-empty">Loading...</p>}
-                {!notificationsLoading && notifications.length === 0 && (
-                  <p className="nav-notifications-empty">No notifications yet.</p>
-                )}
-
-                {notifications.length > 0 && (
-                  <ul className="nav-notifications-list">
-                    {notifications.map((notification) => (
-                      <li key={notification.id}>
-                        <button
-                          type="button"
-                          className={`nav-notification-item ${notification.readAt ? '' : 'unread'}`}
-                          onClick={() => handleNotificationClick(notification)}
-                        >
-                          <span className="nav-notification-message">{notification.message}</span>
-                          <span className="nav-notification-time">{formatRelativeFromNow(notification.createdAt)}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="nav-user-menu" ref={menuRef}>
-            <button
-              type="button"
-              className="nav-user-chip nav-user-chip-button"
-              title={user.username}
-              onClick={() => {
-                setNotificationsOpen(false);
-                setMenuOpen((prev) => !prev);
-              }}
-              aria-expanded={menuOpen}
-              aria-haspopup="menu"
-            >
-              <span className="nav-user-avatar" aria-hidden="true">{userInitial}</span>
-              <span className="nav-user-name">{user.username}</span>
-              <span className="nav-user-caret" aria-hidden="true">{menuOpen ? '▴' : '▾'}</span>
-            </button>
-            {menuOpen && (
-              <div className="nav-user-dropdown" role="menu">
-                <Link
-                  to="/account"
-                  className="nav-user-dropdown-item"
-                  role="menuitem"
-                  onClick={() => setMenuOpen(false)}
-                >
-                  Account settings
-                </Link>
-                <button
-                  type="button"
-                  className="nav-user-dropdown-item nav-user-dropdown-button"
-                  role="menuitem"
-                  onClick={handleLogout}
-                >
-                  Logout
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : null}
     </nav>
   );
 };

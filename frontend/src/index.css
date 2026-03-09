@@ -36,12 +36,8 @@ nav {
   position: sticky;
   top: 0.5rem;
   z-index: 120;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  padding: 1rem;
+  display: block;
+  padding: 0.62rem 0.78rem;
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.88);
   border-radius: 14px;
@@ -54,10 +50,41 @@ nav button {
   margin: 0;
 }
 
+.nav-inner {
+  width: min(1020px, 100%);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(150px, auto) 1fr minmax(150px, auto);
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.nav-zone {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+.nav-zone-left {
+  justify-self: start;
+}
+
+.nav-zone-right {
+  justify-self: end;
+  justify-content: flex-end;
+}
+
+.nav-zone-right:empty {
+  visibility: hidden;
+}
+
 .nav-links {
   display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
+  justify-content: center;
+  justify-self: center;
+  gap: 0.48rem;
+  min-width: 0;
 }
 
 .nav-mobile-toggle {
@@ -74,10 +101,13 @@ nav button {
 
 .nav-link {
   position: relative;
+  display: inline-flex;
+  align-items: center;
   text-decoration: none;
   color: var(--text);
   font-weight: 600;
-  padding: 0.2rem 0.15rem;
+  padding: 0.22rem 0.14rem;
+  line-height: 1.2;
 }
 
 .nav-link.active {
@@ -100,17 +130,16 @@ nav button {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  margin-right: auto;
   text-decoration: none;
   font-weight: 700;
   min-width: 0;
 }
 
 .brand-logo {
-  height: 56px;
+  height: 46px;
   width: auto;
   display: block;
-  max-width: 180px;
+  max-width: 152px;
 }
 
 .brand-text {
@@ -121,21 +150,22 @@ nav button {
 .nav-user-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  margin-left: 0.25rem;
-  padding: 0.3rem 0.45rem 0.3rem 0.3rem;
+  gap: 0.4rem;
+  margin-left: 0;
+  min-height: 36px;
+  padding: 0.25rem 0.4rem 0.25rem 0.28rem;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.92);
 }
 
 .nav-user-avatar {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 800;
   color: var(--accent-strong);
   background: rgba(14, 165, 168, 0.12);
@@ -143,10 +173,10 @@ nav button {
 }
 
 .nav-user-name {
-  font-size: 0.9rem;
+  font-size: 0.86rem;
   font-weight: 700;
   color: var(--text);
-  max-width: 120px;
+  max-width: 108px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -154,14 +184,14 @@ nav button {
 
 .nav-user-menu {
   position: relative;
-  margin-left: 0.25rem;
+  margin-left: 0;
 }
 
 .nav-user-actions {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  margin-left: 0.25rem;
+  gap: 0.32rem;
+  margin-left: 0;
 }
 
 .nav-notifications {
@@ -170,8 +200,8 @@ nav button {
 
 .nav-notification-button {
   position: relative;
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   border-radius: 999px;
   padding: 0;
   display: inline-grid;
@@ -374,19 +404,35 @@ nav button {
 
 @media (max-width: 900px) {
   nav {
-    justify-content: flex-start;
-    gap: 0.5rem;
-    padding: 0.75rem;
+    padding: 0.68rem 0.74rem;
+  }
+
+  .nav-inner {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .nav-zone-right:empty {
+    display: none;
   }
 
   .brand-logo {
-    height: 44px;
-    max-width: 150px;
+    height: 42px;
+    max-width: 142px;
   }
 
   .nav-mobile-toggle {
     display: inline-flex;
+    order: 3;
     margin-left: auto;
+  }
+
+  .nav-zone-right {
+    order: 2;
+    margin-left: 0;
   }
 
   .nav-user-actions {
@@ -398,7 +444,7 @@ nav button {
   }
 
   .nav-links {
-    order: 3;
+    order: 4;
     width: 100%;
     display: none;
     flex-direction: column;
