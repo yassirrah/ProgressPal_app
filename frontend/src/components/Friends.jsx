@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   acceptFriendRequest,
   deleteFriend,
+  getFriendSuggestions,
   getFriends,
   getIncomingFriendRequests,
   getStoredUser,
@@ -16,6 +17,7 @@ const Friends = () => {
   const user = useMemo(() => getStoredUser(), []);
   const [friends, setFriends] = useState([]);
   const [incomingRequests, setIncomingRequests] = useState([]);
+  const [suggestedFriends, setSuggestedFriends] = useState([]);
   const [friendLookup, setFriendLookup] = useState('');
   const [receiverId, setReceiverId] = useState('');
   const [userSuggestions, setUserSuggestions] = useState([]);
@@ -26,6 +28,7 @@ const Friends = () => {
   const [acceptingRequesterId, setAcceptingRequesterId] = useState('');
   const [rejectingRequesterId, setRejectingRequesterId] = useState('');
   const [deletingFriendId, setDeletingFriendId] = useState('');
+  const [sendingSuggestionId, setSendingSuggestionId] = useState('');
   const [sendSuccessPulse, setSendSuccessPulse] = useState(false);
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [showRequestsPanel, setShowRequestsPanel] = useState(false);
@@ -37,12 +40,14 @@ const Friends = () => {
     setLoading(true);
     setError('');
     try {
-      const [friendsData, incomingData] = await Promise.all([
+      const [friendsData, incomingData, suggestionsData] = await Promise.all([
         getFriends(user.id),
         getIncomingFriendRequests(user.id),
+        getFriendSuggestions(user.id, 8).catch(() => []),
       ]);
       setFriends(friendsData || []);
       setIncomingRequests(incomingData || []);
+      setSuggestedFriends(suggestionsData || []);
     } catch (err) {
       setError(err.message || 'Failed to load friends');
     } finally {
@@ -93,6 +98,15 @@ const Friends = () => {
   const visibleSuggestions = useMemo(
     () => userSuggestions.filter((candidate) => !friendIdSet.has(candidate.id)),
     [userSuggestions, friendIdSet],
+  );
+
+  const visibleFriendSuggestions = useMemo(
+    () => (suggestedFriends || []).filter((candidate) => (
+      candidate?.userId
+      && candidate.userId !== user?.id
+      && !friendIdSet.has(candidate.userId)
+    )),
+    [friendIdSet, suggestedFriends, user?.id],
   );
 
   const handleSendRequest = async (e) => {
@@ -188,6 +202,22 @@ const Friends = () => {
       setError(err.message || 'Failed to delete friend');
     } finally {
       setDeletingFriendId('');
+    }
+  };
+
+  const handleSendSuggestionRequest = async (candidate) => {
+    if (!user || !candidate?.userId) return;
+    try {
+      setSendingSuggestionId(candidate.userId);
+      setError('');
+      setMessage('');
+      await sendFriendRequest(user.id, candidate.userId);
+      setMessage(`Friend request sent to ${candidate.username || 'user'}.`);
+      await loadFriends();
+    } catch (err) {
+      setError(err.message || 'Failed to send friend request');
+    } finally {
+      setSendingSuggestionId('');
     }
   };
 
@@ -368,6 +398,56 @@ const Friends = () => {
           )}
         </section>
       )}
+
+      <section className="friends-section-card">
+        <h2 className="friends-title">Suggested for You</h2>
+        {visibleFriendSuggestions.length === 0 ? (
+          <p className="message-muted">No suggestions right now. Check back soon.</p>
+        ) : (
+          <div className="friends-list">
+            {visibleFriendSuggestions.map((candidate) => {
+              const username = candidate.username || 'Unknown user';
+              const reasonText = Array.isArray(candidate.reasons) && candidate.reasons.length > 0
+                ? candidate.reasons.slice(0, 2).join(' • ')
+                : 'Suggested for you';
+              return (
+                <article key={candidate.userId} className="friend-row-card">
+                  <div className="friend-row-main">
+                    <div
+                      className="friend-avatar"
+                      style={avatarStyleFor(username)}
+                      aria-hidden="true"
+                    >
+                      {getInitial(username)}
+                    </div>
+                    <div>
+                      <p className="friend-name">{username}</p>
+                      <p className="friend-meta">{reasonText}</p>
+                    </div>
+                  </div>
+                  <div className="friend-row-actions">
+                    <button
+                      type="button"
+                      className="compact-button secondary-button"
+                      onClick={() => navigate(`/users/${candidate.userId}/profile`)}
+                    >
+                      View
+                    </button>
+                    <button
+                      type="button"
+                      className="compact-button"
+                      disabled={sendingSuggestionId === candidate.userId}
+                      onClick={() => handleSendSuggestionRequest(candidate)}
+                    >
+                      {sendingSuggestionId === candidate.userId ? 'Sending...' : 'Add'}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <section className="friends-section-card">
         <h2 className="friends-title">Your Friends</h2>
