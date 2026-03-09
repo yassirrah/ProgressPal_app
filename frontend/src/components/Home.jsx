@@ -3,6 +3,7 @@ import {
   createSession,
   getActivityTypes,
   getLiveSession,
+  getMySessions,
   getStoredUser,
   pauseSession,
   resumeSession,
@@ -77,6 +78,7 @@ const formatTimeHmsFromMinutes = (minutes) => {
 const Home = () => {
   const user = useMemo(() => getStoredUser(), []);
   const [activityTypes, setActivityTypes] = useState([]);
+  const [mySessions, setMySessions] = useState([]);
   const [liveSession, setLiveSession] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [loading, setLoading] = useState(false);
@@ -119,13 +121,15 @@ const Home = () => {
     setDashboardError('');
 
     try {
-      const [types, live] = await Promise.all([
+      const [types, live, mySessionsResponse] = await Promise.all([
         user ? getActivityTypes(user.id, 'ALL') : Promise.resolve([]),
         user ? getLiveSession(user.id) : Promise.resolve(null),
+        user ? getMySessions(user.id, { page: 0, size: 200, status: 'ALL' }).catch(() => ({ content: [] })) : Promise.resolve({ content: [] }),
       ]);
 
       setActivityTypes(types);
       setLiveSession(live);
+      setMySessions(Array.isArray(mySessionsResponse?.content) ? mySessionsResponse.content : []);
       if (types.length > 0 && !sessionForm.activityTypeId) {
         setSessionForm((prev) => ({ ...prev, activityTypeId: types[0].id }));
       }
@@ -284,9 +288,48 @@ const Home = () => {
   const liveGoalTargetLabel = liveGoalTargetNumeric == null
     ? '-'
     : formatGoalValue(liveGoalTargetNumeric, liveSession?.goalType, liveMetricLabel);
+  const liveGoalDoneLabel = liveGoalDoneNumeric == null
+    ? '-'
+    : formatGoalValue(liveGoalDoneNumeric, liveSession?.goalType, liveMetricLabel);
   const liveGoalPercentLabel = liveGoalProgressPct == null
     ? '-'
     : `${Number(liveGoalProgressPct.toFixed(1))}%`;
+  const liveGoalDeltaNumeric = (
+    hasLiveGoal
+    && liveGoalTargetNumeric
+    && liveGoalTargetNumeric > 0
+    && liveGoalDoneNumeric != null
+  )
+    ? (liveGoalDoneNumeric - liveGoalTargetNumeric)
+    : null;
+  const liveGoalDeltaMagnitudeLabel = liveGoalDeltaNumeric == null
+    ? '-'
+    : formatGoalValue(Math.abs(liveGoalDeltaNumeric), liveSession?.goalType, liveMetricLabel);
+  const liveGoalExceeded = liveGoalDeltaNumeric != null && liveGoalDeltaNumeric > 0.0001;
+  const liveGoalReached = liveGoalDeltaNumeric != null
+    && liveGoalDeltaNumeric <= 0.0001
+    && liveGoalDeltaNumeric >= -0.0001;
+  const liveGoalStateSummary = (() => {
+    if (!hasLiveGoal) {
+      return 'No goal set yet. Add one to keep your session intentional.';
+    }
+    if (liveGoalExceeded) {
+      return `Goal exceeded by ${liveGoalDeltaMagnitudeLabel}.`;
+    }
+    if (liveGoalReached) {
+      return 'Goal reached.';
+    }
+    if (liveGoalRemainingNumeric != null) {
+      return `${liveGoalRemainingLabel} left to target.`;
+    }
+    return 'Goal is active.';
+  })();
+  const liveGoalStatusSecondaryLabel = liveGoalExceeded
+    ? 'Exceeded'
+    : (liveGoalReached ? 'Status' : 'Remaining');
+  const liveGoalStatusSecondaryValue = liveGoalExceeded
+    ? liveGoalDeltaMagnitudeLabel
+    : (liveGoalReached ? 'Reached' : liveGoalRemainingLabel);
 
   const formatDuration = (totalSeconds) => {
     const safeSeconds = Math.max(0, Math.floor(totalSeconds));
@@ -409,7 +452,10 @@ const Home = () => {
       );
       setLiveSession(updated);
       setGoalPanelOpen(false);
-      setSessionNotice('Goal updated.');
+      setToast({
+        text: 'Goal updated',
+        durationMs: 1600,
+      });
     } catch (err) {
       setSessionError(err.message || 'Failed to update goal');
     } finally {
@@ -561,9 +607,132 @@ const Home = () => {
     return `${value.slice(0, 90)}...`;
   })();
 
+  const homeMomentumStats = useMemo(() => {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const nowMs = Date.now();
+    const sevenDaysAgo = nowMs - (7 * dayMs);
+    const fourteenDaysAgo = nowMs - (14 * dayMs);
+    const allActiveDayKeys = new Set();
+    const recentActiveDayKeys = new Set();
+
+    let sessionsLast7 = 0;
+    let sessionsPrev7 = 0;
+
+    mySessions.forEach((session) => {
+      if (!session?.startedAt) return;
+      const startedMs = new Date(session.startedAt).getTime();
+      if (Number.isNaN(startedMs)) return;
+
+      const started = new Date(startedMs);
+      const dayKey = `${started.getFullYear()}-${started.getMonth() + 1}-${started.getDate()}`;
+      allActiveDayKeys.add(dayKey);
+
+      if (startedMs >= sevenDaysAgo) {
+        sessionsLast7 += 1;
+        recentActiveDayKeys.add(dayKey);
+      } else if (startedMs >= fourteenDaysAgo) {
+        sessionsPrev7 += 1;
+      }
+    });
+
+    let streak = 0;
+    const cursor = new Date(nowMs);
+    cursor.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 365; i += 1) {
+      const key = `${cursor.getFullYear()}-${cursor.getMonth() + 1}-${cursor.getDate()}`;
+      if (!allActiveDayKeys.has(key)) break;
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+
+    const trendDelta = sessionsLast7 - sessionsPrev7;
+    let trendText = 'Same rhythm as last week';
+    let trendTone = 'neutral';
+    if (trendDelta > 0) {
+      trendText = `${trendDelta} more sessions than last week`;
+      trendTone = 'up';
+    } else if (trendDelta < 0) {
+      trendText = `${Math.abs(trendDelta)} fewer sessions than last week`;
+      trendTone = 'down';
+    }
+
+    return {
+      streak,
+      activeDaysLast7: recentActiveDayKeys.size,
+      trendText,
+      trendTone,
+    };
+  }, [mySessions]);
+
+  const activeDaysWidget = useMemo(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const monthStart = new Date(year, month, 1);
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const leadingEmpty = monthStart.getDay();
+
+    const daySessionCounts = new Map();
+    mySessions.forEach((session) => {
+      if (!session?.startedAt) return;
+      const started = new Date(session.startedAt);
+      if (Number.isNaN(started.getTime())) return;
+      if (started.getFullYear() !== year || started.getMonth() !== month) return;
+      const day = started.getDate();
+      daySessionCounts.set(day, (daySessionCounts.get(day) || 0) + 1);
+    });
+
+    const monthLabel = monthStart.toLocaleDateString([], { month: 'long', year: 'numeric' });
+    const activeDaysCount = Array.from(daySessionCounts.values()).filter((count) => count > 0).length;
+    const cells = [];
+
+    for (let i = 0; i < leadingEmpty; i += 1) {
+      cells.push({
+        key: `empty-${i}`,
+        isEmpty: true,
+      });
+    }
+
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const sessions = daySessionCounts.get(day) || 0;
+      const isToday = day === today.getDate();
+      cells.push({
+        key: `day-${day}`,
+        day,
+        isEmpty: false,
+        isToday,
+        isActive: sessions > 0,
+        sessions,
+        tooltip: sessions > 0
+          ? `${sessions} session${sessions === 1 ? '' : 's'}`
+          : 'No activity',
+      });
+    }
+
+    return {
+      monthLabel,
+      activeDaysCount,
+      cells,
+    };
+  }, [mySessions]);
+
+  const getInitial = (value) => (value || '?').trim().charAt(0).toUpperCase() || '?';
+  const liveStartedAtLabel = liveSession?.startedAt
+    ? new Date(liveSession.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : '-';
+  const liveVisibilityLabel = liveSession?.visibility
+    ? `${liveSession.visibility.charAt(0)}${liveSession.visibility.slice(1).toLowerCase()}`
+    : 'Private';
+  const liveTrackingLabel = liveMetricKind === 'NONE' ? 'Time only' : `${liveMetricLabel} tracking`;
+  const liveFocusLabel = isSessionPaused ? 'Focus paused' : 'In flow';
+  const hasLiveQuickNote = liveQuickNote.trim().length > 0;
+
   return (
     <div className={`home-stack${liveSession ? ' focus-mode' : ''}`}>
       <h1 className="page-title">{liveSession ? 'Live Session' : 'Home'}</h1>
+      <p className="home-page-subtitle">
+        {liveSession ? 'Track your focus in real time' : 'Keep your streak alive today'}
+      </p>
       {!user && <p>Please <a href="/login">login</a> or <a href="/signup">sign up</a> to get started.</p>}
       {dashboardError && <p className="message-error">{dashboardError}</p>}
       {loading && <p>Loading...</p>}
@@ -572,29 +741,247 @@ const Home = () => {
         <>
           {liveSession && (
             <section className={`home-card live-session-card ${liveCardAccentClass}`}>
-              <div className="home-section-head">
-                <div className="live-heading-wrap">
-                  <h2>Your Live Session</h2>
+              {sessionError && <p className="message-error">{sessionError}</p>}
+              {sessionNotice && <p className="message-muted live-inline-feedback">{sessionNotice}</p>}
+              <div className="live-hero-layout">
+                <div className="live-hero-row live-hero-row--status">
+                  <p className="home-live-status-line live-hero-meta-line">
+                    <span className="home-live-activity">{liveSessionType?.name || 'Live session'}</span>
+                    <span className={`home-live-state ${isSessionPaused ? 'paused' : 'live'}`}>
+                      {isSessionPaused ? 'Paused' : 'Live'}
+                    </span>
+                    <span className="live-hero-started-at">Started {liveStartedAtLabel}</span>
+                  </p>
+                  <div className="live-hero-meta-cluster" aria-label="Session metadata">
+                    <span className="live-hero-meta-pill">{liveVisibilityLabel}</span>
+                    <span className="live-hero-meta-pill">{liveTrackingLabel}</span>
+                    <span className="live-hero-meta-pill">{homeMomentumStats.streak} day streak</span>
+                    <span className="live-hero-meta-pill">{liveFocusLabel}</span>
+                  </div>
+                </div>
+
+                <div className="live-hero-row live-hero-row--timer">
+                  <span className="live-timer-value live-timer-value--hero">{formatLiveDuration(liveSession)}</span>
+                  <span className="live-timer-subtle">Elapsed focus time</span>
+                </div>
+
+                {!stopPanelOpen && (
+                  <div className="live-hero-row live-hero-row--actions">
+                    <button
+                      type="button"
+                      className="live-primary-button compact-button live-action-button"
+                      onClick={handleTogglePauseState}
+                      disabled={savingPauseState}
+                    >
+                      {savingPauseState ? 'Saving...' : (isSessionPaused ? 'Resume Session' : 'Pause Session')}
+                    </button>
+                    <button
+                      type="button"
+                      className="danger-outline-button compact-button live-end-button live-action-button"
+                      onClick={handleStopClick}
+                    >
+                      <span className="danger-soft-button-icon" aria-hidden="true">■</span>
+                      <span>End Session</span>
+                    </button>
+                  </div>
+                )}
+
+                <div className="live-hero-row live-hero-row--goal">
+                  <div className="live-goal-compact">
+                    <p className="live-goal-compact-label">Session goal</p>
+                    <p className="live-goal-compact-value">
+                      {hasLiveGoal
+                        ? `Done ${liveGoalDoneLabel} of ${liveGoalTargetLabel}`
+                        : 'No goal set'}
+                    </p>
+                    <p className="live-goal-compact-state">{liveGoalStateSummary}</p>
+                  </div>
+                  {!goalPanelOpen && (
+                    <button
+                      type="button"
+                      className="secondary-button compact-button live-goal-cta live-action-button"
+                      onClick={() => setGoalPanelOpen(true)}
+                      aria-label={hasLiveGoal ? 'Edit goal' : 'Set goal'}
+                    >
+                      {hasLiveGoal ? 'Edit Goal' : 'Set Goal'}
+                    </button>
+                  )}
                 </div>
               </div>
-              {sessionError && <p className="message-error">{sessionError}</p>}
-              {sessionNotice && <p className="message-muted">{sessionNotice}</p>}
-              <div className="live-session-layout">
-                <div className="live-session-main">
-                  <p className="live-activity-pill-row">
-                    <span className="live-activity-pill">{liveSessionType?.name || 'Live session'}</span>
-                    <span
-                      className={`live-indicator live-indicator-inline ${isSessionPaused ? 'paused' : ''}`}
-                      aria-label={isSessionPaused ? 'Session paused' : 'Live session active'}
-                    >
-                      <span className="live-indicator-dot" aria-hidden="true" />
-                      {isSessionPaused ? 'PAUSED' : 'LIVE'}
-                    </span>
-                  </p>
 
-                  {liveSession.title && (
-                    <p className="live-session-title">{liveSession.title}</p>
+              {stopPanelOpen && (
+                <div className="home-subpanel home-stop-panel">
+                  <p className="message-muted" style={{ marginTop: 0 }}>
+                    {showStopMetricInput ? 'Add results before ending.' : 'Confirm end session.'}
+                  </p>
+                  {showStopMetricInput && (
+                    <div>
+                      <label>
+                        {liveMetricLabel} ({liveMetricKind === 'INTEGER' ? 'whole number' : 'decimal allowed'}):
+                      </label>
+                      <input
+                        type="number"
+                        step={liveMetricKind === 'INTEGER' ? '1' : 'any'}
+                        value={stopMetricValue}
+                        onChange={(e) => setStopMetricValue(e.target.value)}
+                        placeholder={`Optional ${liveMetricLabel}`}
+                      />
+                      <p className="message-muted" style={{ margin: '4px 0 0' }}>
+                        Optional. Leave empty to use your current live progress.
+                      </p>
+                    </div>
                   )}
+                  <div className="home-row">
+                    <button type="button" className="danger-soft-button live-end-button" onClick={handleStopSession}>
+                      <span className="danger-soft-button-icon" aria-hidden="true">■</span>
+                      <span>Save &amp; End</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setStopPanelOpen(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {goalPanelOpen && (
+                <div className="home-subpanel live-goal-editor-panel">
+                  <p className="message-muted" style={{ marginTop: 0 }}>
+                    Update your session goal.
+                  </p>
+                  <div>
+                    <label>Goal type</label>
+                    <select
+                      value={liveGoalForm.goalType}
+                      onChange={(e) => {
+                        const nextGoalType = e.target.value;
+                        setLiveGoalForm((prev) => ({
+                          ...prev,
+                          goalType: nextGoalType,
+                          goalTarget: nextGoalType === prev.goalType ? prev.goalTarget : '',
+                        }));
+                      }}
+                    >
+                      <option value="NONE">None</option>
+                      <option value="TIME">Time</option>
+                      <option value="METRIC" disabled={liveMetricKind === 'NONE'}>
+                        Metric ({liveMetricLabel || 'unit'})
+                      </option>
+                    </select>
+                  </div>
+                  {liveGoalForm.goalType !== 'NONE' && (
+                    <div>
+                      <label>
+                        Target {liveGoalForm.goalType === 'TIME' ? '(e.g. 5h20m1s or 1:30:00)' : `(${liveMetricLabel || 'units'})`}
+                      </label>
+                      <input
+                        type={liveGoalForm.goalType === 'TIME' ? 'text' : 'number'}
+                        min={liveGoalForm.goalType === 'TIME' ? undefined : '0'}
+                        step={liveGoalForm.goalType === 'METRIC' && liveMetricKind === 'INTEGER' ? '1' : 'any'}
+                        value={liveGoalForm.goalTarget}
+                        onChange={(e) => setLiveGoalForm((prev) => ({ ...prev, goalTarget: e.target.value }))}
+                        placeholder={liveGoalForm.goalType === 'TIME' ? 'e.g. 5h20m1s, 20m5s, 5m, or 1:30:00' : 'e.g. 10'}
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <label>Goal note (optional)</label>
+                    <input
+                      type="text"
+                      maxLength={255}
+                      value={liveGoalForm.goalNote}
+                      onChange={(e) => setLiveGoalForm((prev) => ({ ...prev, goalNote: e.target.value }))}
+                      placeholder="e.g. finish chapter 3"
+                    />
+                  </div>
+                  <div className="home-row">
+                    <button type="button" onClick={handleSaveLiveGoal} disabled={savingGoal}>
+                      {savingGoal ? 'Saving...' : 'Save Goal'}
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setGoalPanelOpen(false)}
+                      disabled={savingGoal}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
+          {liveSession && (
+            <section className="home-card session-tools-card">
+              <div className="home-section-head">
+                <h2>Session Tools</h2>
+              </div>
+              <div className="session-tools-grid">
+                <article className={`session-tools-panel session-tools-panel--overview${!hasLiveGoal ? ' session-tools-panel--overview-empty' : ''}`}>
+                  <h3>Goal status</h3>
+                  {hasLiveGoal ? (
+                    <>
+                      <div className="session-tools-stats">
+                        <div className="session-tools-stat">
+                          <span>Completed</span>
+                          <strong>{liveGoalPercentLabel}</strong>
+                        </div>
+                        <div className="session-tools-stat">
+                          <span>{liveGoalStatusSecondaryLabel}</span>
+                          <strong>{liveGoalStatusSecondaryValue}</strong>
+                        </div>
+                        <div className="session-tools-stat">
+                          <span>Target</span>
+                          <strong>{liveGoalTargetLabel}</strong>
+                        </div>
+                      </div>
+                      {liveGoalProgressPct != null && (
+                        <div className="live-goal-progress">
+                          <div className="live-goal-progress-row">
+                            <span className="live-goal-label">Progress</span>
+                            <span className="live-goal-value">
+                              {formatGoalValue(liveGoalDoneNumeric, liveSession.goalType, liveMetricLabel)} / {liveGoalTargetLabel}
+                            </span>
+                          </div>
+                          <div className="live-goal-progress-bar">
+                            <span style={{ width: `${liveGoalProgressPct}%` }} />
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="session-tools-empty">
+                      <p className="message-muted" style={{ margin: 0 }}>
+                        No goal set for this session. Add one to keep your effort measurable.
+                      </p>
+                      <button
+                        type="button"
+                        className="secondary-button compact-button"
+                        onClick={() => setGoalPanelOpen(true)}
+                      >
+                        Set Goal
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="session-tools-details">
+                    <div className="session-tools-detail">
+                      <span>Status</span>
+                      <strong>{isSessionPaused ? 'Paused' : 'Live'}</strong>
+                    </div>
+                    <div className="session-tools-detail">
+                      <span>Started</span>
+                      <strong>{liveStartedAtLabel}</strong>
+                    </div>
+                    <div className="session-tools-detail">
+                      <span>Visibility</span>
+                      <strong>{liveVisibilityLabel}</strong>
+                    </div>
+                  </div>
 
                   {liveMetricKind !== 'NONE' && (
                     <div className="live-metric-tracker">
@@ -645,411 +1032,323 @@ const Home = () => {
                             })}
                             disabled={savingProgress || isSessionPaused}
                           >
-                            {savingProgress ? 'Saving...' : 'Save progress'}
+                            {savingProgress ? 'Saving...' : 'Save Progress'}
                           </button>
                         </div>
                       )}
                     </div>
                   )}
-
-                  <div className="live-goal-progress">
-                    <div className="live-goal-progress-row live-goal-progress-head">
-                      <span className="live-goal-label">
-                        {hasLiveGoal
-                          ? `Goal: ${formatGoalValue(liveSession.goalTarget, liveSession.goalType, liveMetricLabel)}`
-                          : 'No goal set'}
-                      </span>
-                      {!goalPanelOpen && (
-                        <button
-                          type="button"
-                          className={`secondary-button compact-button${hasLiveGoal ? ' goal-edit-button' : ''}`}
-                          onClick={() => setGoalPanelOpen(true)}
-                          aria-label={hasLiveGoal ? 'Edit goal' : 'Set goal'}
-                        >
-                          {hasLiveGoal ? '✎' : 'Set goal'}
-                        </button>
-                      )}
-                    </div>
-                    {hasLiveGoal && (
-                      <div className="live-goal-progress-bar" aria-hidden="true">
-                        <span style={{ width: `${liveGoalProgressPct ?? 0}%` }} />
-                      </div>
-                    )}
-                  </div>
-
-                  {goalPanelOpen && (
-                    <div className="home-subpanel">
-                      <p className="message-muted" style={{ marginTop: 0 }}>
-                        Update your session goal.
-                      </p>
-                      <div>
-                        <label>Goal type</label>
-                        <select
-                          value={liveGoalForm.goalType}
-                          onChange={(e) => {
-                            const nextGoalType = e.target.value;
-                            setLiveGoalForm((prev) => ({
-                              ...prev,
-                              goalType: nextGoalType,
-                              goalTarget: nextGoalType === prev.goalType ? prev.goalTarget : '',
-                            }));
-                          }}
-                        >
-                          <option value="NONE">None</option>
-                          <option value="TIME">Time</option>
-                          <option value="METRIC" disabled={liveMetricKind === 'NONE'}>
-                            Metric ({liveMetricLabel || 'unit'})
-                          </option>
-                        </select>
-                      </div>
-                      {liveGoalForm.goalType !== 'NONE' && (
-                        <div>
-                          <label>
-                            Target {liveGoalForm.goalType === 'TIME' ? '(e.g. 5h20m1s or 1:30:00)' : `(${liveMetricLabel || 'units'})`}
-                          </label>
-                          <input
-                            type={liveGoalForm.goalType === 'TIME' ? 'text' : 'number'}
-                            min={liveGoalForm.goalType === 'TIME' ? undefined : '0'}
-                            step={liveGoalForm.goalType === 'METRIC' && liveMetricKind === 'INTEGER' ? '1' : 'any'}
-                            value={liveGoalForm.goalTarget}
-                            onChange={(e) => setLiveGoalForm((prev) => ({ ...prev, goalTarget: e.target.value }))}
-                            placeholder={liveGoalForm.goalType === 'TIME' ? 'e.g. 5h20m1s, 20m5s, 5m, or 1:30:00' : 'e.g. 10'}
-                          />
-                        </div>
-                      )}
-                      <div>
-                        <label>Goal note (optional)</label>
-                        <input
-                          type="text"
-                          maxLength={255}
-                          value={liveGoalForm.goalNote}
-                          onChange={(e) => setLiveGoalForm((prev) => ({ ...prev, goalNote: e.target.value }))}
-                          placeholder="e.g. finish chapter 3"
-                        />
-                      </div>
-                      <div className="home-row">
-                        <button type="button" onClick={handleSaveLiveGoal} disabled={savingGoal}>
-                          {savingGoal ? 'Saving...' : 'Save Goal'}
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => setGoalPanelOpen(false)}
-                          disabled={savingGoal}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="live-session-side">
-                  <div className="live-timer-block">
-                    <span className="live-timer-value">{formatLiveDuration(liveSession)}</span>
-                    <span className="live-timer-subtle">Elapsed time</span>
-                  </div>
-
-                  {!stopPanelOpen && (
-                    <div className="live-session-actions">
-                      <button
-                        type="button"
-                        className="compact-button"
-                        onClick={handleTogglePauseState}
-                        disabled={savingPauseState}
-                      >
-                        {savingPauseState ? 'Saving...' : (isSessionPaused ? 'Resume' : 'Pause')}
-                      </button>
-                      <button
-                        type="button"
-                        className="danger-outline-button live-end-button"
-                        onClick={handleStopClick}
-                      >
-                        <span className="danger-soft-button-icon" aria-hidden="true">■</span>
-                        <span>End session</span>
-                      </button>
-                    </div>
-                  )}
-                  {stopPanelOpen && (
-                    <div className="home-subpanel">
-                      <p className="message-muted" style={{ marginTop: 0 }}>
-                        {showStopMetricInput ? 'Add results before ending.' : 'Confirm end session.'}
-                      </p>
-                      {showStopMetricInput && (
-                        <div>
-                          <label>
-                            {liveMetricLabel} ({liveMetricKind === 'INTEGER' ? 'whole number' : 'decimal allowed'}):
-                          </label>
-                          <input
-                            type="number"
-                            step={liveMetricKind === 'INTEGER' ? '1' : 'any'}
-                            value={stopMetricValue}
-                            onChange={(e) => setStopMetricValue(e.target.value)}
-                            placeholder={`Optional ${liveMetricLabel}`}
-                          />
-                          <p className="message-muted" style={{ margin: '4px 0 0' }}>
-                            Optional. Leave empty to use your current live progress.
-                          </p>
-                        </div>
-                      )}
-                      <div className="home-row">
-                        <button type="button" className="danger-soft-button live-end-button" onClick={handleStopSession}>
-                          <span className="danger-soft-button-icon" aria-hidden="true">■</span>
-                          <span>Save &amp; end</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => setStopPanelOpen(false)}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
-          )}
-
-          {liveSession && (
-            <section className="home-card live-companion-card">
-              <div className="home-section-head">
-                <h2>Live Companion</h2>
-              </div>
-              <div className="live-companion-grid">
-                <article className="live-companion-panel">
-                  <h3>Goal status</h3>
-                  {hasLiveGoal ? (
-                    <div className="live-companion-stats">
-                      <div className="live-companion-stat">
-                        <span>Complete</span>
-                        <strong>{liveGoalPercentLabel}</strong>
-                      </div>
-                      <div className="live-companion-stat">
-                        <span>Remaining</span>
-                        <strong>{liveGoalRemainingLabel}</strong>
-                      </div>
-                      <div className="live-companion-stat">
-                        <span>Target</span>
-                        <strong>{liveGoalTargetLabel}</strong>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="message-muted" style={{ margin: 0 }}>
-                      No goal set for this session yet.
-                    </p>
-                  )}
                 </article>
 
-                <article className="live-companion-panel">
-                  <div className="live-companion-head">
+                <article className="session-tools-panel session-tools-panel--notes">
+                  <div className="session-tools-head">
                     <h3>Quick notes</h3>
                     <button
                       type="button"
-                      className="home-link-button"
+                      className={`home-link-button session-tools-clear-button${hasLiveQuickNote ? ' active' : ''}`}
                       onClick={() => setLiveQuickNote('')}
+                      disabled={!hasLiveQuickNote}
                     >
                       Clear
                     </button>
                   </div>
-                  <textarea
-                    className="live-quick-note-textarea"
-                    value={liveQuickNote}
-                    onChange={(e) => setLiveQuickNote(e.target.value)}
-                    placeholder="Write what you are focusing on right now..."
-                  />
+                  <p className="session-tools-note-helper">
+                    Capture your intention, blockers, or next step while you stay in flow.
+                  </p>
+                  <div className="session-tools-note-field">
+                    <label htmlFor="live-quick-note" className="session-tools-note-label">Session note</label>
+                    <textarea
+                      id="live-quick-note"
+                      className="live-quick-note-textarea"
+                      value={liveQuickNote}
+                      onChange={(e) => setLiveQuickNote(e.target.value)}
+                      placeholder="What are you focusing on right now?"
+                    />
+                  </div>
                 </article>
               </div>
             </section>
           )}
 
           {!liveSession && (
-            <section className="home-card home-no-live-card">
-              <div className="home-empty-state">
-                <div>
-                  <h2>No active session</h2>
-                  <p className="message-muted">Start one to track time and goals.</p>
-                </div>
-              </div>
-              {sessionError && <p className="message-error">{sessionError}</p>}
-              {sessionNotice && <p className="message-muted">{sessionNotice}</p>}
-              <form id="home-quick-start-form" onSubmit={handleStartSession} className="home-start-form">
-                <div className="home-quick-start-row">
+            <section className="home-no-live-layout">
+              <section className="home-card home-no-live-card home-no-live-card--hero">
+                <div className="home-empty-state home-empty-state--hero">
                   <div>
-                    <label>Activity</label>
-                    <select
-                      value={sessionForm.activityTypeId}
-                      onChange={(e) => setSessionForm((prev) => ({ ...prev, activityTypeId: e.target.value }))}
-                      required
-                    >
-                      {activityTypes.map((type) => (
-                        <option key={type.id} value={type.id}>
-                          {type.name}
-                        </option>
-                      ))}
-                    </select>
+                    <h2>Start a focused session</h2>
+                    <p className="message-muted">Choose your activity, set visibility, and begin.</p>
                   </div>
-                  <button type="submit" disabled={activityTypes.length === 0}>Start session</button>
                 </div>
-                {activityTypes.length === 0 && (
-                  <p className="message-muted" style={{ margin: 0 }}>
-                    Create an activity type first.
-                  </p>
-                )}
-                <div className={`home-subpanel home-more-options-accordion ${moreOptionsOpen ? 'open' : ''}`}>
-                  <button
-                    type="button"
-                    className="home-more-options-header"
-                    onClick={() => setMoreOptionsOpen((prev) => !prev)}
-                    aria-expanded={moreOptionsOpen}
-                  >
-                    <span>More options {moreOptionsOpen ? '▲' : '▼'}</span>
-                  </button>
-                  {moreOptionsOpen && (
-                    <div className="home-more-options-panel">
-                      <div className="home-options-group">
-                        <p className="home-options-group-title">Session details</p>
-                        <div className="home-options-grid">
-                          <div>
-                            <label>Visibility</label>
-                            <select
-                              value={sessionForm.visibility}
-                              onChange={(e) => setSessionForm((prev) => ({ ...prev, visibility: e.target.value }))}
-                            >
-                              <option value="PRIVATE">Private</option>
-                              <option value="FRIENDS">Friends</option>
-                              <option value="PUBLIC">Public</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label>Title (optional)</label>
-                            <input
-                              type="text"
-                              maxLength={120}
-                              value={sessionForm.title}
-                              onChange={(e) => setSessionForm((prev) => ({ ...prev, title: e.target.value }))}
-                            />
-                          </div>
-                        </div>
-                      </div>
+                {sessionError && <p className="message-error">{sessionError}</p>}
+                {sessionNotice && <p className="message-muted">{sessionNotice}</p>}
+                <form id="home-quick-start-form" onSubmit={handleStartSession} className="home-start-form">
+                  <div className="home-setup-flow">
+                    <div className="home-setup-step home-primary-field">
+                      <label htmlFor="home-activity-select">1. Activity</label>
+                      <select
+                        id="home-activity-select"
+                        value={sessionForm.activityTypeId}
+                        onChange={(e) => setSessionForm((prev) => ({ ...prev, activityTypeId: e.target.value }))}
+                        required
+                      >
+                        {activityTypes.map((type) => (
+                          <option key={type.id} value={type.id}>
+                            {type.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                      <div className="home-options-group">
-                        <p className="home-options-group-title">Notes</p>
-                        {!notesOpen ? (
-                          <>
-                            <button
-                              type="button"
-                              className="home-link-button"
-                              onClick={() => setNotesOpen(true)}
-                            >
-                              {sessionForm.description ? 'Edit notes ▼' : 'Add notes ▼'}
-                            </button>
-                            {notesPreview && (
-                              <p className="message-muted home-notes-preview">{notesPreview}</p>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            <div>
-                              <label>Notes (optional)</label>
-                              <textarea
-                                value={sessionForm.description}
-                                onChange={(e) => setSessionForm((prev) => ({ ...prev, description: e.target.value }))}
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              className="home-link-button"
-                              onClick={() => setNotesOpen(false)}
-                            >
-                              Done notes ▲
-                            </button>
-                          </>
-                        )}
-                      </div>
-
-                      <div className="home-options-group">
-                        <p className="home-options-group-title">Goal</p>
+                    <div className="home-setup-step home-visibility-row">
+                      <label>2. Visibility</label>
+                      <div className="home-visibility-tabs home-visibility-tabs--segmented" role="group" aria-label="Session visibility">
                         <button
                           type="button"
-                          className="secondary-button home-goal-toggle-button"
-                          onClick={() => {
-                            const enabled = !goalEnabled;
-                            setGoalEnabled(enabled);
-                            if (!enabled) {
-                              setSessionForm((prev) => ({
-                                ...prev,
-                                goalType: 'NONE',
-                                goalTarget: '',
-                                goalNote: '',
-                              }));
-                            } else if (sessionForm.goalType === 'NONE') {
-                              setSessionForm((prev) => ({ ...prev, goalType: 'TIME', goalTarget: '' }));
-                            }
-                          }}
-                          aria-expanded={goalEnabled}
+                          className={`home-visibility-tab ${sessionForm.visibility === 'PRIVATE' ? 'active' : ''}`}
+                          onClick={() => setSessionForm((prev) => ({ ...prev, visibility: 'PRIVATE' }))}
+                          aria-pressed={sessionForm.visibility === 'PRIVATE'}
                         >
-                          {goalEnabled ? 'Hide goal ▲' : 'Add a goal ▼'}
+                          Private
                         </button>
-                        {goalEnabled && (
-                          <>
-                            <div className="home-options-grid">
-                              <div>
-                                <label>Goal type</label>
-                                <select
-                                  value={sessionForm.goalType}
-                                  onChange={(e) => {
-                                    const nextGoalType = e.target.value;
-                                    setSessionForm((prev) => ({
-                                      ...prev,
-                                      goalType: nextGoalType,
-                                      goalTarget: nextGoalType === prev.goalType ? prev.goalTarget : '',
-                                    }));
-                                  }}
-                                >
-                                  <option value="TIME">Time</option>
-                                  <option
-                                    value="METRIC"
-                                    disabled={!selectedStartActivityType || selectedStartActivityType.metricKind === 'NONE'}
-                                  >
-                                    Metric ({selectedStartActivityType?.metricLabel || 'unit'})
-                                  </option>
-                                </select>
-                              </div>
-                              <div>
-                                <label>
-                                  Goal value {sessionForm.goalType === 'TIME'
-                                    ? '(e.g. 5h20m1s or 1:30:00)'
-                                    : `(${selectedStartActivityType?.metricLabel || 'units'})`}
-                                </label>
-                                <input
-                                  type={sessionForm.goalType === 'TIME' ? 'text' : 'number'}
-                                  min={sessionForm.goalType === 'TIME' ? undefined : '0'}
-                                  step={sessionForm.goalType === 'METRIC' && selectedStartActivityType?.metricKind === 'INTEGER' ? '1' : 'any'}
-                                  value={sessionForm.goalTarget}
-                                  onChange={(e) => setSessionForm((prev) => ({ ...prev, goalTarget: e.target.value }))}
-                                  placeholder={sessionForm.goalType === 'TIME' ? 'e.g. 5h20m1s, 20m5s, 5m, or 1:30:00' : 'e.g. 10'}
-                                />
-                              </div>
-                            </div>
-                            <div>
-                              <label>Goal note (optional)</label>
-                              <input
-                                type="text"
-                                maxLength={255}
-                                value={sessionForm.goalNote}
-                                onChange={(e) => setSessionForm((prev) => ({ ...prev, goalNote: e.target.value }))}
-                                placeholder="e.g. finish chapter 3"
-                              />
-                            </div>
-                          </>
-                        )}
+                        <button
+                          type="button"
+                          className={`home-visibility-tab ${sessionForm.visibility === 'FRIENDS' ? 'active' : ''}`}
+                          onClick={() => setSessionForm((prev) => ({ ...prev, visibility: 'FRIENDS' }))}
+                          aria-pressed={sessionForm.visibility === 'FRIENDS'}
+                        >
+                          Friends
+                        </button>
+                        <button
+                          type="button"
+                          className={`home-visibility-tab ${sessionForm.visibility === 'PUBLIC' ? 'active' : ''}`}
+                          onClick={() => setSessionForm((prev) => ({ ...prev, visibility: 'PUBLIC' }))}
+                          aria-pressed={sessionForm.visibility === 'PUBLIC'}
+                        >
+                          Public
+                        </button>
                       </div>
                     </div>
-                  )}
-                </div>
-              </form>
+
+                    {activityTypes.length === 0 && (
+                      <p className="message-muted" style={{ margin: 0 }}>
+                        Create an activity type first.
+                      </p>
+                    )}
+
+                    <div className={`home-subpanel home-more-options-accordion home-more-options-accordion--advanced ${moreOptionsOpen ? 'open' : ''}`}>
+                      <button
+                        type="button"
+                        className="home-more-options-header"
+                        onClick={() => setMoreOptionsOpen((prev) => !prev)}
+                        aria-expanded={moreOptionsOpen}
+                      >
+                        <span className="home-more-options-trigger">
+                          <span className="home-more-options-title">Advanced settings</span>
+                          <span className="home-more-options-meta">Title, notes, goal (optional)</span>
+                        </span>
+                        <span className="home-more-options-chevron" aria-hidden="true">
+                          {moreOptionsOpen ? '▲' : '▼'}
+                        </span>
+                      </button>
+                      {moreOptionsOpen && (
+                        <div className="home-more-options-panel">
+                          <div className="home-options-group">
+                            <p className="home-options-group-title">Title</p>
+                            <div>
+                              <label>Title (optional)</label>
+                              <input
+                                type="text"
+                                maxLength={120}
+                                value={sessionForm.title}
+                                onChange={(e) => setSessionForm((prev) => ({ ...prev, title: e.target.value }))}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="home-options-group">
+                            <p className="home-options-group-title">Notes</p>
+                            {!notesOpen ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="home-link-button"
+                                  onClick={() => setNotesOpen(true)}
+                                >
+                                  {sessionForm.description ? 'Edit notes ▼' : 'Add notes ▼'}
+                                </button>
+                                {notesPreview && (
+                                  <p className="message-muted home-notes-preview">{notesPreview}</p>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <div>
+                                  <label>Notes (optional)</label>
+                                  <textarea
+                                    value={sessionForm.description}
+                                    onChange={(e) => setSessionForm((prev) => ({ ...prev, description: e.target.value }))}
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  className="home-link-button"
+                                  onClick={() => setNotesOpen(false)}
+                                >
+                                  Done notes ▲
+                                </button>
+                              </>
+                            )}
+                          </div>
+
+                          <div className="home-options-group">
+                            <p className="home-options-group-title">Goal</p>
+                            <button
+                              type="button"
+                              className="secondary-button home-goal-toggle-button"
+                              onClick={() => {
+                                const enabled = !goalEnabled;
+                                setGoalEnabled(enabled);
+                                if (!enabled) {
+                                  setSessionForm((prev) => ({
+                                    ...prev,
+                                    goalType: 'NONE',
+                                    goalTarget: '',
+                                    goalNote: '',
+                                  }));
+                                } else if (sessionForm.goalType === 'NONE') {
+                                  setSessionForm((prev) => ({ ...prev, goalType: 'TIME', goalTarget: '' }));
+                                }
+                              }}
+                              aria-expanded={goalEnabled}
+                            >
+                              {goalEnabled ? 'Hide goal ▲' : 'Add a goal ▼'}
+                            </button>
+                            {goalEnabled && (
+                              <>
+                                <div className="home-options-grid">
+                                  <div>
+                                    <label>Goal type</label>
+                                    <select
+                                      value={sessionForm.goalType}
+                                      onChange={(e) => {
+                                        const nextGoalType = e.target.value;
+                                        setSessionForm((prev) => ({
+                                          ...prev,
+                                          goalType: nextGoalType,
+                                          goalTarget: nextGoalType === prev.goalType ? prev.goalTarget : '',
+                                        }));
+                                      }}
+                                    >
+                                      <option value="TIME">Time</option>
+                                      <option
+                                        value="METRIC"
+                                        disabled={!selectedStartActivityType || selectedStartActivityType.metricKind === 'NONE'}
+                                      >
+                                        Metric ({selectedStartActivityType?.metricLabel || 'unit'})
+                                      </option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label>
+                                      Goal value {sessionForm.goalType === 'TIME'
+                                        ? '(e.g. 5h20m1s or 1:30:00)'
+                                        : `(${selectedStartActivityType?.metricLabel || 'units'})`}
+                                    </label>
+                                    <input
+                                      type={sessionForm.goalType === 'TIME' ? 'text' : 'number'}
+                                      min={sessionForm.goalType === 'TIME' ? undefined : '0'}
+                                      step={sessionForm.goalType === 'METRIC' && selectedStartActivityType?.metricKind === 'INTEGER' ? '1' : 'any'}
+                                      value={sessionForm.goalTarget}
+                                      onChange={(e) => setSessionForm((prev) => ({ ...prev, goalTarget: e.target.value }))}
+                                      placeholder={sessionForm.goalType === 'TIME' ? 'e.g. 5h20m1s, 20m5s, 5m, or 1:30:00' : 'e.g. 10'}
+                                    />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label>Goal note (optional)</label>
+                                  <input
+                                    type="text"
+                                    maxLength={255}
+                                    value={sessionForm.goalNote}
+                                    onChange={(e) => setSessionForm((prev) => ({ ...prev, goalNote: e.target.value }))}
+                                    placeholder="e.g. finish chapter 3"
+                                  />
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="home-start-cta-row">
+                      <button type="submit" className="home-start-submit home-start-submit--hero" disabled={activityTypes.length === 0}>
+                        Start Session
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </section>
+
+              <aside className="home-context-rail home-context-rail--secondary" aria-label="Profile and momentum">
+                <article className="feed-side-card home-context-card home-context-card--compact">
+                  <p className="feed-side-kicker">Profile</p>
+                  <div className="feed-identity-row">
+                    {user.profileImage ? (
+                      <img src={user.profileImage} alt="" className="feed-identity-avatar-image" aria-hidden="true" />
+                    ) : (
+                      <span className="feed-identity-avatar" aria-hidden="true">{getInitial(user.username)}</span>
+                    )}
+                    <div className="feed-identity-text">
+                      <p className="feed-identity-name">{user.username || 'User'}</p>
+                      <p className="feed-side-muted">Ready for your next focus block.</p>
+                    </div>
+                  </div>
+                  {!!user.bio?.trim() && <p className="feed-identity-bio">{user.bio.trim()}</p>}
+                </article>
+
+                <article className="feed-side-card home-context-card home-context-card--compact">
+                  <p className="feed-side-kicker">Momentum</p>
+                  <p className="feed-momentum-main">{homeMomentumStats.streak} day streak</p>
+                  <p className="feed-side-muted">Active on {homeMomentumStats.activeDaysLast7} of the last 7 days</p>
+                  <p className={`feed-momentum-trend ${homeMomentumStats.trendTone}`}>{homeMomentumStats.trendText}</p>
+                </article>
+
+                <article className="feed-side-card home-context-card home-context-card--compact home-active-days-card">
+                  <div className="home-active-days-head">
+                    <p className="feed-side-kicker">Active days</p>
+                    <span className="home-active-days-month">{activeDaysWidget.monthLabel}</span>
+                  </div>
+                  <div className="home-active-days-weekdays" aria-hidden="true">
+                    <span>S</span>
+                    <span>M</span>
+                    <span>T</span>
+                    <span>W</span>
+                    <span>T</span>
+                    <span>F</span>
+                    <span>S</span>
+                  </div>
+                  <div className="home-active-days-grid" role="grid" aria-label="Active days this month">
+                    {activeDaysWidget.cells.map((cell) => (
+                      cell.isEmpty ? (
+                        <span key={cell.key} className="home-active-day-cell home-active-day-cell--empty" aria-hidden="true" />
+                      ) : (
+                        <span
+                          key={cell.key}
+                          role="gridcell"
+                          title={cell.tooltip}
+                          className={`home-active-day-cell${cell.isActive ? ' is-active' : ''}${cell.isToday ? ' is-today' : ''}`}
+                        >
+                          {cell.day}
+                        </span>
+                      )
+                    ))}
+                  </div>
+                  <p className="home-active-days-summary">
+                    {activeDaysWidget.activeDaysCount} active day{activeDaysWidget.activeDaysCount === 1 ? '' : 's'} this month
+                  </p>
+                </article>
+              </aside>
             </section>
           )}
 
