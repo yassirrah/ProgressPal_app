@@ -13,12 +13,12 @@
 }
 
 body.focus-mode-active .app-shell {
-  width: min(1320px, calc(100% - 1rem));
-  margin: 0.7rem auto 1.2rem;
+  width: min(1180px, calc(100% - 1rem));
+  margin: 0.85rem auto 1.35rem;
 }
 
 body.focus-mode-active .app-main {
-  margin-top: 0.55rem;
-  padding: 0.8rem 0.9rem;
-  border-radius: 16px;
+  margin-top: 0.5rem;
+  padding: 1rem 1.05rem;
+  border-radius: 18px;
 }
