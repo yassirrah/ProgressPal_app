@@ -1680,6 +1680,12 @@ form {
   gap: 0.65rem;
 }
 
+.feed-rightbar {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
 .feed-side-card {
   border: 1px solid rgba(217, 225, 231, 0.85);
   border-radius: 15px;
@@ -1690,6 +1696,7 @@ form {
   padding: 0.78rem 0.8rem;
   display: grid;
   gap: 0.42rem;
+  min-width: 0;
 }
 
 .feed-side-kicker {
@@ -1704,6 +1711,7 @@ form {
   margin: 0;
   color: #607485;
   font-size: 0.82rem;
+  overflow-wrap: anywhere;
 }
 
 .feed-identity-row {
@@ -1820,14 +1828,111 @@ form {
 
 @media (min-width: 1080px) {
   .feed-layout {
-    grid-template-columns: minmax(220px, 250px) minmax(0, 1fr);
+    grid-template-columns: minmax(180px, 210px) minmax(0, 1.3fr) minmax(180px, 250px);
     align-items: start;
+    gap: 1.15rem;
   }
 
   .feed-sidebar {
     position: sticky;
     top: 5.6rem;
   }
+
+  .feed-rightbar {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-self: stretch;
+  }
+
+  .feed-rightbar .feed-side-card {
+    position: sticky;
+    bottom: 1rem;
+  }
+}
+
+.feed-suggest-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.feed-suggest-item {
+  border: 1px solid rgba(217, 225, 231, 0.78);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.84);
+  padding: 0.48rem 0.52rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.feed-suggest-main {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.feed-suggest-avatar,
+.feed-suggest-avatar-image {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.feed-suggest-avatar {
+  display: grid;
+  place-items: center;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--accent-strong);
+  background: rgba(14, 165, 168, 0.1);
+  border: 1px solid rgba(14, 165, 168, 0.2);
+}
+
+.feed-suggest-avatar-image {
+  object-fit: cover;
+  border: 1px solid var(--border);
+  display: block;
+}
+
+.feed-suggest-text {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.feed-suggest-name {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.feed-suggest-bio {
+  margin: 0.12rem 0 0;
+  color: #607485;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.feed-suggest-add-button {
+  flex-shrink: 0;
+  padding: 0.3rem 0.58rem;
+  font-size: 0.78rem;
+  border-radius: 8px;
 }
 
 .feed-top {
