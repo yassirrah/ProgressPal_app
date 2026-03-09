@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -20,6 +21,7 @@ public interface SessionRepository extends JpaRepository<Session, UUID>, JpaSpec
     Page<Session> findByUserIdAndVisibilityOrderByStartedAtDesc(UUID userId, Visibility visibility, Pageable pageable);
     Page<Session> findByUserIdAndVisibilityInOrderByStartedAtDesc(UUID userId, List<Visibility> visibilities, Pageable pageable);
     List<Session> findByUserId(UUID userId);
+    List<Session> findByStartedAtAfter(Instant startedAt);
     List<Session> findByUserIdAndVisibilityIn(UUID userId, List<Visibility> visibilities);
     List<Session> findByActivityTypeId(UUID activityTypeId);
     boolean existsByActivityType_Id(UUID activityTypeId);

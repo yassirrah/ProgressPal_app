@@ -4,6 +4,7 @@ package org.progresspalbackend.progresspalbackend.web;
 import org.progresspalbackend.progresspalbackend.config.CurrentUser;
 import org.progresspalbackend.progresspalbackend.dto.Friendship.FriendRequestDto;
 import org.progresspalbackend.progresspalbackend.dto.Friendship.FriendShipDto;
+import org.progresspalbackend.progresspalbackend.dto.Friendship.FriendSuggestionDto;
 import org.progresspalbackend.progresspalbackend.service.FriendShipService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -36,6 +37,13 @@ public class FriendController {
     List<FriendRequestDto> incomingRequests(Authentication authentication) {
         UUID userId = currentUser.id(authentication);
         return friendShipService.getIncomingPendingRequests(userId);
+    }
+
+    @GetMapping("/suggestions")
+    List<FriendSuggestionDto> suggestions(Authentication authentication,
+                                          @RequestParam(defaultValue = "10") int limit) {
+        UUID userId = currentUser.id(authentication);
+        return friendShipService.getSuggestions(userId, limit);
     }
 
     @ResponseStatus(HttpStatus.CREATED)

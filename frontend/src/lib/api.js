@@ -374,6 +374,18 @@ export async function getUserProfile(userId, targetUserId) {
   }
 }
 
+export async function getFriendSuggestions(userId, limit = 10) {
+  try {
+    const { data } = await client.get('/friends/suggestions', {
+      headers: authHeaders(userId),
+      params: { limit },
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load friend suggestions'));
+  }
+}
+
 export async function searchUsersByUsername(query) {
   try {
     const { data } = await client.get('/users/search', {

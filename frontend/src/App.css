@@ -1,5 +1,5 @@
 .app-shell {
-  width: min(980px, calc(100% - 2rem));
+  width: min(1240px, calc(100% - 1.5rem));
   margin: 1.2rem auto 2rem;
 }
 
@@ -13,7 +13,7 @@
 }
 
 body.focus-mode-active .app-shell {
-  width: min(1120px, calc(100% - 1rem));
+  width: min(1320px, calc(100% - 1rem));
   margin: 0.7rem auto 1.2rem;
 }
 

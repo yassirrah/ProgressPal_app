@@ -4,11 +4,13 @@ import {
   createSessionComment,
   getActivityTypes,
   getFeed,
+  getFriendSuggestions,
   getMySessions,
   getSessionComments,
   getSessionLikes,
   getStoredUser,
   likeSession,
+  sendFriendRequest,
   unlikeSession,
 } from '../lib/api';
 import LiveSessionEngagement from './LiveSessionEngagement';
@@ -58,6 +60,8 @@ const Feed = () => {
   const [commentErrorBySession, setCommentErrorBySession] = useState({});
   const [liveEngagementBySession, setLiveEngagementBySession] = useState({});
   const [supportLiveViewSessionId, setSupportLiveViewSessionId] = useState('');
+  const [suggestedFriends, setSuggestedFriends] = useState([]);
+  const [sendingSuggestionId, setSendingSuggestionId] = useState('');
 
   const loadLikeSummaries = useCallback(async (items) => {
     if (!currentUser?.id || !Array.isArray(items) || items.length === 0) {
@@ -178,6 +182,23 @@ const Feed = () => {
 
     loadActivityTypes();
   }, [currentUser]);
+
+  const loadSuggestedFriends = useCallback(async () => {
+    if (!currentUser?.id) {
+      setSuggestedFriends([]);
+      return;
+    }
+    try {
+      const suggestions = await getFriendSuggestions(currentUser.id, 3);
+      setSuggestedFriends(Array.isArray(suggestions) ? suggestions.slice(0, 3) : []);
+    } catch {
+      setSuggestedFriends([]);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    void loadSuggestedFriends();
+  }, [loadSuggestedFriends]);
 
   useEffect(() => {
     if (!currentUser?.id) return undefined;
@@ -468,6 +489,21 @@ const Feed = () => {
   const handleViewProfile = (targetUserId) => {
     if (!targetUserId) return;
     navigate(`/users/${targetUserId}/profile`);
+  };
+
+  const handleSendSuggestionRequest = async (candidate) => {
+    if (!currentUser?.id || !candidate?.userId) return;
+    try {
+      setSendingSuggestionId(candidate.userId);
+      setError('');
+      await sendFriendRequest(currentUser.id, candidate.userId);
+      setSuggestedFriends((prev) => prev.filter((item) => item.userId !== candidate.userId));
+      showToast(`Friend request sent to ${candidate.username || 'user'}.`);
+    } catch (err) {
+      setError(err.message || 'Failed to send friend request');
+    } finally {
+      setSendingSuggestionId('');
+    }
   };
 
   const supportLiveViewSession = feedItems.find((item) => item.id === supportLiveViewSessionId) || null;
@@ -907,6 +943,55 @@ const Feed = () => {
           </div>
         )}
       </div>
+
+      <aside className="feed-rightbar" aria-label="Suggested friends">
+        <article className="feed-side-card">
+          <p className="feed-side-kicker">Suggested Friends</p>
+          {suggestedFriends.length === 0 ? (
+            <p className="feed-side-muted">No suggestions right now.</p>
+          ) : (
+            <div className="feed-suggest-list">
+              {suggestedFriends.map((candidate) => (
+                <article key={candidate.userId} className="feed-suggest-item">
+                  <div className="feed-suggest-main">
+                    {candidate.profileImage ? (
+                      <img
+                        src={candidate.profileImage}
+                        alt=""
+                        className="feed-suggest-avatar-image"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <span className="feed-suggest-avatar" aria-hidden="true">
+                        {getInitial(candidate.username)}
+                      </span>
+                    )}
+                    <div className="feed-suggest-text">
+                      <p className="feed-suggest-name">{candidate.username || 'Unknown user'}</p>
+                      <p className="feed-side-muted">
+                        {Array.isArray(candidate.reasons) && candidate.reasons.length > 0
+                          ? candidate.reasons[0]
+                          : 'Suggested for you'}
+                      </p>
+                      {candidate.bio && candidate.bio.trim() && (
+                        <p className="feed-suggest-bio">{candidate.bio.trim()}</p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="compact-button secondary-button feed-suggest-add-button"
+                    onClick={() => handleSendSuggestionRequest(candidate)}
+                    disabled={sendingSuggestionId === candidate.userId}
+                  >
+                    {sendingSuggestionId === candidate.userId ? 'Adding...' : 'Add'}
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
+        </article>
+      </aside>
 
       {supportLiveViewSession && (
         <SupportLiveViewModal
