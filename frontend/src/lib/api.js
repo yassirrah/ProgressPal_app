@@ -386,9 +386,10 @@ export async function getFriendSuggestions(userId, limit = 10) {
   }
 }
 
-export async function searchUsersByUsername(query) {
+export async function searchUsersByUsername(query, userId = null) {
   try {
     const { data } = await client.get('/users/search', {
+      headers: authHeaders(userId),
       params: { q: query },
     });
     return data;
