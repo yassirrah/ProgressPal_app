@@ -92,6 +92,7 @@ class SessionApiTest {
                 Visibility.PUBLIC,
                 GoalType.NONE,
                 null,
+                null,
                 null
         );
 

@@ -66,6 +66,7 @@ public class SessionService {
     private final FriendRepository friendRepository;
     private final SessionMapper mapper;
     private final ActivityTypeRepository activityTypeRepository;
+    private final NotificationService notificationService;
 
     public SessionDto create(SessionCreateDto dto, UUID user_id) {
         if(dto.activityTypeId() == null){
@@ -90,7 +91,9 @@ public class SessionService {
         entity.setStartedAt(Instant.now());
         entity.setPausedAt(null);
         entity.setPausedDurationSeconds(0L);
-        return mapper.toDto(sessionRepo.save(entity));
+        Session saved = sessionRepo.save(entity);
+        notifyFriendsAboutSessionStart(saved, user, dto.notifyFriends());
+        return mapper.toDto(saved);
     }
 
     public List<SessionDto> findAll() {
@@ -497,6 +500,34 @@ public class SessionService {
         if (metricKind == MetricKind.INTEGER && metricValue != null && metricValue.stripTrailingZeros().scale() > 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "metricValue must be a whole number for INTEGER metrics");
         }
+    }
+
+    private void notifyFriendsAboutSessionStart(Session session, User actor, Boolean notifyFriends) {
+        if (!Boolean.TRUE.equals(notifyFriends)) {
+            return;
+        }
+
+        Visibility visibility = session.getVisibility();
+        if (visibility != Visibility.PUBLIC && visibility != Visibility.FRIENDS) {
+            return;
+        }
+
+        UUID actorId = actor.getId();
+        Set<UUID> recipientIds = new LinkedHashSet<>();
+
+        friendRepository.findAllByUser_Id(actorId).forEach(friendship -> {
+            User recipient = friendship.getFriend();
+            if (recipient != null && recipient.getId() != null && !actorId.equals(recipient.getId()) && recipientIds.add(recipient.getId())) {
+                notificationService.notifySessionStarted(recipient, actor, session.getId());
+            }
+        });
+
+        friendRepository.findAllByFriend_Id(actorId).forEach(friendship -> {
+            User recipient = friendship.getUser();
+            if (recipient != null && recipient.getId() != null && !actorId.equals(recipient.getId()) && recipientIds.add(recipient.getId())) {
+                notificationService.notifySessionStarted(recipient, actor, session.getId());
+            }
+        });
     }
 
     private void validateLiveMetricProgress(ActivityType activityType, BigDecimal metricCurrentValue) {

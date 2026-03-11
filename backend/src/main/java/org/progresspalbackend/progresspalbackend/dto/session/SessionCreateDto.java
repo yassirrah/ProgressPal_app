@@ -26,5 +26,7 @@ public record SessionCreateDto(
         BigDecimal goalTarget,
 
         @Size(max = 255, message = "goalNote must be at most 255 characters.")
-        String goalNote
+        String goalNote,
+
+        Boolean notifyFriends
 ) {}
