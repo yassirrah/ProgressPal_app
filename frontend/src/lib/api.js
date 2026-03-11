@@ -273,6 +273,100 @@ export async function updateSessionProgress(userId, sessionId, payload) {
   }
 }
 
+export async function submitSessionJoinRequest(userId, sessionId) {
+  try {
+    const { data } = await client.post(
+      `/sessions/${sessionId}/join-requests`,
+      null,
+      { headers: authHeaders(userId) },
+    );
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to submit join request'));
+  }
+}
+
+export async function getOutgoingSessionJoinRequests(userId, filters = {}) {
+  try {
+    const params = {};
+    if (filters.status) params.status = filters.status;
+    if (filters.liveOnly !== undefined && filters.liveOnly !== null) {
+      params.liveOnly = Boolean(filters.liveOnly);
+    }
+    if (filters.liveOnly === undefined && filters.status === undefined) {
+      params.liveOnly = true;
+    }
+
+    const { data } = await client.get('/me/join-requests/outgoing', {
+      headers: authHeaders(userId),
+      params,
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load outgoing join requests'));
+  }
+}
+
+export async function getIncomingSessionJoinRequests(userId, sessionId) {
+  try {
+    const { data } = await client.get(`/sessions/${sessionId}/join-requests/incoming`, {
+      headers: authHeaders(userId),
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load incoming join requests'));
+  }
+}
+
+export async function decideSessionJoinRequest(userId, sessionId, requestId, decision) {
+  try {
+    const { data } = await client.patch(
+      `/sessions/${sessionId}/join-requests/${requestId}`,
+      { decision },
+      { headers: authHeaders(userId) },
+    );
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to update join request'));
+  }
+}
+
+export async function getSessionRoomState(userId, sessionId) {
+  try {
+    const { data } = await client.get(`/sessions/${sessionId}/room`, {
+      headers: authHeaders(userId),
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load room state'));
+  }
+}
+
+export async function getSessionRoomMessages(userId, sessionId, page = 0, size = 50) {
+  try {
+    const { data } = await client.get(`/sessions/${sessionId}/room/messages`, {
+      headers: authHeaders(userId),
+      params: { page, size },
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to load room messages'));
+  }
+}
+
+export async function postSessionRoomMessage(userId, sessionId, content) {
+  try {
+    const { data } = await client.post(
+      `/sessions/${sessionId}/room/messages`,
+      { content },
+      { headers: authHeaders(userId) },
+    );
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to send room message'));
+  }
+}
+
 export async function getMySessions(userId, filters = {}) {
   try {
     const params = {};

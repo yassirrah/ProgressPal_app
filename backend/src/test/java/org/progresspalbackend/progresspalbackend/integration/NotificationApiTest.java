@@ -4,6 +4,7 @@ import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
+import org.progresspalbackend.progresspalbackend.domain.Friendship;
 import org.progresspalbackend.progresspalbackend.domain.Session;
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
@@ -169,6 +170,139 @@ class NotificationApiTest {
     }
 
     @Test
+    void sessionCreate_notifyFriendsOff_createsNoNotifications() throws Exception {
+        User actor = persistUser();
+        User friend = persistUser();
+        ActivityType type = persistActivityType("Study");
+        persistFriendship(actor, friend);
+
+        createSession(actor, type, Visibility.PUBLIC, false);
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", friend.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(0));
+
+        mvc.perform(get("/api/me/notifications/unread-count")
+                        .header("X-User-Id", friend.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(0));
+    }
+
+    @Test
+    void sessionCreate_notifyFriendsOmitted_createsNoNotifications() throws Exception {
+        User actor = persistUser();
+        User friend = persistUser();
+        ActivityType type = persistActivityType("Study");
+        persistFriendship(actor, friend);
+
+        createSessionWithoutNotifyField(actor, type, Visibility.PUBLIC);
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", friend.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(0));
+    }
+
+    @Test
+    void sessionCreate_notifyFriendsNull_createsNoNotifications() throws Exception {
+        User actor = persistUser();
+        User friend = persistUser();
+        ActivityType type = persistActivityType("Study");
+        persistFriendship(actor, friend);
+
+        createSession(actor, type, Visibility.PUBLIC, null);
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", friend.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(0));
+    }
+
+    @Test
+    void sessionCreate_notifyFriendsOn_public_notifiesFriendsWithoutSelfNotification() throws Exception {
+        User actor = persistUser();
+        User friendFromUserSide = persistUser();
+        User friendFromFriendSide = persistUser();
+        ActivityType type = persistActivityType("Study");
+        persistFriendship(actor, friendFromUserSide);
+        persistFriendship(friendFromFriendSide, actor);
+
+        String createdSessionBody = createSession(actor, type, Visibility.PUBLIC, true);
+        String sessionId = JsonPath.read(createdSessionBody, "$.id");
+
+        String expectedMessage = actor.getUsername() + " started a new session.";
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", friendFromUserSide.getId().toString())
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].type").value("SESSION_STARTED"))
+                .andExpect(jsonPath("$.content[0].resourceType").value("SESSION"))
+                .andExpect(jsonPath("$.content[0].resourceId").value(sessionId))
+                .andExpect(jsonPath("$.content[0].actorId").value(actor.getId().toString()))
+                .andExpect(jsonPath("$.content[0].actorUsername").value(actor.getUsername()))
+                .andExpect(jsonPath("$.content[0].message").value(expectedMessage));
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", friendFromFriendSide.getId().toString())
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].type").value("SESSION_STARTED"));
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", actor.getId().toString())
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(0));
+
+        mvc.perform(get("/api/me/notifications/unread-count")
+                        .header("X-User-Id", friendFromUserSide.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(1));
+
+        mvc.perform(get("/api/me/notifications/unread-count")
+                        .header("X-User-Id", friendFromFriendSide.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(1));
+    }
+
+    @Test
+    void sessionCreate_notifyFriendsOn_friendsVisibility_notifiesFriends() throws Exception {
+        User actor = persistUser();
+        User friend = persistUser();
+        ActivityType type = persistActivityType("Study");
+        persistFriendship(friend, actor);
+
+        createSession(actor, type, Visibility.FRIENDS, true);
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", friend.getId().toString())
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].type").value("SESSION_STARTED"));
+    }
+
+    @Test
+    void sessionCreate_notifyFriendsOn_privateVisibility_createsNoNotifications() throws Exception {
+        User actor = persistUser();
+        User friend = persistUser();
+        ActivityType type = persistActivityType("Study");
+        persistFriendship(actor, friend);
+
+        createSession(actor, type, Visibility.PRIVATE, true);
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", friend.getId().toString())
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(0));
+    }
+
+    @Test
     void clearAll_removesOnlyCurrentUsersNotifications() throws Exception {
         User requesterA = persistUser();
         User requesterB = persistUser();
@@ -239,5 +373,55 @@ class NotificationApiTest {
         session.setEndedAt(null);
         session.setTitle("focus");
         return sessionRepository.save(session);
+    }
+
+    private void persistFriendship(User user, User friend) {
+        Friendship friendship = new Friendship();
+        friendship.setUser(user);
+        friendship.setFriend(friend);
+        friendship.setCreatedAt(Instant.now());
+        friendRepository.save(friendship);
+    }
+
+    private String createSession(User owner, ActivityType type, Visibility visibility, Boolean notifyFriends) throws Exception {
+        String notifyValue = notifyFriends == null ? "null" : notifyFriends.toString();
+        String payload = """
+                {
+                  "activityTypeId":"%s",
+                  "title":"focus",
+                  "visibility":"%s",
+                  "goalType":"NONE",
+                  "notifyFriends":%s
+                }
+                """.formatted(type.getId(), visibility.name(), notifyValue);
+
+        return mvc.perform(post("/api/sessions")
+                        .header("X-User-Id", owner.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+    }
+
+    private String createSessionWithoutNotifyField(User owner, ActivityType type, Visibility visibility) throws Exception {
+        String payload = """
+                {
+                  "activityTypeId":"%s",
+                  "title":"focus",
+                  "visibility":"%s",
+                  "goalType":"NONE"
+                }
+                """.formatted(type.getId(), visibility.name());
+
+        return mvc.perform(post("/api/sessions")
+                        .header("X-User-Id", owner.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
     }
 }

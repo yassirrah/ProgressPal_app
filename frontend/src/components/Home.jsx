@@ -1,11 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createSession,
+  decideSessionJoinRequest,
   getActivityTypes,
+  getIncomingSessionJoinRequests,
   getLiveSession,
   getMySessions,
+  getSessionRoomMessages,
+  getSessionRoomState,
   getStoredUser,
   pauseSession,
+  postSessionRoomMessage,
   resumeSession,
   stopSession,
   updateSessionGoal,
@@ -75,6 +80,24 @@ const formatTimeHmsFromMinutes = (minutes) => {
   return `${hours}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 };
 
+const normalizeRoomMessages = (payload) => {
+  const rows = Array.isArray(payload?.content) ? payload.content : (Array.isArray(payload) ? payload : []);
+  const deduped = Array.from(new Map(rows.map((message) => [message.id, message])).values());
+  deduped.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  return deduped;
+};
+
+const toInitials = (value) => {
+  const words = String(value || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return '?';
+  const first = words[0]?.[0] || '';
+  const second = words.length > 1 ? words[1]?.[0] || '' : words[0]?.[1] || '';
+  return `${first}${second}`.toUpperCase();
+};
+
 const Home = () => {
   const user = useMemo(() => getStoredUser(), []);
   const [activityTypes, setActivityTypes] = useState([]);
@@ -87,6 +110,7 @@ const Home = () => {
   const [sessionError, setSessionError] = useState('');
   const [sessionNotice, setSessionNotice] = useState('');
   const [toast, setToast] = useState(null);
+  const [goalReachedPromptOpen, setGoalReachedPromptOpen] = useState(false);
 
   const [stopPanelOpen, setStopPanelOpen] = useState(false);
   const [goalPanelOpen, setGoalPanelOpen] = useState(false);
@@ -108,6 +132,7 @@ const Home = () => {
     title: '',
     description: '',
     visibility: 'PRIVATE',
+    notifyFriends: false,
     goalType: 'NONE',
     goalTarget: '',
     goalNote: '',
@@ -115,6 +140,19 @@ const Home = () => {
   const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const [goalEnabled, setGoalEnabled] = useState(false);
+  const [roomPanelOpen, setRoomPanelOpen] = useState(false);
+  const [roomPanelLoading, setRoomPanelLoading] = useState(false);
+  const [roomPanelError, setRoomPanelError] = useState('');
+  const [roomPanelTab, setRoomPanelTab] = useState('requests');
+  const [incomingJoinRequests, setIncomingJoinRequests] = useState([]);
+  const [roomState, setRoomState] = useState(null);
+  const [roomMessages, setRoomMessages] = useState([]);
+  const [roomMessageDraft, setRoomMessageDraft] = useState('');
+  const [sendingRoomMessage, setSendingRoomMessage] = useState(false);
+  const [decidingJoinRequestId, setDecidingJoinRequestId] = useState('');
+  const previousTimeGoalDoneBySessionRef = useRef(new Map());
+  const timeGoalPromptShownSessionIdsRef = useRef(new Set());
+  const timeGoalPauseInFlightSessionIdRef = useRef(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -157,6 +195,17 @@ const Home = () => {
     setStopMetricValue('');
     setStopPanelOpen(false);
     setGoalPanelOpen(false);
+    setGoalReachedPromptOpen(false);
+    setRoomPanelOpen(false);
+    setRoomPanelLoading(false);
+    setRoomPanelError('');
+    setRoomPanelTab('requests');
+    setIncomingJoinRequests([]);
+    setRoomState(null);
+    setRoomMessages([]);
+    setRoomMessageDraft('');
+    setSendingRoomMessage(false);
+    setDecidingJoinRequestId('');
     setMetricProgressDraft('');
     setSessionNotice('');
     setSessionError('');
@@ -217,6 +266,11 @@ const Home = () => {
     }
   }, [selectedStartActivityType, sessionForm.goalType, goalEnabled]);
 
+  useEffect(() => {
+    if (sessionForm.visibility !== 'PRIVATE' || !sessionForm.notifyFriends) return;
+    setSessionForm((prev) => ({ ...prev, notifyFriends: false }));
+  }, [sessionForm.visibility, sessionForm.notifyFriends]);
+
 
   const liveSessionType = liveSession
     ? activityTypes.find((type) => type.id === liveSession.activityTypeId)
@@ -254,6 +308,16 @@ const Home = () => {
     const asNumber = Number(metricDone);
     return Number.isFinite(asNumber) ? asNumber : 0;
   })();
+  const liveTimeGoalTargetMinutes = (
+    liveSession?.goalType === 'TIME' && Number.isFinite(liveGoalTargetNumeric)
+  )
+    ? liveGoalTargetNumeric
+    : null;
+  const liveTimeGoalDoneMinutes = (
+    liveSession?.goalType === 'TIME' && Number.isFinite(liveGoalDoneNumeric)
+  )
+    ? liveGoalDoneNumeric
+    : null;
   const liveGoalProgressPct = (
     hasLiveGoal
     && liveGoalTargetNumeric
@@ -407,6 +471,7 @@ const Home = () => {
         title: sessionForm.title,
         description: sessionForm.description,
         visibility: sessionForm.visibility,
+        notifyFriends: sessionForm.visibility === 'PRIVATE' ? false : !!sessionForm.notifyFriends,
         ...buildGoalPayload(
           goalEnabled
             ? {
@@ -426,6 +491,7 @@ const Home = () => {
         ...prev,
         title: '',
         description: '',
+        notifyFriends: false,
         goalType: 'NONE',
         goalTarget: '',
         goalNote: '',
@@ -600,6 +666,89 @@ const Home = () => {
     }
   };
 
+  const handleResumeFromGoalReachedPrompt = async () => {
+    if (!user || !liveSession) return;
+    try {
+      setSavingPauseState(true);
+      setSessionError('');
+      const updated = await resumeSession(user.id, liveSession.id);
+      setLiveSession(updated);
+      setGoalReachedPromptOpen(false);
+    } catch (err) {
+      setSessionError(err.message || 'Failed to update session state');
+    } finally {
+      setSavingPauseState(false);
+    }
+  };
+
+  const handleStopFromGoalReachedPrompt = () => {
+    if (!liveSession) return;
+    setSessionError('');
+    setGoalReachedPromptOpen(false);
+    setStopPanelOpen(true);
+  };
+
+  const loadRoomPanelData = useCallback(async (options = {}) => {
+    const { silent = false } = options;
+    if (!user?.id || !liveSession?.id) return;
+
+    if (!silent) {
+      setRoomPanelLoading(true);
+    }
+
+    try {
+      setRoomPanelError('');
+      const [incoming, room, messagesPage] = await Promise.all([
+        getIncomingSessionJoinRequests(user.id, liveSession.id),
+        getSessionRoomState(user.id, liveSession.id),
+        getSessionRoomMessages(user.id, liveSession.id, 0, 50),
+      ]);
+      setIncomingJoinRequests(Array.isArray(incoming) ? incoming : []);
+      setRoomState(room || null);
+      setRoomMessages(normalizeRoomMessages(messagesPage));
+    } catch (err) {
+      setRoomPanelError(err.message || 'Failed to load room panel');
+    } finally {
+      if (!silent) {
+        setRoomPanelLoading(false);
+      }
+    }
+  }, [liveSession?.id, user?.id]);
+
+  const handleJoinRequestDecision = async (requestId, decision) => {
+    if (!user?.id || !liveSession?.id || !requestId) return;
+    try {
+      setDecidingJoinRequestId(requestId);
+      setRoomPanelError('');
+      await decideSessionJoinRequest(user.id, liveSession.id, requestId, decision);
+      await loadRoomPanelData({ silent: true });
+    } catch (err) {
+      setRoomPanelError(err.message || 'Failed to update join request');
+    } finally {
+      setDecidingJoinRequestId('');
+    }
+  };
+
+  const handleSendRoomPanelMessage = async (event) => {
+    event.preventDefault();
+    if (!user?.id || !liveSession?.id) return;
+
+    const content = roomMessageDraft.trim();
+    if (!content) return;
+
+    try {
+      setSendingRoomMessage(true);
+      setRoomPanelError('');
+      const created = await postSessionRoomMessage(user.id, liveSession.id, content);
+      setRoomMessages((prev) => normalizeRoomMessages([...prev, created]));
+      setRoomMessageDraft('');
+    } catch (err) {
+      setRoomPanelError(err.message || 'Failed to send room message');
+    } finally {
+      setSendingRoomMessage(false);
+    }
+  };
+
   const notesPreview = (() => {
     const value = (sessionForm.description || '').trim();
     if (!value) return '';
@@ -726,6 +875,103 @@ const Home = () => {
   const liveTrackingLabel = liveMetricKind === 'NONE' ? 'Time only' : `${liveMetricLabel} tracking`;
   const liveFocusLabel = isSessionPaused ? 'Focus paused' : 'In flow';
   const hasLiveQuickNote = liveQuickNote.trim().length > 0;
+  const roomParticipants = Array.isArray(roomState?.participants) ? roomState.participants : [];
+  const roomHost = roomState?.host || null;
+  const pendingRequestCount = incomingJoinRequests.length;
+  const roomMemberCount = roomParticipants.length + (roomHost ? 1 : 0);
+  const roomPanelParticipants = [
+    ...(roomHost ? [{ ...roomHost, roleLabel: 'Host', roleKey: 'host' }] : []),
+    ...roomParticipants.map((participant) => ({ ...participant, roleLabel: 'Participant', roleKey: 'participant' })),
+  ];
+  const formatRoomClock = (value) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '-';
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+  const openRoomPanel = () => {
+    if (!roomPanelOpen) {
+      setRoomPanelTab(pendingRequestCount > 0 ? 'requests' : 'chat');
+    }
+    setRoomPanelOpen(true);
+  };
+
+  useEffect(() => {
+    if (!roomPanelOpen || !liveSession?.id || !user?.id) return undefined;
+
+    void loadRoomPanelData();
+
+    const poll = () => {
+      if (document.visibilityState !== 'visible') return;
+      void loadRoomPanelData({ silent: true });
+    };
+
+    const intervalId = window.setInterval(poll, 5000);
+    const handleFocus = () => poll();
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [liveSession?.id, loadRoomPanelData, roomPanelOpen, user?.id]);
+
+  useEffect(() => {
+    const sessionId = liveSession?.id;
+    if (!sessionId || !user) return;
+    if (liveSession.goalType !== 'TIME') return;
+    if (!Number.isFinite(liveTimeGoalTargetMinutes) || liveTimeGoalTargetMinutes <= 0) return;
+    if (!Number.isFinite(liveTimeGoalDoneMinutes)) return;
+
+    const previousDone = previousTimeGoalDoneBySessionRef.current.has(sessionId)
+      ? previousTimeGoalDoneBySessionRef.current.get(sessionId)
+      : liveTimeGoalDoneMinutes;
+    const crossedThreshold = previousDone < liveTimeGoalTargetMinutes
+      && liveTimeGoalDoneMinutes >= liveTimeGoalTargetMinutes;
+    previousTimeGoalDoneBySessionRef.current.set(sessionId, liveTimeGoalDoneMinutes);
+
+    if (!crossedThreshold) return;
+    if (liveSession.paused || liveSession.endedAt) return;
+    if (timeGoalPromptShownSessionIdsRef.current.has(sessionId)) return;
+    if (timeGoalPauseInFlightSessionIdRef.current === sessionId) return;
+
+    let cancelled = false;
+    timeGoalPauseInFlightSessionIdRef.current = sessionId;
+
+    const pauseForGoalReached = async () => {
+      try {
+        setSessionError('');
+        const pausedSession = await pauseSession(user.id, sessionId);
+        if (cancelled) return;
+        setLiveSession((current) => (current?.id === pausedSession.id ? pausedSession : current));
+        timeGoalPromptShownSessionIdsRef.current.add(sessionId);
+        setGoalPanelOpen(false);
+        setStopPanelOpen(false);
+        setGoalReachedPromptOpen(true);
+      } catch (err) {
+        if (cancelled) return;
+        setSessionError(err.message || 'Failed to update session state');
+      } finally {
+        if (timeGoalPauseInFlightSessionIdRef.current === sessionId) {
+          timeGoalPauseInFlightSessionIdRef.current = null;
+        }
+      }
+    };
+
+    pauseForGoalReached();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    liveSession?.endedAt,
+    liveSession?.goalType,
+    liveSession?.id,
+    liveSession?.paused,
+    liveTimeGoalDoneMinutes,
+    liveTimeGoalTargetMinutes,
+    user,
+  ]);
 
   return (
     <div className={`home-stack${liveSession ? ' focus-mode' : ''}`}>
@@ -757,6 +1003,13 @@ const Home = () => {
                     <span className="live-hero-meta-pill">{liveTrackingLabel}</span>
                     <span className="live-hero-meta-pill">{homeMomentumStats.streak} day streak</span>
                     <span className="live-hero-meta-pill">{liveFocusLabel}</span>
+                    <button
+                      type="button"
+                      className={`live-hero-meta-pill live-hero-room-button${roomPanelOpen ? ' is-open' : ''}`}
+                      onClick={openRoomPanel}
+                    >
+                      {pendingRequestCount > 0 ? `Room (${pendingRequestCount})` : 'Open Room'}
+                    </button>
                   </div>
                 </div>
 
@@ -1105,7 +1358,7 @@ const Home = () => {
                         <button
                           type="button"
                           className={`home-visibility-tab ${sessionForm.visibility === 'PRIVATE' ? 'active' : ''}`}
-                          onClick={() => setSessionForm((prev) => ({ ...prev, visibility: 'PRIVATE' }))}
+                          onClick={() => setSessionForm((prev) => ({ ...prev, visibility: 'PRIVATE', notifyFriends: false }))}
                           aria-pressed={sessionForm.visibility === 'PRIVATE'}
                         >
                           Private
@@ -1127,6 +1380,35 @@ const Home = () => {
                           Public
                         </button>
                       </div>
+                    </div>
+                    <div className="home-setup-step home-notify-row">
+                      <label htmlFor="home-notify-friends">3. Notify friends</label>
+                      <label
+                        htmlFor="home-notify-friends"
+                        className={`home-notify-control${sessionForm.visibility === 'PRIVATE' ? ' is-disabled' : ''}`}
+                      >
+                        <input
+                          id="home-notify-friends"
+                          type="checkbox"
+                          className="home-notify-input"
+                          checked={!!sessionForm.notifyFriends}
+                          disabled={sessionForm.visibility === 'PRIVATE'}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setSessionForm((prev) => ({
+                              ...prev,
+                              notifyFriends: prev.visibility === 'PRIVATE' ? false : checked,
+                            }));
+                          }}
+                        />
+                        <span className="home-notify-switch" aria-hidden="true" />
+                        <span className="home-notify-label">Notify my friends when this session starts</span>
+                      </label>
+                      <p className="message-muted home-notify-helper">
+                        {sessionForm.visibility === 'PRIVATE'
+                          ? 'Private sessions cannot notify friends.'
+                          : 'Friends will be notified when this session starts.'}
+                      </p>
                     </div>
 
                     {activityTypes.length === 0 && (
@@ -1353,6 +1635,225 @@ const Home = () => {
           )}
 
         </>
+      )}
+
+      {roomPanelOpen && liveSession && (
+        <aside className="home-room-panel" aria-label="Live room panel">
+          <div className="home-room-panel-head">
+            <div className="home-room-panel-head-main">
+              <p className="friends-section-kicker">ROOM PANEL</p>
+              <h2>Session Room</h2>
+              <p className="home-room-panel-summary">
+                <span>{roomMemberCount} member{roomMemberCount === 1 ? '' : 's'}</span>
+                <span>{pendingRequestCount} pending request{pendingRequestCount === 1 ? '' : 's'}</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              className="secondary-button compact-button"
+              onClick={() => setRoomPanelOpen(false)}
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="home-room-panel-tabs" role="tablist" aria-label="Session room sections">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={roomPanelTab === 'requests'}
+              className={`home-room-panel-tab${roomPanelTab === 'requests' ? ' active' : ''}`}
+              onClick={() => setRoomPanelTab('requests')}
+            >
+              Requests
+              {pendingRequestCount > 0 && <span className="home-room-panel-tab-count">{pendingRequestCount}</span>}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={roomPanelTab === 'participants'}
+              className={`home-room-panel-tab${roomPanelTab === 'participants' ? ' active' : ''}`}
+              onClick={() => setRoomPanelTab('participants')}
+            >
+              Participants
+              {roomMemberCount > 0 && <span className="home-room-panel-tab-count">{roomMemberCount}</span>}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={roomPanelTab === 'chat'}
+              className={`home-room-panel-tab${roomPanelTab === 'chat' ? ' active' : ''}`}
+              onClick={() => setRoomPanelTab('chat')}
+            >
+              Chat
+            </button>
+          </div>
+
+          <div className="home-room-panel-body">
+            {roomPanelError && <p className="message-error">{roomPanelError}</p>}
+            {roomPanelLoading && <p className="message-muted">Loading room panel...</p>}
+
+            {!roomPanelLoading && (
+              <div className={`home-room-panel-tab-content${roomPanelTab === 'chat' ? ' home-room-panel-tab-content--chat' : ''}`}>
+                {roomPanelTab === 'requests' && (
+                  <section className="home-room-panel-section home-room-panel-section--requests">
+                    <h3>Pending Requests</h3>
+                    {incomingJoinRequests.length === 0 ? (
+                      <p className="home-room-empty-muted">No pending join requests right now.</p>
+                    ) : (
+                      <div className="home-room-request-list">
+                        {incomingJoinRequests.map((request) => (
+                          <article key={request.id} className="home-room-request-item">
+                            <div className="home-room-request-meta">
+                              <p>{request.requesterUsername || 'User'}</p>
+                              <span>Requested {formatRoomClock(request.createdAt)}</span>
+                            </div>
+                            <div className="home-room-request-actions">
+                              <button
+                                type="button"
+                                className="compact-button"
+                                onClick={() => handleJoinRequestDecision(request.id, 'ACCEPT')}
+                                disabled={decidingJoinRequestId === request.id}
+                              >
+                                {decidingJoinRequestId === request.id ? 'Saving...' : 'Accept'}
+                              </button>
+                              <button
+                                type="button"
+                                className="compact-button secondary-button"
+                                onClick={() => handleJoinRequestDecision(request.id, 'REJECT')}
+                                disabled={decidingJoinRequestId === request.id}
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {roomPanelTab === 'participants' && (
+                  <section className="home-room-panel-section">
+                    <h3>Participants</h3>
+                    {roomPanelParticipants.length === 0 ? (
+                      <p className="home-room-empty-muted">No participants available yet.</p>
+                    ) : (
+                      <ul className="home-room-participant-list">
+                        {roomPanelParticipants.map((participant) => (
+                          <li key={`${participant.roleKey}-${participant.id}`}>
+                            <div className="home-room-participant-main">
+                              {participant.profileImage ? (
+                                <img
+                                  src={participant.profileImage}
+                                  alt={`${participant.username || participant.roleLabel} avatar`}
+                                  className="home-room-avatar"
+                                />
+                              ) : (
+                                <span className="home-room-avatar home-room-avatar--fallback" aria-hidden="true">
+                                  {toInitials(participant.username || participant.roleLabel)}
+                                </span>
+                              )}
+                              <strong>{participant.username || participant.roleLabel}</strong>
+                            </div>
+                            <span className={`home-room-role-badge${participant.roleKey === 'host' ? ' host' : ''}`}>
+                              {participant.roleLabel}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                )}
+
+                {roomPanelTab === 'chat' && (
+                  <section className="home-room-panel-section home-room-panel-section--chat">
+                    <h3>Room Chat</h3>
+                    <div className="home-room-chat-shell">
+                      <div className="home-room-chat-list" aria-live="polite">
+                        {roomMessages.length === 0 ? (
+                          <p className="home-room-empty-muted">No room messages yet.</p>
+                        ) : (
+                          roomMessages.map((message, index) => {
+                            const previous = roomMessages[index - 1];
+                            const startsGroup = !previous || previous.senderId !== message.senderId;
+                            return (
+                              <article
+                                key={message.id}
+                                className={`home-room-chat-item${message.senderId === user.id ? ' own' : ''}${startsGroup ? ' group-start' : ''}`}
+                              >
+                                {startsGroup && (
+                                  <div className="home-room-chat-head">
+                                    <strong>{message.senderUsername || 'User'}</strong>
+                                    <span>{formatRoomClock(message.createdAt)}</span>
+                                  </div>
+                                )}
+                                <p>{message.content}</p>
+                              </article>
+                            );
+                          })
+                        )}
+                      </div>
+                      <form className="home-room-chat-composer" onSubmit={handleSendRoomPanelMessage}>
+                        <input
+                          type="text"
+                          maxLength={1000}
+                          value={roomMessageDraft}
+                          onChange={(event) => setRoomMessageDraft(event.target.value)}
+                          placeholder="Write a message..."
+                        />
+                        <button
+                          type="submit"
+                          className="compact-button"
+                          disabled={sendingRoomMessage || !roomMessageDraft.trim()}
+                        >
+                          {sendingRoomMessage ? 'Sending...' : 'Send'}
+                        </button>
+                      </form>
+                    </div>
+                  </section>
+                )}
+              </div>
+            )}
+          </div>
+        </aside>
+      )}
+
+      {goalReachedPromptOpen && liveSession && (
+        <div className="modal-overlay" role="presentation">
+          <div
+            className="goal-reached-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="goal-reached-title"
+          >
+            <div className="goal-reached-head">
+              <p className="friends-section-kicker">GOAL REACHED</p>
+              <h2 id="goal-reached-title">You reached your time goal.</h2>
+            </div>
+            <p className="goal-reached-copy">
+              Great work. You hit your target of {liveGoalTargetLabel}. What would you like to do next?
+            </p>
+            <div className="goal-reached-actions">
+              <button
+                type="button"
+                className="compact-button"
+                onClick={handleResumeFromGoalReachedPrompt}
+                disabled={savingPauseState}
+              >
+                {savingPauseState ? 'Saving...' : 'Resume Session'}
+              </button>
+              <button
+                type="button"
+                className="danger-outline-button compact-button"
+                onClick={handleStopFromGoalReachedPrompt}
+                disabled={savingPauseState}
+              >
+                Stop
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && (

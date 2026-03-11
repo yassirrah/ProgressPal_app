@@ -68,6 +68,17 @@ public class NotificationService {
         );
     }
 
+    public void notifySessionStarted(User recipient, User actor, UUID sessionId) {
+        create(
+                recipient,
+                actor,
+                NotificationType.SESSION_STARTED,
+                NotificationResourceType.SESSION,
+                sessionId,
+                actor.getUsername() + " started a new session."
+        );
+    }
+
     @Transactional(readOnly = true)
     public Page<NotificationDto> list(UUID recipientId, Pageable pageable) {
         return notificationRepository.findAllByRecipient_IdOrderByCreatedAtDesc(recipientId, pageable)

@@ -5,35 +5,16 @@ import {
   getActivityTypes,
   getFeed,
   getFriendSuggestions,
+  getOutgoingSessionJoinRequests,
   getMySessions,
   getSessionComments,
   getSessionLikes,
+  submitSessionJoinRequest,
   getStoredUser,
   likeSession,
   sendFriendRequest,
   unlikeSession,
 } from '../lib/api';
-import LiveSessionEngagement from './LiveSessionEngagement';
-import SupportLiveViewModal from './SupportLiveViewModal';
-
-const hashString = (value) => {
-  let hash = 0;
-  const text = String(value || '');
-  for (let i = 0; i < text.length; i += 1) {
-    hash = ((hash << 5) - hash) + text.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-};
-
-const buildSeededEngagement = (sessionId) => {
-  const seed = hashString(sessionId);
-  return {
-    mode: null,
-    chaseCount: seed % 4,
-    supportCount: Math.floor(seed / 7) % 6,
-  };
-};
 
 const isSessionPaused = (item) => Boolean(item?.paused ?? (item?.pausedAt && !item?.endedAt));
 const isSessionOngoing = (item) => Boolean(item?.ongoing ?? (!item?.endedAt && !isSessionPaused(item)));
@@ -58,10 +39,10 @@ const Feed = () => {
   const [commentLoadingBySession, setCommentLoadingBySession] = useState({});
   const [commentSubmittingBySession, setCommentSubmittingBySession] = useState({});
   const [commentErrorBySession, setCommentErrorBySession] = useState({});
-  const [liveEngagementBySession, setLiveEngagementBySession] = useState({});
-  const [supportLiveViewSessionId, setSupportLiveViewSessionId] = useState('');
   const [suggestedFriends, setSuggestedFriends] = useState([]);
   const [sendingSuggestionId, setSendingSuggestionId] = useState('');
+  const [outgoingJoinRequestsBySession, setOutgoingJoinRequestsBySession] = useState({});
+  const [joinRequestSubmittingBySession, setJoinRequestSubmittingBySession] = useState({});
 
   const loadLikeSummaries = useCallback(async (items) => {
     if (!currentUser?.id || !Array.isArray(items) || items.length === 0) {
@@ -141,14 +122,6 @@ const Feed = () => {
       const nextItems = dedupedItems;
       setFeedItems(nextItems);
       void loadLikeSummaries(nextItems);
-      setLiveEngagementBySession((prev) => {
-        const next = { ...prev };
-        nextItems.forEach((item) => {
-          if (!isSessionOngoing(item)) return;
-          if (!next[item.id]) next[item.id] = buildSeededEngagement(item.id);
-        });
-        return next;
-      });
     } catch (err) {
       setError(err.message || 'Failed to load feed');
     } finally {
@@ -199,6 +172,54 @@ const Feed = () => {
   useEffect(() => {
     void loadSuggestedFriends();
   }, [loadSuggestedFriends]);
+
+  const loadOutgoingJoinRequests = useCallback(async () => {
+    if (!currentUser?.id) {
+      setOutgoingJoinRequestsBySession({});
+      return;
+    }
+    try {
+      const outgoing = await getOutgoingSessionJoinRequests(currentUser.id, { liveOnly: true });
+      const next = {};
+      (Array.isArray(outgoing) ? outgoing : []).forEach((request) => {
+        if (!request?.sessionId) return;
+        next[request.sessionId] = request;
+      });
+      setOutgoingJoinRequestsBySession(next);
+    } catch {
+      // Keep feed usable on transient polling failures.
+    }
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return undefined;
+
+    const hasJoinableLiveCards = feedItems.some(
+      (item) => (isSessionOngoing(item) || isSessionPaused(item)) && item.userId !== currentUser.id,
+    );
+    if (!hasJoinableLiveCards) {
+      setOutgoingJoinRequestsBySession({});
+      return undefined;
+    }
+
+    const refreshStatuses = () => {
+      if (document.visibilityState !== 'visible') return;
+      void loadOutgoingJoinRequests();
+    };
+
+    refreshStatuses();
+    const intervalId = window.setInterval(refreshStatuses, 5000);
+    const handleFocus = () => refreshStatuses();
+    const handleVisibility = () => refreshStatuses();
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [currentUser?.id, feedItems, loadOutgoingJoinRequests]);
 
   useEffect(() => {
     if (!currentUser?.id) return undefined;
@@ -313,10 +334,6 @@ const Feed = () => {
     return metricText;
   };
 
-  const getLiveEngagement = (sessionId) => (
-    liveEngagementBySession[sessionId] || buildSeededEngagement(sessionId)
-  );
-
   const showToast = (text, options = {}) => {
     setToast({
       id: Date.now(),
@@ -418,74 +435,6 @@ const Feed = () => {
     }
   };
 
-  const setChaseMode = (item, nextMode, options = {}) => {
-    setLiveEngagementBySession((prev) => {
-      const current = prev[item.id] || buildSeededEngagement(item.id);
-      const next = { ...current };
-      if (current.mode === 'CHASE') {
-        next.mode = null;
-        next.chaseCount = Math.max(0, current.chaseCount - 1);
-      }
-      if (nextMode === 'CHASE') {
-        next.mode = 'CHASE';
-        next.chaseCount += 1;
-      }
-      return { ...prev, [item.id]: next };
-    });
-    if (options.silent) return;
-    setError('');
-    if (nextMode === 'CHASE') {
-      showToast(`You're chasing ${item.username}'s session.`, {
-        actionLabel: 'Undo',
-        durationMs: 5200,
-        onAction: () => setChaseMode(item, null, { silent: true }),
-      });
-    } else {
-      showToast(`Stopped chasing ${item.username}'s session.`);
-    }
-  };
-
-  const handleToggleChase = (item) => {
-    const currentMode = getLiveEngagement(item.id).mode;
-    setChaseMode(item, currentMode === 'CHASE' ? null : 'CHASE');
-  };
-
-  const handleOpenSupportLiveView = (item) => {
-    setSupportLiveViewSessionId(item.id);
-    setError('');
-    setToast(null);
-  };
-
-  const handleSupportReaction = (item, reaction) => {
-    setLiveEngagementBySession((prev) => {
-      const current = prev[item.id] || buildSeededEngagement(item.id);
-      return {
-        ...prev,
-        [item.id]: {
-          ...current,
-          supportCount: current.supportCount + 1,
-        },
-      };
-    });
-    setError('');
-    showToast(`Sent ${reaction} to ${item.username}.`, { durationMs: 2200 });
-  };
-
-  const handleSupportQuickMessage = (item, quickMessage) => {
-    setLiveEngagementBySession((prev) => {
-      const current = prev[item.id] || buildSeededEngagement(item.id);
-      return {
-        ...prev,
-        [item.id]: {
-          ...current,
-          supportCount: current.supportCount + 1,
-        },
-      };
-    });
-    setError('');
-    showToast(`Sent to ${item.username}: "${quickMessage}"`, { durationMs: 2800 });
-  };
-
   const handleViewProfile = (targetUserId) => {
     if (!targetUserId) return;
     navigate(`/users/${targetUserId}/profile`);
@@ -506,7 +455,45 @@ const Feed = () => {
     }
   };
 
-  const supportLiveViewSession = feedItems.find((item) => item.id === supportLiveViewSessionId) || null;
+  const getJoinRequestStatus = (sessionId) => (
+    String(outgoingJoinRequestsBySession[sessionId]?.status || '').toUpperCase()
+  );
+
+  const getRoomParticipantCount = (item) => {
+    const raw = Number(
+      item?.roomParticipantsCount
+      ?? item?.participantsCount
+      ?? item?.participantCount
+      ?? item?.roomMemberCount
+      ?? item?.liveParticipantCount
+      ?? item?.liveParticipantsCount
+      ?? item?.acceptedParticipantsCount
+      ?? 1,
+    );
+    if (!Number.isFinite(raw)) return 1;
+    return Math.max(1, Math.floor(raw));
+  };
+
+  const handleSubmitJoinRequest = async (item) => {
+    if (!currentUser?.id || !item?.id) return;
+    if (joinRequestSubmittingBySession[item.id]) return;
+
+    try {
+      setJoinRequestSubmittingBySession((prev) => ({ ...prev, [item.id]: true }));
+      setError('');
+      const created = await submitSessionJoinRequest(currentUser.id, item.id);
+      if (created?.sessionId) {
+        setOutgoingJoinRequestsBySession((prev) => ({ ...prev, [created.sessionId]: created }));
+      }
+      showToast(`Join request sent to ${item.username}.`);
+    } catch (err) {
+      setError(err.message || 'Failed to submit join request');
+      void loadOutgoingJoinRequests();
+    } finally {
+      setJoinRequestSubmittingBySession((prev) => ({ ...prev, [item.id]: false }));
+    }
+  };
+
   const visibleFeedItems = useMemo(() => {
     const filtered = feedItems.filter((item) => {
       if (statusFilter === 'LIVE') {
@@ -716,7 +703,6 @@ const Feed = () => {
             const orderedComments = [...(commentsBySession[item.id] || [])]
               .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
             const commentsCount = orderedComments.length;
-            const commentsLabel = `${commentsCount} comment${commentsCount === 1 ? '' : 's'}`;
             const shouldShowCommentsPanel = isCommentComposerOpen
               || Boolean(commentLoadingBySession[item.id])
               || Boolean(commentErrorBySession[item.id])
@@ -786,6 +772,14 @@ const Feed = () => {
                     {formatDurationCompact(getDurationSeconds(item))}
                   </strong>
                 </div>
+                {(isSessionOngoing(item) || isSessionPaused(item)) && (
+                  <div className="feed-hero-stat feed-hero-stat--room">
+                    <span className="feed-hero-label">In Room</span>
+                    <strong className="feed-hero-value">
+                      {getRoomParticipantCount(item)}
+                    </strong>
+                  </div>
+                )}
                 {formatMetricPill(item) && (
                   <div className="feed-metric-pill" title={formatMetric(item)}>
                     {formatMetricPill(item)}
@@ -793,15 +787,46 @@ const Feed = () => {
                 )}
               </div>
 
-              {isSessionOngoing(item) && currentUser && currentUser.id !== item.userId && (
-                <LiveSessionEngagement
-                  username={item.username}
-                  mode={getLiveEngagement(item.id).mode}
-                  chaseCount={getLiveEngagement(item.id).chaseCount}
-                  supportCount={getLiveEngagement(item.id).supportCount}
-                  onToggleChase={() => handleToggleChase(item)}
-                  onOpenSupport={() => handleOpenSupportLiveView(item)}
-                />
+              {(isSessionOngoing(item) || isSessionPaused(item)) && currentUser && currentUser.id !== item.userId && (
+                <div className="feed-join-request-row">
+                  {getJoinRequestStatus(item.id) === 'ACCEPTED' ? (
+                    <button
+                      type="button"
+                      className="compact-button feed-room-cta-button"
+                      onClick={() => navigate(`/sessions/${item.id}/room`, {
+                        state: {
+                          sessionContext: {
+                            hostName: item.username,
+                            activityName: item.activityTypeName,
+                            startedAt: item.startedAt,
+                            visibility: item.visibility,
+                          },
+                        },
+                      })}
+                    >
+                      Enter Room
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="compact-button secondary-button feed-room-cta-button"
+                      onClick={() => handleSubmitJoinRequest(item)}
+                      disabled={
+                        joinRequestSubmittingBySession[item.id]
+                        || getJoinRequestStatus(item.id) === 'PENDING'
+                        || getJoinRequestStatus(item.id) === 'REJECTED'
+                      }
+                    >
+                      {joinRequestSubmittingBySession[item.id]
+                        ? 'Requesting...'
+                        : (getJoinRequestStatus(item.id) === 'PENDING'
+                          ? 'Pending'
+                          : (getJoinRequestStatus(item.id) === 'REJECTED'
+                            ? 'Rejected'
+                            : 'Request to Join'))}
+                    </button>
+                  )}
+                </div>
               )}
 
               <div className="feed-card-footer">
@@ -819,13 +844,9 @@ const Feed = () => {
                     </span>
                   )}
                   <span className="feed-engagement-text">
-                    {likeState.likesCount || 0}
+                    {(item.visibility || 'PRIVATE').toLowerCase()}
                     {' '}
-                    likes
-                    {' '}
-                    ·
-                    {' '}
-                    {commentsLabel}
+                    session
                   </span>
                 </div>
 
@@ -849,6 +870,7 @@ const Feed = () => {
                         />
                       </svg>
                     </span>
+                    <span className="feed-action-count">{likeState.likesCount || 0}</span>
                   </button>
                   <button
                     type="button"
@@ -868,6 +890,7 @@ const Feed = () => {
                         />
                       </svg>
                     </span>
+                    <span className="feed-action-count">{commentsCount}</span>
                   </button>
                 </div>
               </div>
@@ -953,7 +976,12 @@ const Feed = () => {
             <div className="feed-suggest-list">
               {suggestedFriends.map((candidate) => (
                 <article key={candidate.userId} className="feed-suggest-item">
-                  <div className="feed-suggest-main">
+                  <button
+                    type="button"
+                    className="feed-suggest-main feed-suggest-main-button"
+                    onClick={() => navigate(`/users/${candidate.userId}/profile`)}
+                    aria-label={`Open ${candidate.username || 'user'} profile`}
+                  >
                     {candidate.profileImage ? (
                       <img
                         src={candidate.profileImage}
@@ -977,7 +1005,7 @@ const Feed = () => {
                         <p className="feed-suggest-bio">{candidate.bio.trim()}</p>
                       )}
                     </div>
-                  </div>
+                  </button>
                   <button
                     type="button"
                     className="compact-button secondary-button feed-suggest-add-button"
@@ -992,17 +1020,6 @@ const Feed = () => {
           )}
         </article>
       </aside>
-
-      {supportLiveViewSession && (
-        <SupportLiveViewModal
-          session={supportLiveViewSession}
-          durationLabel={formatDurationCompact(getDurationSeconds(supportLiveViewSession))}
-          metricLabel={formatMetricPill(supportLiveViewSession)}
-          onClose={() => setSupportLiveViewSessionId('')}
-          onSendReaction={(reaction) => handleSupportReaction(supportLiveViewSession, reaction)}
-          onSendQuickMessage={(quickMessage) => handleSupportQuickMessage(supportLiveViewSession, quickMessage)}
-        />
-      )}
 
       {toast && (
         <div className="app-toast" role="status" aria-live="polite">
