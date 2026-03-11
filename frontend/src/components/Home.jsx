@@ -87,6 +87,17 @@ const normalizeRoomMessages = (payload) => {
   return deduped;
 };
 
+const toInitials = (value) => {
+  const words = String(value || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return '?';
+  const first = words[0]?.[0] || '';
+  const second = words.length > 1 ? words[1]?.[0] || '' : words[0]?.[1] || '';
+  return `${first}${second}`.toUpperCase();
+};
+
 const Home = () => {
   const user = useMemo(() => getStoredUser(), []);
   const [activityTypes, setActivityTypes] = useState([]);
@@ -132,6 +143,7 @@ const Home = () => {
   const [roomPanelOpen, setRoomPanelOpen] = useState(false);
   const [roomPanelLoading, setRoomPanelLoading] = useState(false);
   const [roomPanelError, setRoomPanelError] = useState('');
+  const [roomPanelTab, setRoomPanelTab] = useState('requests');
   const [incomingJoinRequests, setIncomingJoinRequests] = useState([]);
   const [roomState, setRoomState] = useState(null);
   const [roomMessages, setRoomMessages] = useState([]);
@@ -187,6 +199,7 @@ const Home = () => {
     setRoomPanelOpen(false);
     setRoomPanelLoading(false);
     setRoomPanelError('');
+    setRoomPanelTab('requests');
     setIncomingJoinRequests([]);
     setRoomState(null);
     setRoomMessages([]);
@@ -864,11 +877,23 @@ const Home = () => {
   const hasLiveQuickNote = liveQuickNote.trim().length > 0;
   const roomParticipants = Array.isArray(roomState?.participants) ? roomState.participants : [];
   const roomHost = roomState?.host || null;
+  const pendingRequestCount = incomingJoinRequests.length;
+  const roomMemberCount = roomParticipants.length + (roomHost ? 1 : 0);
+  const roomPanelParticipants = [
+    ...(roomHost ? [{ ...roomHost, roleLabel: 'Host', roleKey: 'host' }] : []),
+    ...roomParticipants.map((participant) => ({ ...participant, roleLabel: 'Participant', roleKey: 'participant' })),
+  ];
   const formatRoomClock = (value) => {
     if (!value) return '-';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '-';
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+  const openRoomPanel = () => {
+    if (!roomPanelOpen) {
+      setRoomPanelTab(pendingRequestCount > 0 ? 'requests' : 'chat');
+    }
+    setRoomPanelOpen(true);
   };
 
   useEffect(() => {
@@ -978,6 +1003,13 @@ const Home = () => {
                     <span className="live-hero-meta-pill">{liveTrackingLabel}</span>
                     <span className="live-hero-meta-pill">{homeMomentumStats.streak} day streak</span>
                     <span className="live-hero-meta-pill">{liveFocusLabel}</span>
+                    <button
+                      type="button"
+                      className={`live-hero-meta-pill live-hero-room-button${roomPanelOpen ? ' is-open' : ''}`}
+                      onClick={openRoomPanel}
+                    >
+                      {pendingRequestCount > 0 ? `Room (${pendingRequestCount})` : 'Open Room'}
+                    </button>
                   </div>
                 </div>
 
@@ -1003,13 +1035,6 @@ const Home = () => {
                     >
                       <span className="danger-soft-button-icon" aria-hidden="true">■</span>
                       <span>End Session</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button compact-button live-action-button"
-                      onClick={() => setRoomPanelOpen((prev) => !prev)}
-                    >
-                      {roomPanelOpen ? 'Close Room Panel' : 'Room Panel'}
                     </button>
                   </div>
                 )}
@@ -1615,9 +1640,13 @@ const Home = () => {
       {roomPanelOpen && liveSession && (
         <aside className="home-room-panel" aria-label="Live room panel">
           <div className="home-room-panel-head">
-            <div>
+            <div className="home-room-panel-head-main">
               <p className="friends-section-kicker">ROOM PANEL</p>
               <h2>Session Room</h2>
+              <p className="home-room-panel-summary">
+                <span>{roomMemberCount} member{roomMemberCount === 1 ? '' : 's'}</span>
+                <span>{pendingRequestCount} pending request{pendingRequestCount === 1 ? '' : 's'}</span>
+              </p>
             </div>
             <button
               type="button"
@@ -1628,108 +1657,163 @@ const Home = () => {
             </button>
           </div>
 
+          <div className="home-room-panel-tabs" role="tablist" aria-label="Session room sections">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={roomPanelTab === 'requests'}
+              className={`home-room-panel-tab${roomPanelTab === 'requests' ? ' active' : ''}`}
+              onClick={() => setRoomPanelTab('requests')}
+            >
+              Requests
+              {pendingRequestCount > 0 && <span className="home-room-panel-tab-count">{pendingRequestCount}</span>}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={roomPanelTab === 'participants'}
+              className={`home-room-panel-tab${roomPanelTab === 'participants' ? ' active' : ''}`}
+              onClick={() => setRoomPanelTab('participants')}
+            >
+              Participants
+              {roomMemberCount > 0 && <span className="home-room-panel-tab-count">{roomMemberCount}</span>}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={roomPanelTab === 'chat'}
+              className={`home-room-panel-tab${roomPanelTab === 'chat' ? ' active' : ''}`}
+              onClick={() => setRoomPanelTab('chat')}
+            >
+              Chat
+            </button>
+          </div>
+
           <div className="home-room-panel-body">
             {roomPanelError && <p className="message-error">{roomPanelError}</p>}
             {roomPanelLoading && <p className="message-muted">Loading room panel...</p>}
 
             {!roomPanelLoading && (
-              <>
-                <section className="home-room-panel-section">
-                  <h3>Pending Requests</h3>
-                  {incomingJoinRequests.length === 0 ? (
-                    <p className="message-muted">No pending join requests.</p>
-                  ) : (
-                    <div className="home-room-request-list">
-                      {incomingJoinRequests.map((request) => (
-                        <article key={request.id} className="home-room-request-item">
-                          <div className="home-room-request-meta">
-                            <p>{request.requesterUsername || 'User'}</p>
-                            <span>Requested {formatRoomClock(request.createdAt)}</span>
-                          </div>
-                          <div className="home-room-request-actions">
-                            <button
-                              type="button"
-                              className="compact-button"
-                              onClick={() => handleJoinRequestDecision(request.id, 'ACCEPT')}
-                              disabled={decidingJoinRequestId === request.id}
-                            >
-                              {decidingJoinRequestId === request.id ? 'Saving...' : 'Accept'}
-                            </button>
-                            <button
-                              type="button"
-                              className="compact-button secondary-button"
-                              onClick={() => handleJoinRequestDecision(request.id, 'REJECT')}
-                              disabled={decidingJoinRequestId === request.id}
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </section>
-
-                <section className="home-room-panel-section">
-                  <h3>Participants</h3>
-                  {!roomHost && roomParticipants.length === 0 ? (
-                    <p className="message-muted">No participants available yet.</p>
-                  ) : (
-                    <ul className="home-room-participant-list">
-                      {roomHost && (
-                        <li>
-                          <strong>{roomHost.username || 'Host'}</strong>
-                          <span>Host</span>
-                        </li>
-                      )}
-                      {roomParticipants.map((participant) => (
-                        <li key={participant.id}>
-                          <strong>{participant.username || 'Participant'}</strong>
-                          <span>Participant</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-
-                <section className="home-room-panel-section">
-                  <h3>Room Chat</h3>
-                  <div className="home-room-chat-list" aria-live="polite">
-                    {roomMessages.length === 0 ? (
-                      <p className="message-muted">No room messages yet.</p>
+              <div className={`home-room-panel-tab-content${roomPanelTab === 'chat' ? ' home-room-panel-tab-content--chat' : ''}`}>
+                {roomPanelTab === 'requests' && (
+                  <section className="home-room-panel-section home-room-panel-section--requests">
+                    <h3>Pending Requests</h3>
+                    {incomingJoinRequests.length === 0 ? (
+                      <p className="home-room-empty-muted">No pending join requests right now.</p>
                     ) : (
-                      roomMessages.map((message) => (
-                        <article
-                          key={message.id}
-                          className={`home-room-chat-item${message.senderId === user.id ? ' own' : ''}`}
-                        >
-                          <div className="home-room-chat-head">
-                            <strong>{message.senderUsername || 'User'}</strong>
-                            <span>{formatRoomClock(message.createdAt)}</span>
-                          </div>
-                          <p>{message.content}</p>
-                        </article>
-                      ))
+                      <div className="home-room-request-list">
+                        {incomingJoinRequests.map((request) => (
+                          <article key={request.id} className="home-room-request-item">
+                            <div className="home-room-request-meta">
+                              <p>{request.requesterUsername || 'User'}</p>
+                              <span>Requested {formatRoomClock(request.createdAt)}</span>
+                            </div>
+                            <div className="home-room-request-actions">
+                              <button
+                                type="button"
+                                className="compact-button"
+                                onClick={() => handleJoinRequestDecision(request.id, 'ACCEPT')}
+                                disabled={decidingJoinRequestId === request.id}
+                              >
+                                {decidingJoinRequestId === request.id ? 'Saving...' : 'Accept'}
+                              </button>
+                              <button
+                                type="button"
+                                className="compact-button secondary-button"
+                                onClick={() => handleJoinRequestDecision(request.id, 'REJECT')}
+                                disabled={decidingJoinRequestId === request.id}
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
                     )}
-                  </div>
-                  <form className="home-room-chat-composer" onSubmit={handleSendRoomPanelMessage}>
-                    <input
-                      type="text"
-                      maxLength={1000}
-                      value={roomMessageDraft}
-                      onChange={(event) => setRoomMessageDraft(event.target.value)}
-                      placeholder="Write a message..."
-                    />
-                    <button
-                      type="submit"
-                      className="compact-button"
-                      disabled={sendingRoomMessage || !roomMessageDraft.trim()}
-                    >
-                      {sendingRoomMessage ? 'Sending...' : 'Send'}
-                    </button>
-                  </form>
-                </section>
-              </>
+                  </section>
+                )}
+
+                {roomPanelTab === 'participants' && (
+                  <section className="home-room-panel-section">
+                    <h3>Participants</h3>
+                    {roomPanelParticipants.length === 0 ? (
+                      <p className="home-room-empty-muted">No participants available yet.</p>
+                    ) : (
+                      <ul className="home-room-participant-list">
+                        {roomPanelParticipants.map((participant) => (
+                          <li key={`${participant.roleKey}-${participant.id}`}>
+                            <div className="home-room-participant-main">
+                              {participant.profileImage ? (
+                                <img
+                                  src={participant.profileImage}
+                                  alt={`${participant.username || participant.roleLabel} avatar`}
+                                  className="home-room-avatar"
+                                />
+                              ) : (
+                                <span className="home-room-avatar home-room-avatar--fallback" aria-hidden="true">
+                                  {toInitials(participant.username || participant.roleLabel)}
+                                </span>
+                              )}
+                              <strong>{participant.username || participant.roleLabel}</strong>
+                            </div>
+                            <span className={`home-room-role-badge${participant.roleKey === 'host' ? ' host' : ''}`}>
+                              {participant.roleLabel}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                )}
+
+                {roomPanelTab === 'chat' && (
+                  <section className="home-room-panel-section home-room-panel-section--chat">
+                    <h3>Room Chat</h3>
+                    <div className="home-room-chat-shell">
+                      <div className="home-room-chat-list" aria-live="polite">
+                        {roomMessages.length === 0 ? (
+                          <p className="home-room-empty-muted">No room messages yet.</p>
+                        ) : (
+                          roomMessages.map((message, index) => {
+                            const previous = roomMessages[index - 1];
+                            const startsGroup = !previous || previous.senderId !== message.senderId;
+                            return (
+                              <article
+                                key={message.id}
+                                className={`home-room-chat-item${message.senderId === user.id ? ' own' : ''}${startsGroup ? ' group-start' : ''}`}
+                              >
+                                {startsGroup && (
+                                  <div className="home-room-chat-head">
+                                    <strong>{message.senderUsername || 'User'}</strong>
+                                    <span>{formatRoomClock(message.createdAt)}</span>
+                                  </div>
+                                )}
+                                <p>{message.content}</p>
+                              </article>
+                            );
+                          })
+                        )}
+                      </div>
+                      <form className="home-room-chat-composer" onSubmit={handleSendRoomPanelMessage}>
+                        <input
+                          type="text"
+                          maxLength={1000}
+                          value={roomMessageDraft}
+                          onChange={(event) => setRoomMessageDraft(event.target.value)}
+                          placeholder="Write a message..."
+                        />
+                        <button
+                          type="submit"
+                          className="compact-button"
+                          disabled={sendingRoomMessage || !roomMessageDraft.trim()}
+                        >
+                          {sendingRoomMessage ? 'Sending...' : 'Send'}
+                        </button>
+                      </form>
+                    </div>
+                  </section>
+                )}
+              </div>
             )}
           </div>
         </aside>
