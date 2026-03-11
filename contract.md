@@ -1,107 +1,224 @@
-# Session Start Friend Notification Contract
+# Live Session Join Request + Room Chat Contract
 
-## Scope
+## Title and Scope
 
-This contract defines the API and behavior for the feature:
+Actors:
 
-- when a user starts a session, they can choose whether to notify friends.
+- User A = requester
+- User B = host (session owner)
 
-This contract supersedes the previous goal-reached feature notes in this file.
+Transport:
 
-## Primary Endpoint Contract
+- HTTP polling in v1 (no websocket requirement)
 
-### `POST /api/sessions`
+Source of truth:
 
-Auth:
+- this file supersedes previous contract content and is the contract of record for this feature.
 
-- required (`X-User-Id` in current auth flow)
+## Core Rules
 
-Request body (`SessionCreateDto`):
+- Join request is allowed only if requester currently passes existing visibility access to that session:
+  - `PUBLIC`, or
+  - `FRIENDS` with friendship access.
+- Join request is never allowed for inaccessible `PRIVATE` sessions.
+- Requester cannot request their own session.
+- Requests are allowed only while session is live (`endedAt == null`).
+- Exactly one request record per `(sessionId, requesterId)` for the same live session.
+- If an existing request for that live session is `PENDING`, `ACCEPTED`, or `REJECTED`, creating another request returns `409 Conflict`.
+- Accepted requester can enter room via explicit `Enter Room` CTA.
+- Room access and room chat access are restricted to host + accepted participants only.
 
-- `activityTypeId: UUID` (required)
-- `title: string | null` (optional, max 120)
-- `description: string | null` (optional)
-- `visibility: "PRIVATE" | "FRIENDS" | "PUBLIC"` (required)
-- `goalType: "NONE" | "TIME" | "METRIC" | null` (optional)
-- `goalTarget: number | null` (optional)
-- `goalNote: string | null` (optional, max 255)
-- `notifyFriends: boolean | null` (optional)
+## Public APIs
+
+### 1) `POST /api/sessions/{sessionId}/join-requests`
+
+Request:
+
+- no body
 
 Response:
 
-- `201 Created` with unchanged `SessionDto`
+- `201 Created`
+- `SessionJoinRequestDto { id, sessionId, requesterId, requesterUsername, status, createdAt, respondedAt }`
 
-Validation and defaults:
+Errors:
 
-- if `notifyFriends` is omitted or `null`, backend treats it as `false`
-- existing start-session validations and one-live-session rule remain unchanged
+- `401 Unauthorized`
+- `403 Forbidden`
+- `404 Not Found`
+- `409 Conflict`
 
-Common errors:
+### 2) `GET /api/me/join-requests/outgoing`
 
-- `400 Bad Request` (validation)
-- `401 Unauthorized` (missing auth)
-- `404 Not Found` (missing user or activity type)
-- `409 Conflict` (user already has a live session)
+Query params:
 
-## Notification Behavior Contract
+- `status` optional: `PENDING | ACCEPTED | REJECTED`
+- `liveOnly` optional, default `true`
 
-When `POST /api/sessions` succeeds:
+Response:
 
-- if `notifyFriends = false`: no friend notifications are created
-- if `notifyFriends = true`:
-  - recipients are accepted friends of the actor
-  - friendship is evaluated in both directions and recipients are deduplicated
-  - actor is never notified about their own session
-  - notifications are sent only when session visibility is `FRIENDS` or `PUBLIC`
-  - if visibility is `PRIVATE`, no friend notifications are sent
+- `200 OK`
+- list of `MyJoinRequestDto { requestId, sessionId, hostUserId, status, createdAt, respondedAt }`
 
-Notification shape:
+### 3) `GET /api/sessions/{sessionId}/join-requests/incoming`
 
-- notification endpoints remain unchanged:
-  - `GET /api/me/notifications`
-  - `GET /api/me/notifications/unread-count`
-  - `PATCH /api/me/notifications/{notificationId}/read`
-  - `PATCH /api/me/notifications/read-all`
-  - `DELETE /api/me/notifications`
-- `NotificationDto` schema remains unchanged
-- `NotificationDto.type` adds enum value: `SESSION_STARTED`
-- `NotificationDto.resourceType` uses existing enum value: `SESSION`
-- `NotificationDto.resourceId` is the created session id
-- message format: `"<actorUsername> started a new session."`
+Authorization:
 
-## Backward Compatibility
+- host-only endpoint
 
-- existing clients that do not send `notifyFriends` continue to work unchanged
-- existing `SessionDto` schema remains unchanged
-- existing notification read/clear/list APIs remain unchanged
+Response:
 
-## Required Persistence Change
+- `200 OK`
+- list of `SessionJoinRequestDto` (typically `PENDING` rows)
 
-Because notification type values are constrained in DB migrations, implementation must include a new Flyway migration to allow:
+Errors:
 
-- `SESSION_STARTED` in `notification.type` check constraint
+- `401 Unauthorized`
+- `403 Forbidden`
+- `404 Not Found`
+- `409 Conflict` (session not live)
 
-Without this migration, writes for this new notification type may fail at runtime.
+### 4) `PATCH /api/sessions/{sessionId}/join-requests/{requestId}`
 
-## Frontend Contract Obligations
+Authorization:
 
-On Home start-session form:
+- host-only endpoint
 
-- show explicit user choice to notify friends (`on/off`)
-- default UI value is `off`
-- include `notifyFriends` in start-session payload
-- if visibility is `PRIVATE`, UI should not send `notifyFriends = true`
+Request body:
 
-UI states:
+- `{ "decision": "ACCEPT" | "REJECT" }`
 
-- preserve existing loading/error/empty states
-- preserve existing session-start behavior when notify is off
+Response:
 
-## Acceptance Criteria
+- `200 OK`
+- updated `SessionJoinRequestDto`
 
-- user can start a session with notify friends enabled or disabled
-- notify disabled => no friend notifications
-- notify enabled + visibility `FRIENDS`/`PUBLIC` => friends receive `SESSION_STARTED` notification
-- notify enabled + visibility `PRIVATE` => no friend notifications
-- sender never receives their own start notification
-- unread badge and notification list reflect created notifications correctly
+Errors:
+
+- `400 Bad Request`
+- `401 Unauthorized`
+- `403 Forbidden`
+- `404 Not Found`
+- `409 Conflict` (already decided or session not live)
+
+### 5) `GET /api/sessions/{sessionId}/room`
+
+Authorization:
+
+- host or accepted participant only
+
+Response:
+
+- `200 OK`
+- `RoomStateDto { sessionId, host { id, username, profileImage }, participants[], live }`
+
+Errors:
+
+- `401 Unauthorized`
+- `403 Forbidden`
+- `404 Not Found`
+- `409 Conflict` (session not live)
+
+### 6) `GET /api/sessions/{sessionId}/room/messages`
+
+Authorization:
+
+- host or accepted participant only
+
+Query params:
+
+- `page`
+- `size`
+
+Response:
+
+- `200 OK`
+- paged `RoomMessageDto { id, sessionId, senderId, senderUsername, senderProfileImage, content, createdAt }`
+
+### 7) `POST /api/sessions/{sessionId}/room/messages`
+
+Authorization:
+
+- host or accepted participant only
+
+Request body:
+
+- `{ "content": "..." }`
+
+Validation:
+
+- content is required
+- content is trimmed
+- content must be non-blank after trimming
+- max content length is `1000`
+
+Response:
+
+- `201 Created`
+- `RoomMessageDto`
+
+Errors:
+
+- `400 Bad Request`
+- `401 Unauthorized`
+- `403 Forbidden`
+- `404 Not Found`
+- `409 Conflict` (session not live)
+
+## Frontend Behavior Obligations
+
+- Feed live cards requester states:
+  - `Request to Join` -> `Pending` -> `Enter Room` (accepted) or `Rejected`.
+- Home host UX:
+  - right-side room panel as a toggle,
+  - pending requests list,
+  - accept/reject controls,
+  - participant list,
+  - room chat stream + composer.
+- Accepted requester enters a separate room component/page (not host Home panel).
+- Polling is active only while relevant view is active.
+- Existing loading/empty/error state patterns must be preserved.
+
+## Persistence and Enums
+
+- New table: `session_join_request`
+  - unique constraint on `(session_id, requester_id)`.
+- New table: `session_room_message`
+  - linked to session and sender.
+- Join request status enum values:
+  - `PENDING`
+  - `ACCEPTED`
+  - `REJECTED`
+- Implementation requires Flyway migration(s) for:
+  - both tables,
+  - required constraints and indexes,
+  - enum/check-constraint compatibility.
+
+## Compatibility
+
+- Existing session start/stop/pause/resume APIs are unchanged.
+- Existing comments/likes/notifications APIs are unchanged for v1.
+- No websocket or push delivery guarantees in v1.
+
+## Acceptance and Validation Matrix
+
+- Requester can submit join request for visible live session.
+- Requester is blocked for:
+  - own session,
+  - private inaccessible session,
+  - ended session,
+  - duplicate request.
+- Host sees incoming requests on Home polling endpoint.
+- Host accept/reject updates requester outgoing status.
+- Accepted requester can fetch room state/messages and post chat.
+- Rejected or non-participant requester gets `403` on room state/messages/post.
+- Room endpoints return `409` when session is ended.
+- Feed and Home UI transitions match statuses:
+  - `Request`, `Pending`, `Enter Room`, `Rejected`.
+
+## Assumptions and Defaults
+
+- Contract scope is join-room only and replaces previous file content.
+- Polling cadence is implementation detail; contract requires eventual consistency via repeated `GET` polling.
+- No leave-room or kick-participant capability in v1.
+- Chat history is persisted and visible to authorized room members while the session is live.
