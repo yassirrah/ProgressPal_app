@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createSession,
   getActivityTypes,
@@ -87,6 +87,7 @@ const Home = () => {
   const [sessionError, setSessionError] = useState('');
   const [sessionNotice, setSessionNotice] = useState('');
   const [toast, setToast] = useState(null);
+  const [goalReachedPromptOpen, setGoalReachedPromptOpen] = useState(false);
 
   const [stopPanelOpen, setStopPanelOpen] = useState(false);
   const [goalPanelOpen, setGoalPanelOpen] = useState(false);
@@ -115,6 +116,9 @@ const Home = () => {
   const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const [goalEnabled, setGoalEnabled] = useState(false);
+  const previousTimeGoalDoneBySessionRef = useRef(new Map());
+  const timeGoalPromptShownSessionIdsRef = useRef(new Set());
+  const timeGoalPauseInFlightSessionIdRef = useRef(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -157,6 +161,7 @@ const Home = () => {
     setStopMetricValue('');
     setStopPanelOpen(false);
     setGoalPanelOpen(false);
+    setGoalReachedPromptOpen(false);
     setMetricProgressDraft('');
     setSessionNotice('');
     setSessionError('');
@@ -254,6 +259,16 @@ const Home = () => {
     const asNumber = Number(metricDone);
     return Number.isFinite(asNumber) ? asNumber : 0;
   })();
+  const liveTimeGoalTargetMinutes = (
+    liveSession?.goalType === 'TIME' && Number.isFinite(liveGoalTargetNumeric)
+  )
+    ? liveGoalTargetNumeric
+    : null;
+  const liveTimeGoalDoneMinutes = (
+    liveSession?.goalType === 'TIME' && Number.isFinite(liveGoalDoneNumeric)
+  )
+    ? liveGoalDoneNumeric
+    : null;
   const liveGoalProgressPct = (
     hasLiveGoal
     && liveGoalTargetNumeric
@@ -600,6 +615,28 @@ const Home = () => {
     }
   };
 
+  const handleResumeFromGoalReachedPrompt = async () => {
+    if (!user || !liveSession) return;
+    try {
+      setSavingPauseState(true);
+      setSessionError('');
+      const updated = await resumeSession(user.id, liveSession.id);
+      setLiveSession(updated);
+      setGoalReachedPromptOpen(false);
+    } catch (err) {
+      setSessionError(err.message || 'Failed to update session state');
+    } finally {
+      setSavingPauseState(false);
+    }
+  };
+
+  const handleStopFromGoalReachedPrompt = () => {
+    if (!liveSession) return;
+    setSessionError('');
+    setGoalReachedPromptOpen(false);
+    setStopPanelOpen(true);
+  };
+
   const notesPreview = (() => {
     const value = (sessionForm.description || '').trim();
     if (!value) return '';
@@ -726,6 +763,63 @@ const Home = () => {
   const liveTrackingLabel = liveMetricKind === 'NONE' ? 'Time only' : `${liveMetricLabel} tracking`;
   const liveFocusLabel = isSessionPaused ? 'Focus paused' : 'In flow';
   const hasLiveQuickNote = liveQuickNote.trim().length > 0;
+
+  useEffect(() => {
+    const sessionId = liveSession?.id;
+    if (!sessionId || !user) return;
+    if (liveSession.goalType !== 'TIME') return;
+    if (!Number.isFinite(liveTimeGoalTargetMinutes) || liveTimeGoalTargetMinutes <= 0) return;
+    if (!Number.isFinite(liveTimeGoalDoneMinutes)) return;
+
+    const previousDone = previousTimeGoalDoneBySessionRef.current.has(sessionId)
+      ? previousTimeGoalDoneBySessionRef.current.get(sessionId)
+      : liveTimeGoalDoneMinutes;
+    const crossedThreshold = previousDone < liveTimeGoalTargetMinutes
+      && liveTimeGoalDoneMinutes >= liveTimeGoalTargetMinutes;
+    previousTimeGoalDoneBySessionRef.current.set(sessionId, liveTimeGoalDoneMinutes);
+
+    if (!crossedThreshold) return;
+    if (liveSession.paused || liveSession.endedAt) return;
+    if (timeGoalPromptShownSessionIdsRef.current.has(sessionId)) return;
+    if (timeGoalPauseInFlightSessionIdRef.current === sessionId) return;
+
+    let cancelled = false;
+    timeGoalPauseInFlightSessionIdRef.current = sessionId;
+
+    const pauseForGoalReached = async () => {
+      try {
+        setSessionError('');
+        const pausedSession = await pauseSession(user.id, sessionId);
+        if (cancelled) return;
+        setLiveSession((current) => (current?.id === pausedSession.id ? pausedSession : current));
+        timeGoalPromptShownSessionIdsRef.current.add(sessionId);
+        setGoalPanelOpen(false);
+        setStopPanelOpen(false);
+        setGoalReachedPromptOpen(true);
+      } catch (err) {
+        if (cancelled) return;
+        setSessionError(err.message || 'Failed to update session state');
+      } finally {
+        if (timeGoalPauseInFlightSessionIdRef.current === sessionId) {
+          timeGoalPauseInFlightSessionIdRef.current = null;
+        }
+      }
+    };
+
+    pauseForGoalReached();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    liveSession?.endedAt,
+    liveSession?.goalType,
+    liveSession?.id,
+    liveSession?.paused,
+    liveTimeGoalDoneMinutes,
+    liveTimeGoalTargetMinutes,
+    user,
+  ]);
 
   return (
     <div className={`home-stack${liveSession ? ' focus-mode' : ''}`}>
@@ -1353,6 +1447,43 @@ const Home = () => {
           )}
 
         </>
+      )}
+
+      {goalReachedPromptOpen && liveSession && (
+        <div className="modal-overlay" role="presentation">
+          <div
+            className="goal-reached-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="goal-reached-title"
+          >
+            <div className="goal-reached-head">
+              <p className="friends-section-kicker">GOAL REACHED</p>
+              <h2 id="goal-reached-title">You reached your time goal.</h2>
+            </div>
+            <p className="goal-reached-copy">
+              Great work. You hit your target of {liveGoalTargetLabel}. What would you like to do next?
+            </p>
+            <div className="goal-reached-actions">
+              <button
+                type="button"
+                className="compact-button"
+                onClick={handleResumeFromGoalReachedPrompt}
+                disabled={savingPauseState}
+              >
+                {savingPauseState ? 'Saving...' : 'Resume Session'}
+              </button>
+              <button
+                type="button"
+                className="danger-outline-button compact-button"
+                onClick={handleStopFromGoalReachedPrompt}
+                disabled={savingPauseState}
+              >
+                Stop
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && (

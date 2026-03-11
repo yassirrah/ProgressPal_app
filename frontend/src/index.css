@@ -4690,6 +4690,46 @@ form {
   z-index: 40;
 }
 
+.goal-reached-modal {
+  width: min(100%, 460px);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 168, 0.1), transparent 55%),
+    var(--surface);
+  box-shadow: 0 22px 48px rgba(12, 25, 38, 0.16);
+  padding: 1rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.goal-reached-head h2 {
+  margin: 0.08rem 0 0;
+}
+
+.goal-reached-copy {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.goal-reached-actions {
+  display: flex;
+  gap: 0.55rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 560px) {
+  .goal-reached-actions {
+    flex-direction: column-reverse;
+  }
+
+  .goal-reached-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 .session-details-modal {
   width: min(100%, 560px);
   max-height: min(90vh, 760px);
