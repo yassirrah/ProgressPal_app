@@ -1,11 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createSession,
+  decideSessionJoinRequest,
   getActivityTypes,
+  getIncomingSessionJoinRequests,
   getLiveSession,
   getMySessions,
+  getSessionRoomMessages,
+  getSessionRoomState,
   getStoredUser,
   pauseSession,
+  postSessionRoomMessage,
   resumeSession,
   stopSession,
   updateSessionGoal,
@@ -75,6 +80,13 @@ const formatTimeHmsFromMinutes = (minutes) => {
   return `${hours}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 };
 
+const normalizeRoomMessages = (payload) => {
+  const rows = Array.isArray(payload?.content) ? payload.content : (Array.isArray(payload) ? payload : []);
+  const deduped = Array.from(new Map(rows.map((message) => [message.id, message])).values());
+  deduped.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  return deduped;
+};
+
 const Home = () => {
   const user = useMemo(() => getStoredUser(), []);
   const [activityTypes, setActivityTypes] = useState([]);
@@ -117,6 +129,15 @@ const Home = () => {
   const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const [goalEnabled, setGoalEnabled] = useState(false);
+  const [roomPanelOpen, setRoomPanelOpen] = useState(false);
+  const [roomPanelLoading, setRoomPanelLoading] = useState(false);
+  const [roomPanelError, setRoomPanelError] = useState('');
+  const [incomingJoinRequests, setIncomingJoinRequests] = useState([]);
+  const [roomState, setRoomState] = useState(null);
+  const [roomMessages, setRoomMessages] = useState([]);
+  const [roomMessageDraft, setRoomMessageDraft] = useState('');
+  const [sendingRoomMessage, setSendingRoomMessage] = useState(false);
+  const [decidingJoinRequestId, setDecidingJoinRequestId] = useState('');
   const previousTimeGoalDoneBySessionRef = useRef(new Map());
   const timeGoalPromptShownSessionIdsRef = useRef(new Set());
   const timeGoalPauseInFlightSessionIdRef = useRef(null);
@@ -163,6 +184,15 @@ const Home = () => {
     setStopPanelOpen(false);
     setGoalPanelOpen(false);
     setGoalReachedPromptOpen(false);
+    setRoomPanelOpen(false);
+    setRoomPanelLoading(false);
+    setRoomPanelError('');
+    setIncomingJoinRequests([]);
+    setRoomState(null);
+    setRoomMessages([]);
+    setRoomMessageDraft('');
+    setSendingRoomMessage(false);
+    setDecidingJoinRequestId('');
     setMetricProgressDraft('');
     setSessionNotice('');
     setSessionError('');
@@ -645,6 +675,67 @@ const Home = () => {
     setStopPanelOpen(true);
   };
 
+  const loadRoomPanelData = useCallback(async (options = {}) => {
+    const { silent = false } = options;
+    if (!user?.id || !liveSession?.id) return;
+
+    if (!silent) {
+      setRoomPanelLoading(true);
+    }
+
+    try {
+      setRoomPanelError('');
+      const [incoming, room, messagesPage] = await Promise.all([
+        getIncomingSessionJoinRequests(user.id, liveSession.id),
+        getSessionRoomState(user.id, liveSession.id),
+        getSessionRoomMessages(user.id, liveSession.id, 0, 50),
+      ]);
+      setIncomingJoinRequests(Array.isArray(incoming) ? incoming : []);
+      setRoomState(room || null);
+      setRoomMessages(normalizeRoomMessages(messagesPage));
+    } catch (err) {
+      setRoomPanelError(err.message || 'Failed to load room panel');
+    } finally {
+      if (!silent) {
+        setRoomPanelLoading(false);
+      }
+    }
+  }, [liveSession?.id, user?.id]);
+
+  const handleJoinRequestDecision = async (requestId, decision) => {
+    if (!user?.id || !liveSession?.id || !requestId) return;
+    try {
+      setDecidingJoinRequestId(requestId);
+      setRoomPanelError('');
+      await decideSessionJoinRequest(user.id, liveSession.id, requestId, decision);
+      await loadRoomPanelData({ silent: true });
+    } catch (err) {
+      setRoomPanelError(err.message || 'Failed to update join request');
+    } finally {
+      setDecidingJoinRequestId('');
+    }
+  };
+
+  const handleSendRoomPanelMessage = async (event) => {
+    event.preventDefault();
+    if (!user?.id || !liveSession?.id) return;
+
+    const content = roomMessageDraft.trim();
+    if (!content) return;
+
+    try {
+      setSendingRoomMessage(true);
+      setRoomPanelError('');
+      const created = await postSessionRoomMessage(user.id, liveSession.id, content);
+      setRoomMessages((prev) => normalizeRoomMessages([...prev, created]));
+      setRoomMessageDraft('');
+    } catch (err) {
+      setRoomPanelError(err.message || 'Failed to send room message');
+    } finally {
+      setSendingRoomMessage(false);
+    }
+  };
+
   const notesPreview = (() => {
     const value = (sessionForm.description || '').trim();
     if (!value) return '';
@@ -771,6 +862,34 @@ const Home = () => {
   const liveTrackingLabel = liveMetricKind === 'NONE' ? 'Time only' : `${liveMetricLabel} tracking`;
   const liveFocusLabel = isSessionPaused ? 'Focus paused' : 'In flow';
   const hasLiveQuickNote = liveQuickNote.trim().length > 0;
+  const roomParticipants = Array.isArray(roomState?.participants) ? roomState.participants : [];
+  const roomHost = roomState?.host || null;
+  const formatRoomClock = (value) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '-';
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  useEffect(() => {
+    if (!roomPanelOpen || !liveSession?.id || !user?.id) return undefined;
+
+    void loadRoomPanelData();
+
+    const poll = () => {
+      if (document.visibilityState !== 'visible') return;
+      void loadRoomPanelData({ silent: true });
+    };
+
+    const intervalId = window.setInterval(poll, 5000);
+    const handleFocus = () => poll();
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [liveSession?.id, loadRoomPanelData, roomPanelOpen, user?.id]);
 
   useEffect(() => {
     const sessionId = liveSession?.id;
@@ -884,6 +1003,13 @@ const Home = () => {
                     >
                       <span className="danger-soft-button-icon" aria-hidden="true">■</span>
                       <span>End Session</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button compact-button live-action-button"
+                      onClick={() => setRoomPanelOpen((prev) => !prev)}
+                    >
+                      {roomPanelOpen ? 'Close Room Panel' : 'Room Panel'}
                     </button>
                   </div>
                 )}
@@ -1484,6 +1610,129 @@ const Home = () => {
           )}
 
         </>
+      )}
+
+      {roomPanelOpen && liveSession && (
+        <aside className="home-room-panel" aria-label="Live room panel">
+          <div className="home-room-panel-head">
+            <div>
+              <p className="friends-section-kicker">ROOM PANEL</p>
+              <h2>Session Room</h2>
+            </div>
+            <button
+              type="button"
+              className="secondary-button compact-button"
+              onClick={() => setRoomPanelOpen(false)}
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="home-room-panel-body">
+            {roomPanelError && <p className="message-error">{roomPanelError}</p>}
+            {roomPanelLoading && <p className="message-muted">Loading room panel...</p>}
+
+            {!roomPanelLoading && (
+              <>
+                <section className="home-room-panel-section">
+                  <h3>Pending Requests</h3>
+                  {incomingJoinRequests.length === 0 ? (
+                    <p className="message-muted">No pending join requests.</p>
+                  ) : (
+                    <div className="home-room-request-list">
+                      {incomingJoinRequests.map((request) => (
+                        <article key={request.id} className="home-room-request-item">
+                          <div className="home-room-request-meta">
+                            <p>{request.requesterUsername || 'User'}</p>
+                            <span>Requested {formatRoomClock(request.createdAt)}</span>
+                          </div>
+                          <div className="home-room-request-actions">
+                            <button
+                              type="button"
+                              className="compact-button"
+                              onClick={() => handleJoinRequestDecision(request.id, 'ACCEPT')}
+                              disabled={decidingJoinRequestId === request.id}
+                            >
+                              {decidingJoinRequestId === request.id ? 'Saving...' : 'Accept'}
+                            </button>
+                            <button
+                              type="button"
+                              className="compact-button secondary-button"
+                              onClick={() => handleJoinRequestDecision(request.id, 'REJECT')}
+                              disabled={decidingJoinRequestId === request.id}
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="home-room-panel-section">
+                  <h3>Participants</h3>
+                  {!roomHost && roomParticipants.length === 0 ? (
+                    <p className="message-muted">No participants available yet.</p>
+                  ) : (
+                    <ul className="home-room-participant-list">
+                      {roomHost && (
+                        <li>
+                          <strong>{roomHost.username || 'Host'}</strong>
+                          <span>Host</span>
+                        </li>
+                      )}
+                      {roomParticipants.map((participant) => (
+                        <li key={participant.id}>
+                          <strong>{participant.username || 'Participant'}</strong>
+                          <span>Participant</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
+                <section className="home-room-panel-section">
+                  <h3>Room Chat</h3>
+                  <div className="home-room-chat-list" aria-live="polite">
+                    {roomMessages.length === 0 ? (
+                      <p className="message-muted">No room messages yet.</p>
+                    ) : (
+                      roomMessages.map((message) => (
+                        <article
+                          key={message.id}
+                          className={`home-room-chat-item${message.senderId === user.id ? ' own' : ''}`}
+                        >
+                          <div className="home-room-chat-head">
+                            <strong>{message.senderUsername || 'User'}</strong>
+                            <span>{formatRoomClock(message.createdAt)}</span>
+                          </div>
+                          <p>{message.content}</p>
+                        </article>
+                      ))
+                    )}
+                  </div>
+                  <form className="home-room-chat-composer" onSubmit={handleSendRoomPanelMessage}>
+                    <input
+                      type="text"
+                      maxLength={1000}
+                      value={roomMessageDraft}
+                      onChange={(event) => setRoomMessageDraft(event.target.value)}
+                      placeholder="Write a message..."
+                    />
+                    <button
+                      type="submit"
+                      className="compact-button"
+                      disabled={sendingRoomMessage || !roomMessageDraft.trim()}
+                    >
+                      {sendingRoomMessage ? 'Sending...' : 'Send'}
+                    </button>
+                  </form>
+                </section>
+              </>
+            )}
+          </div>
+        </aside>
       )}
 
       {goalReachedPromptOpen && liveSession && (

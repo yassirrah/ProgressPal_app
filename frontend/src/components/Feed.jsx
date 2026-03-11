@@ -5,9 +5,11 @@ import {
   getActivityTypes,
   getFeed,
   getFriendSuggestions,
+  getOutgoingSessionJoinRequests,
   getMySessions,
   getSessionComments,
   getSessionLikes,
+  submitSessionJoinRequest,
   getStoredUser,
   likeSession,
   sendFriendRequest,
@@ -62,6 +64,8 @@ const Feed = () => {
   const [supportLiveViewSessionId, setSupportLiveViewSessionId] = useState('');
   const [suggestedFriends, setSuggestedFriends] = useState([]);
   const [sendingSuggestionId, setSendingSuggestionId] = useState('');
+  const [outgoingJoinRequestsBySession, setOutgoingJoinRequestsBySession] = useState({});
+  const [joinRequestSubmittingBySession, setJoinRequestSubmittingBySession] = useState({});
 
   const loadLikeSummaries = useCallback(async (items) => {
     if (!currentUser?.id || !Array.isArray(items) || items.length === 0) {
@@ -199,6 +203,54 @@ const Feed = () => {
   useEffect(() => {
     void loadSuggestedFriends();
   }, [loadSuggestedFriends]);
+
+  const loadOutgoingJoinRequests = useCallback(async () => {
+    if (!currentUser?.id) {
+      setOutgoingJoinRequestsBySession({});
+      return;
+    }
+    try {
+      const outgoing = await getOutgoingSessionJoinRequests(currentUser.id, { liveOnly: true });
+      const next = {};
+      (Array.isArray(outgoing) ? outgoing : []).forEach((request) => {
+        if (!request?.sessionId) return;
+        next[request.sessionId] = request;
+      });
+      setOutgoingJoinRequestsBySession(next);
+    } catch {
+      // Keep feed usable on transient polling failures.
+    }
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return undefined;
+
+    const hasJoinableLiveCards = feedItems.some(
+      (item) => (isSessionOngoing(item) || isSessionPaused(item)) && item.userId !== currentUser.id,
+    );
+    if (!hasJoinableLiveCards) {
+      setOutgoingJoinRequestsBySession({});
+      return undefined;
+    }
+
+    const refreshStatuses = () => {
+      if (document.visibilityState !== 'visible') return;
+      void loadOutgoingJoinRequests();
+    };
+
+    refreshStatuses();
+    const intervalId = window.setInterval(refreshStatuses, 5000);
+    const handleFocus = () => refreshStatuses();
+    const handleVisibility = () => refreshStatuses();
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [currentUser?.id, feedItems, loadOutgoingJoinRequests]);
 
   useEffect(() => {
     if (!currentUser?.id) return undefined;
@@ -506,6 +558,30 @@ const Feed = () => {
     }
   };
 
+  const getJoinRequestStatus = (sessionId) => (
+    String(outgoingJoinRequestsBySession[sessionId]?.status || '').toUpperCase()
+  );
+
+  const handleSubmitJoinRequest = async (item) => {
+    if (!currentUser?.id || !item?.id) return;
+    if (joinRequestSubmittingBySession[item.id]) return;
+
+    try {
+      setJoinRequestSubmittingBySession((prev) => ({ ...prev, [item.id]: true }));
+      setError('');
+      const created = await submitSessionJoinRequest(currentUser.id, item.id);
+      if (created?.sessionId) {
+        setOutgoingJoinRequestsBySession((prev) => ({ ...prev, [created.sessionId]: created }));
+      }
+      showToast(`Join request sent to ${item.username}.`);
+    } catch (err) {
+      setError(err.message || 'Failed to submit join request');
+      void loadOutgoingJoinRequests();
+    } finally {
+      setJoinRequestSubmittingBySession((prev) => ({ ...prev, [item.id]: false }));
+    }
+  };
+
   const supportLiveViewSession = feedItems.find((item) => item.id === supportLiveViewSessionId) || null;
   const visibleFeedItems = useMemo(() => {
     const filtered = feedItems.filter((item) => {
@@ -793,15 +869,50 @@ const Feed = () => {
                 )}
               </div>
 
-              {isSessionOngoing(item) && currentUser && currentUser.id !== item.userId && (
-                <LiveSessionEngagement
-                  username={item.username}
-                  mode={getLiveEngagement(item.id).mode}
-                  chaseCount={getLiveEngagement(item.id).chaseCount}
-                  supportCount={getLiveEngagement(item.id).supportCount}
-                  onToggleChase={() => handleToggleChase(item)}
-                  onOpenSupport={() => handleOpenSupportLiveView(item)}
-                />
+              {(isSessionOngoing(item) || isSessionPaused(item)) && currentUser && currentUser.id !== item.userId && (
+                <>
+                  <div className="feed-join-request-row">
+                    {getJoinRequestStatus(item.id) === 'ACCEPTED' ? (
+                      <button
+                        type="button"
+                        className="compact-button"
+                        onClick={() => navigate(`/sessions/${item.id}/room`)}
+                      >
+                        Enter Room
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="compact-button secondary-button"
+                        onClick={() => handleSubmitJoinRequest(item)}
+                        disabled={
+                          joinRequestSubmittingBySession[item.id]
+                          || getJoinRequestStatus(item.id) === 'PENDING'
+                          || getJoinRequestStatus(item.id) === 'REJECTED'
+                        }
+                      >
+                        {joinRequestSubmittingBySession[item.id]
+                          ? 'Requesting...'
+                          : (getJoinRequestStatus(item.id) === 'PENDING'
+                            ? 'Pending'
+                            : (getJoinRequestStatus(item.id) === 'REJECTED'
+                              ? 'Rejected'
+                              : 'Request to Join'))}
+                      </button>
+                    )}
+                  </div>
+
+                  {isSessionOngoing(item) && (
+                    <LiveSessionEngagement
+                      username={item.username}
+                      mode={getLiveEngagement(item.id).mode}
+                      chaseCount={getLiveEngagement(item.id).chaseCount}
+                      supportCount={getLiveEngagement(item.id).supportCount}
+                      onToggleChase={() => handleToggleChase(item)}
+                      onOpenSupport={() => handleOpenSupportLiveView(item)}
+                    />
+                  )}
+                </>
               )}
 
               <div className="feed-card-footer">
