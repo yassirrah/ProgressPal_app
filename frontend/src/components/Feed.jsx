@@ -953,7 +953,12 @@ const Feed = () => {
             <div className="feed-suggest-list">
               {suggestedFriends.map((candidate) => (
                 <article key={candidate.userId} className="feed-suggest-item">
-                  <div className="feed-suggest-main">
+                  <button
+                    type="button"
+                    className="feed-suggest-main feed-suggest-main-button"
+                    onClick={() => navigate(`/users/${candidate.userId}/profile`)}
+                    aria-label={`Open ${candidate.username || 'user'} profile`}
+                  >
                     {candidate.profileImage ? (
                       <img
                         src={candidate.profileImage}
@@ -977,7 +982,7 @@ const Feed = () => {
                         <p className="feed-suggest-bio">{candidate.bio.trim()}</p>
                       )}
                     </div>
-                  </div>
+                  </button>
                   <button
                     type="button"
                     className="compact-button secondary-button feed-suggest-add-button"

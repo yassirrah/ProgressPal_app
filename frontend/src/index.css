@@ -3355,6 +3355,29 @@ form {
   flex: 1;
 }
 
+.feed-suggest-main-button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 9px;
+  color: inherit;
+}
+
+.feed-suggest-main-button:hover {
+  background: transparent;
+}
+
+.feed-suggest-main-button:hover .feed-suggest-name {
+  color: var(--text);
+}
+
+.feed-suggest-main-button:focus-visible {
+  outline: 2px solid rgba(14, 165, 168, 0.38);
+  outline-offset: 2px;
+}
+
 .feed-suggest-avatar,
 .feed-suggest-avatar-image {
   width: 32px;
@@ -3672,6 +3695,24 @@ form {
   align-items: center;
   gap: 0.65rem;
   min-width: 0;
+}
+
+.friend-row-main-button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+.friend-row-main-button:hover .friend-name {
+  color: var(--accent-strong);
+}
+
+.friend-row-main-button:focus-visible {
+  outline: 2px solid rgba(14, 165, 168, 0.38);
+  outline-offset: 2px;
 }
 
 .friend-avatar {

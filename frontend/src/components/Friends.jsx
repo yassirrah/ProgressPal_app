@@ -412,7 +412,12 @@ const Friends = () => {
                 : 'Suggested for you';
               return (
                 <article key={candidate.userId} className="friend-row-card">
-                  <div className="friend-row-main">
+                  <button
+                    type="button"
+                    className="friend-row-main friend-row-main-button"
+                    onClick={() => navigate(`/users/${candidate.userId}/profile`)}
+                    aria-label={`Open ${username} profile`}
+                  >
                     <div
                       className="friend-avatar"
                       style={avatarStyleFor(username)}
@@ -424,7 +429,7 @@ const Friends = () => {
                       <p className="friend-name">{username}</p>
                       <p className="friend-meta">{reasonText}</p>
                     </div>
-                  </div>
+                  </button>
                   <div className="friend-row-actions">
                     <button
                       type="button"
