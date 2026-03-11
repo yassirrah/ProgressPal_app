@@ -26,6 +26,27 @@ const formatRelativeFromNow = (value) => {
   return `${diffDays}d ago`;
 };
 
+const notificationDisplay = (notification) => {
+  const actorUsername = (notification?.actorUsername || '').trim();
+  const rawMessage = String(notification?.message || '').trim();
+  if (!actorUsername || !rawMessage) {
+    return {
+      actorUsername: actorUsername || 'User',
+      message: rawMessage || 'New notification',
+    };
+  }
+
+  const normalizedPrefix = `${actorUsername} `;
+  const message = rawMessage.startsWith(normalizedPrefix)
+    ? rawMessage.slice(normalizedPrefix.length)
+    : rawMessage;
+
+  return {
+    actorUsername,
+    message: message || rawMessage,
+  };
+};
+
 const notificationPath = (notification) => {
   const type = String(notification?.type || '').toUpperCase();
   const resourceType = String(notification?.resourceType || '').toUpperCase();
@@ -609,18 +630,36 @@ const Navbar = () => {
 
                   {notifications.length > 0 && (
                     <ul className="nav-notifications-list">
-                      {notifications.map((notification) => (
-                        <li key={notification.id}>
-                          <button
-                            type="button"
-                            className={`nav-notification-item ${notification.readAt ? '' : 'unread'}`}
-                            onClick={() => handleNotificationClick(notification)}
-                          >
-                            <span className="nav-notification-message">{notification.message}</span>
-                            <span className="nav-notification-time">{formatRelativeFromNow(notification.createdAt)}</span>
-                          </button>
-                        </li>
-                      ))}
+                      {notifications.map((notification) => {
+                        const display = notificationDisplay(notification);
+                        return (
+                          <li key={notification.id}>
+                            <button
+                              type="button"
+                              className={`nav-notification-item ${notification.readAt ? '' : 'unread'}`}
+                              onClick={() => handleNotificationClick(notification)}
+                            >
+                              <span className="nav-notification-header">
+                                {notification.actorProfileImage ? (
+                                  <img
+                                    src={notification.actorProfileImage}
+                                    alt=""
+                                    className="nav-notification-avatar-image"
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <span className="nav-notification-avatar" aria-hidden="true">
+                                    {display.actorUsername.charAt(0).toUpperCase()}
+                                  </span>
+                                )}
+                                <span className="nav-notification-actor">{display.actorUsername}</span>
+                              </span>
+                              <span className="nav-notification-message">{display.message}</span>
+                              <span className="nav-notification-time">{formatRelativeFromNow(notification.createdAt)}</span>
+                            </button>
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </div>
