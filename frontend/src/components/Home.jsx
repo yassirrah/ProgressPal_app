@@ -109,6 +109,7 @@ const Home = () => {
     title: '',
     description: '',
     visibility: 'PRIVATE',
+    notifyFriends: false,
     goalType: 'NONE',
     goalTarget: '',
     goalNote: '',
@@ -221,6 +222,11 @@ const Home = () => {
       setSessionForm((prev) => ({ ...prev, goalType: goalEnabled ? 'TIME' : 'NONE', goalTarget: '' }));
     }
   }, [selectedStartActivityType, sessionForm.goalType, goalEnabled]);
+
+  useEffect(() => {
+    if (sessionForm.visibility !== 'PRIVATE' || !sessionForm.notifyFriends) return;
+    setSessionForm((prev) => ({ ...prev, notifyFriends: false }));
+  }, [sessionForm.visibility, sessionForm.notifyFriends]);
 
 
   const liveSessionType = liveSession
@@ -422,6 +428,7 @@ const Home = () => {
         title: sessionForm.title,
         description: sessionForm.description,
         visibility: sessionForm.visibility,
+        notifyFriends: sessionForm.visibility === 'PRIVATE' ? false : !!sessionForm.notifyFriends,
         ...buildGoalPayload(
           goalEnabled
             ? {
@@ -441,6 +448,7 @@ const Home = () => {
         ...prev,
         title: '',
         description: '',
+        notifyFriends: false,
         goalType: 'NONE',
         goalTarget: '',
         goalNote: '',
@@ -1199,7 +1207,7 @@ const Home = () => {
                         <button
                           type="button"
                           className={`home-visibility-tab ${sessionForm.visibility === 'PRIVATE' ? 'active' : ''}`}
-                          onClick={() => setSessionForm((prev) => ({ ...prev, visibility: 'PRIVATE' }))}
+                          onClick={() => setSessionForm((prev) => ({ ...prev, visibility: 'PRIVATE', notifyFriends: false }))}
                           aria-pressed={sessionForm.visibility === 'PRIVATE'}
                         >
                           Private
@@ -1221,6 +1229,35 @@ const Home = () => {
                           Public
                         </button>
                       </div>
+                    </div>
+                    <div className="home-setup-step home-notify-row">
+                      <label htmlFor="home-notify-friends">3. Notify friends</label>
+                      <label
+                        htmlFor="home-notify-friends"
+                        className={`home-notify-control${sessionForm.visibility === 'PRIVATE' ? ' is-disabled' : ''}`}
+                      >
+                        <input
+                          id="home-notify-friends"
+                          type="checkbox"
+                          className="home-notify-input"
+                          checked={!!sessionForm.notifyFriends}
+                          disabled={sessionForm.visibility === 'PRIVATE'}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setSessionForm((prev) => ({
+                              ...prev,
+                              notifyFriends: prev.visibility === 'PRIVATE' ? false : checked,
+                            }));
+                          }}
+                        />
+                        <span className="home-notify-switch" aria-hidden="true" />
+                        <span className="home-notify-label">Notify my friends when this session starts</span>
+                      </label>
+                      <p className="message-muted home-notify-helper">
+                        {sessionForm.visibility === 'PRIVATE'
+                          ? 'Private sessions cannot notify friends.'
+                          : 'Friends will be notified when this session starts.'}
+                      </p>
                     </div>
 
                     {activityTypes.length === 0 && (
