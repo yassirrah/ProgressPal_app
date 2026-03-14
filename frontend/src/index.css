@@ -669,6 +669,105 @@ form {
   box-shadow: var(--shadow);
 }
 
+.auth-page {
+  min-height: clamp(280px, 36vh, 340px);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 0.06rem 0.1rem 0;
+}
+
+.auth-card {
+  width: min(100%, 460px);
+  border: 1px solid rgba(212, 223, 230, 0.38);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 168, 0.04), transparent 60%),
+    rgba(255, 255, 255, 0.98);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.075);
+  padding: 0.9rem 0.95rem 0.94rem;
+}
+
+.auth-card-head {
+  display: grid;
+  gap: 0.1rem;
+  margin-bottom: 0.42rem;
+}
+
+.auth-title {
+  margin: 0;
+  font-size: 1.22rem;
+  font-weight: 800;
+  line-height: 1.16;
+}
+
+.auth-subtitle {
+  margin: 0;
+  color: #6f8694;
+  font-size: 0.8rem;
+  line-height: 1.28;
+}
+
+.auth-error {
+  margin: 0 0 0.34rem;
+}
+
+.auth-form {
+  margin: 0;
+  max-width: 420px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  gap: 0.48rem;
+}
+
+.auth-form label {
+  margin-bottom: 0.16rem;
+  color: #364d5b;
+  font-size: 0.78rem;
+  font-weight: 760;
+}
+
+.auth-form input {
+  padding: 0.54rem 0.66rem;
+  border-color: rgba(212, 223, 230, 0.58);
+}
+
+.auth-primary-button {
+  width: 100%;
+  min-height: 2.48rem;
+  margin-top: 0.04rem;
+  font-size: 0.94rem;
+  font-weight: 760;
+  border-radius: 11px;
+  box-shadow: 0 8px 16px rgba(12, 143, 146, 0.16);
+}
+
+.auth-secondary-row {
+  margin: 0.48rem 0 0;
+  color: #6f8694;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.auth-secondary-link {
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: 720;
+  padding: 0;
+}
+
+.auth-secondary-link:hover,
+.auth-secondary-link:focus-visible {
+  background: transparent;
+  color: #0b7b7e;
+}
+
 .home-stack {
   display: grid;
   gap: 0.86rem;
@@ -2276,6 +2375,13 @@ form {
   white-space: nowrap;
 }
 
+.live-hero-meta-pill--info {
+  border-color: rgba(196, 210, 218, 0.62);
+  background: rgba(247, 250, 251, 0.92);
+  color: #657b89;
+  cursor: default;
+}
+
 .home-live-status-line {
   margin: 0;
   gap: 0.55rem;
@@ -2817,14 +2923,43 @@ form {
 
 .live-hero-room-button {
   cursor: pointer;
-  border: 1px solid rgba(184, 197, 206, 0.8);
-  background: rgba(246, 249, 250, 0.92);
+  border-color: rgba(14, 165, 168, 0.46);
+  background: rgba(14, 165, 168, 0.12);
+  color: #0f6468;
+  font-weight: 730;
+  gap: 0.28rem;
+  padding-inline: 0.52rem;
+}
+
+.live-hero-room-button-icon {
+  width: 0.82rem;
+  height: 0.82rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.live-hero-room-button-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+.live-hero-room-button:hover {
+  border-color: rgba(14, 165, 168, 0.62);
+  background: rgba(14, 165, 168, 0.2);
+  color: #0d575b;
+}
+
+.live-hero-room-button:focus-visible {
+  outline: 2px solid rgba(14, 165, 168, 0.34);
+  outline-offset: 1px;
 }
 
 .live-hero-room-button.is-open {
-  border-color: rgba(14, 165, 168, 0.34);
-  color: #0f6a6f;
-  background: rgba(14, 165, 168, 0.13);
+  border-color: rgba(14, 165, 168, 0.68);
+  color: #0c585c;
+  background: rgba(14, 165, 168, 0.24);
 }
 
 .session-room-page {
@@ -3897,6 +4032,16 @@ form {
     grid-template-columns: 1fr;
   }
 
+  .auth-page {
+    min-height: auto;
+    padding: 0 0;
+  }
+
+  .auth-card {
+    width: 100%;
+    padding: 0.86rem 0.84rem 0.9rem;
+  }
+
   .home-empty-state {
     flex-direction: column;
     align-items: stretch;
@@ -4785,6 +4930,12 @@ form {
   padding-top: 0.5rem;
 }
 
+.friends-toolbar-count-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.36rem;
+}
+
 .friends-toolbar-button {
   min-height: 1.96rem;
   padding-inline: 0.68rem;
@@ -4793,6 +4944,21 @@ form {
 .friends-toolbar-button.active {
   border-color: rgba(14, 165, 168, 0.3);
   color: #0f666b;
+}
+
+.friends-toolbar-count-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: #0ea5a8;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .friends-divider {
@@ -5054,6 +5220,12 @@ form {
   font-size: 0.8rem;
 }
 
+.friend-meta--single-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .friend-meta-secondary {
   margin-top: 0.08rem;
   font-size: 0.76rem;
@@ -5080,6 +5252,24 @@ form {
   padding: 0.1rem 0.42rem;
   font-size: 0.66rem;
   font-weight: 700;
+}
+
+.friend-context-chip--activity {
+  border-color: rgba(15, 110, 86, 0.16);
+  background: #e1f5ee;
+  color: #0f6e56;
+}
+
+.friend-context-chip--social {
+  border-color: rgba(133, 79, 11, 0.2);
+  background: #faeeda;
+  color: #854f0b;
+}
+
+.friend-context-chip--goal {
+  border-color: rgba(83, 74, 183, 0.18);
+  background: #eeedfe;
+  color: #534ab7;
 }
 
 .friend-row-actions {
@@ -5112,6 +5302,22 @@ form {
 .friends-empty-state--compact {
   font-size: 0.82rem;
   color: #6b8190;
+}
+
+.friends-more-suggestions-link {
+  margin-top: 0.14rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #5e7484;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: left;
+}
+
+.friends-more-suggestions-link:hover,
+.friends-more-suggestions-link:focus-visible {
+  background: transparent;
 }
 
 @media (max-width: 700px) {

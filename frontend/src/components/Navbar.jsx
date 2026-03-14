@@ -591,7 +591,25 @@ const Navbar = () => {
                 aria-haspopup="menu"
                 aria-label="Open notifications"
               >
-                <span className="nav-notification-icon" aria-hidden="true">🔔</span>
+                <span className="nav-notification-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false">
+                    <path
+                      d="M15.8 17.5H8.2c-1 0-1.6-1.1-1-2l1-1.4V10a3.8 3.8 0 1 1 7.6 0v4.1l1 1.4c.6.9 0 2-1 2z"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M10.2 18.5a1.8 1.8 0 0 0 3.6 0"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </span>
                 {unreadCount > 0 && (
                   <span className="nav-notification-badge" aria-label={`${unreadCount} unread notifications`}>
                     {unreadCount > 99 ? '99+' : unreadCount}

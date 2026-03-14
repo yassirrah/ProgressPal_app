@@ -703,6 +703,18 @@ const Feed = () => {
             const orderedComments = [...(commentsBySession[item.id] || [])]
               .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
             const commentsCount = orderedComments.length;
+            const isLiveCard = isSessionOngoing(item) || isSessionPaused(item);
+            const joinStatus = getJoinRequestStatus(item.id);
+            const roomParticipantCount = getRoomParticipantCount(item);
+            const roomParticipantLabel = roomParticipantCount === 1
+              ? '1 participant'
+              : `${roomParticipantCount} participants`;
+            const visibilityLabel = item.visibility
+              ? `${item.visibility.charAt(0)}${item.visibility.slice(1).toLowerCase()}`
+              : 'Private';
+            const footerScopeLabel = isLiveCard
+              ? `${visibilityLabel} room`
+              : `${visibilityLabel} session recap`;
             const shouldShowCommentsPanel = isCommentComposerOpen
               || Boolean(commentLoadingBySession[item.id])
               || Boolean(commentErrorBySession[item.id])
@@ -710,7 +722,7 @@ const Feed = () => {
             return (
             <article
               key={item.id}
-              className={`feed-card ${isSessionOngoing(item) ? 'feed-card--live' : 'feed-card--ended'}`}
+              className={`feed-card ${isLiveCard ? 'feed-card--live' : 'feed-card--ended'}`}
             >
               <div className="feed-card-head">
                 <div className="feed-author">
@@ -772,11 +784,11 @@ const Feed = () => {
                     {formatDurationCompact(getDurationSeconds(item))}
                   </strong>
                 </div>
-                {(isSessionOngoing(item) || isSessionPaused(item)) && (
+                {isLiveCard && (
                   <div className="feed-hero-stat feed-hero-stat--room">
-                    <span className="feed-hero-label">In Room</span>
+                    <span className="feed-hero-label">Room</span>
                     <strong className="feed-hero-value">
-                      {getRoomParticipantCount(item)}
+                      {roomParticipantLabel}
                     </strong>
                   </div>
                 )}
@@ -787,12 +799,12 @@ const Feed = () => {
                 )}
               </div>
 
-              {(isSessionOngoing(item) || isSessionPaused(item)) && currentUser && currentUser.id !== item.userId && (
+              {isLiveCard && currentUser && currentUser.id !== item.userId && (
                 <div className="feed-join-request-row">
-                  {getJoinRequestStatus(item.id) === 'ACCEPTED' ? (
+                  {joinStatus === 'ACCEPTED' ? (
                     <button
                       type="button"
-                      className="compact-button feed-room-cta-button"
+                      className="compact-button feed-room-cta-button feed-room-cta-button--enter"
                       onClick={() => navigate(`/sessions/${item.id}/room`, {
                         state: {
                           sessionContext: {
@@ -809,19 +821,19 @@ const Feed = () => {
                   ) : (
                     <button
                       type="button"
-                      className="compact-button secondary-button feed-room-cta-button"
+                      className={`compact-button feed-room-cta-button feed-room-cta-button--request${joinStatus === 'PENDING' ? ' is-pending' : ''}${joinStatus === 'REJECTED' ? ' is-rejected' : ''}`}
                       onClick={() => handleSubmitJoinRequest(item)}
                       disabled={
                         joinRequestSubmittingBySession[item.id]
-                        || getJoinRequestStatus(item.id) === 'PENDING'
-                        || getJoinRequestStatus(item.id) === 'REJECTED'
+                        || joinStatus === 'PENDING'
+                        || joinStatus === 'REJECTED'
                       }
                     >
                       {joinRequestSubmittingBySession[item.id]
                         ? 'Requesting...'
-                        : (getJoinRequestStatus(item.id) === 'PENDING'
+                        : (joinStatus === 'PENDING'
                           ? 'Pending'
-                          : (getJoinRequestStatus(item.id) === 'REJECTED'
+                          : (joinStatus === 'REJECTED'
                             ? 'Rejected'
                             : 'Request to Join'))}
                     </button>
@@ -844,9 +856,7 @@ const Feed = () => {
                     </span>
                   )}
                   <span className="feed-engagement-text">
-                    {(item.visibility || 'PRIVATE').toLowerCase()}
-                    {' '}
-                    session
+                    {footerScopeLabel}
                   </span>
                 </div>
 

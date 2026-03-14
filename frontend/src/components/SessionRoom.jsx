@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   getSessionRoomMessages,
@@ -68,6 +68,8 @@ const SessionRoom = () => {
   const [messageDraft, setMessageDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [clockNow, setClockNow] = useState(Date.now());
+  const chatListRef = useRef(null);
+  const messageInputRef = useRef(null);
 
   const loadRoom = useCallback(async (options = {}) => {
     const { silent = false } = options;
@@ -136,6 +138,15 @@ const SessionRoom = () => {
     return () => window.clearInterval(intervalId);
   }, []);
 
+  useEffect(() => {
+    const node = chatListRef.current;
+    if (!node) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      node.scrollTop = node.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [messages]);
+
   const handleSendMessage = async (event) => {
     event.preventDefault();
     if (!user?.id || !sessionId) return;
@@ -165,6 +176,9 @@ const SessionRoom = () => {
       setError(message);
     } finally {
       setSending(false);
+      window.requestAnimationFrame(() => {
+        messageInputRef.current?.focus();
+      });
     }
   };
 
@@ -286,7 +300,7 @@ const SessionRoom = () => {
             <section className="session-room-card session-room-card--chat">
               <h2>Room Chat</h2>
               <div className="session-room-chat-shell">
-                <div className="session-room-chat-list" aria-live="polite">
+                <div className="session-room-chat-list" aria-live="polite" ref={chatListRef}>
                   {messages.length === 0 ? (
                     <p className="message-muted">No messages yet.</p>
                   ) : (
@@ -316,11 +330,12 @@ const SessionRoom = () => {
                 <form className="session-room-composer" onSubmit={handleSendMessage}>
                   <input
                     type="text"
+                    ref={messageInputRef}
                     maxLength={1000}
                     value={messageDraft}
                     onChange={(event) => setMessageDraft(event.target.value)}
                     placeholder={roomLive ? 'Write a message...' : 'Room is not live'}
-                    disabled={!roomLive || sending}
+                    disabled={!roomLive}
                   />
                   <button
                     type="submit"

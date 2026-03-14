@@ -150,6 +150,8 @@ const Home = () => {
   const [roomMessageDraft, setRoomMessageDraft] = useState('');
   const [sendingRoomMessage, setSendingRoomMessage] = useState(false);
   const [decidingJoinRequestId, setDecidingJoinRequestId] = useState('');
+  const roomPanelChatListRef = useRef(null);
+  const roomPanelMessageInputRef = useRef(null);
   const previousTimeGoalDoneBySessionRef = useRef(new Map());
   const timeGoalPromptShownSessionIdsRef = useRef(new Set());
   const timeGoalPauseInFlightSessionIdRef = useRef(null);
@@ -746,6 +748,9 @@ const Home = () => {
       setRoomPanelError(err.message || 'Failed to send room message');
     } finally {
       setSendingRoomMessage(false);
+      window.requestAnimationFrame(() => {
+        roomPanelMessageInputRef.current?.focus();
+      });
     }
   };
 
@@ -917,6 +922,16 @@ const Home = () => {
   }, [liveSession?.id, loadRoomPanelData, roomPanelOpen, user?.id]);
 
   useEffect(() => {
+    if (!roomPanelOpen || roomPanelTab !== 'chat') return undefined;
+    const node = roomPanelChatListRef.current;
+    if (!node) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      node.scrollTop = node.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [roomMessages, roomPanelOpen, roomPanelTab]);
+
+  useEffect(() => {
     const sessionId = liveSession?.id;
     if (!sessionId || !user) return;
     if (liveSession.goalType !== 'TIME') return;
@@ -999,16 +1014,21 @@ const Home = () => {
                     <span className="live-hero-started-at">Started {liveStartedAtLabel}</span>
                   </p>
                   <div className="live-hero-meta-cluster" aria-label="Session metadata">
-                    <span className="live-hero-meta-pill">{liveVisibilityLabel}</span>
-                    <span className="live-hero-meta-pill">{liveTrackingLabel}</span>
-                    <span className="live-hero-meta-pill">{homeMomentumStats.streak} day streak</span>
-                    <span className="live-hero-meta-pill">{liveFocusLabel}</span>
+                    <span className="live-hero-meta-pill live-hero-meta-pill--info">{liveVisibilityLabel}</span>
+                    <span className="live-hero-meta-pill live-hero-meta-pill--info">{liveTrackingLabel}</span>
+                    <span className="live-hero-meta-pill live-hero-meta-pill--info">{homeMomentumStats.streak} day streak</span>
+                    <span className="live-hero-meta-pill live-hero-meta-pill--info">{liveFocusLabel}</span>
                     <button
                       type="button"
                       className={`live-hero-meta-pill live-hero-room-button${roomPanelOpen ? ' is-open' : ''}`}
                       onClick={openRoomPanel}
                     >
-                      {pendingRequestCount > 0 ? `Room (${pendingRequestCount})` : 'Open Room'}
+                      <span className="live-hero-room-button-icon" aria-hidden="true">
+                        <svg viewBox="0 0 16 16" role="img" focusable="false">
+                          <path d="M5.2 8.3a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2Zm0-4.1a1.5 1.5 0 1 0 0 3.1 1.5 1.5 0 0 0 0-3.1Zm5.6 3.3a2.2 2.2 0 1 1 0-4.4 2.2 2.2 0 0 1 0 4.4Zm0-3.3a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2ZM1.3 13c0-2.1 2.1-3.3 3.9-3.3s3.9 1.2 3.9 3.3v.4H1.3V13Zm6.6-.7c-.3-1.1-1.6-1.5-2.7-1.5-1 0-2.4.4-2.7 1.5H8Zm.9 1.1c0-1.6 1.6-2.5 3-2.5s3 1 3 2.5v.1H8.8v-.1Zm4.7-.9c-.3-.7-1.2-.9-1.8-.9-.6 0-1.5.2-1.8.9h3.6Z" />
+                        </svg>
+                      </span>
+                      <span>{pendingRequestCount > 0 ? `Open Room (${pendingRequestCount})` : 'Open Room'}</span>
                     </button>
                   </div>
                 </div>
@@ -1770,7 +1790,7 @@ const Home = () => {
                   <section className="home-room-panel-section home-room-panel-section--chat">
                     <h3>Room Chat</h3>
                     <div className="home-room-chat-shell">
-                      <div className="home-room-chat-list" aria-live="polite">
+                      <div className="home-room-chat-list" aria-live="polite" ref={roomPanelChatListRef}>
                         {roomMessages.length === 0 ? (
                           <p className="home-room-empty-muted">No room messages yet.</p>
                         ) : (
@@ -1797,6 +1817,7 @@ const Home = () => {
                       <form className="home-room-chat-composer" onSubmit={handleSendRoomPanelMessage}>
                         <input
                           type="text"
+                          ref={roomPanelMessageInputRef}
                           maxLength={1000}
                           value={roomMessageDraft}
                           onChange={(event) => setRoomMessageDraft(event.target.value)}
