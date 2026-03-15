@@ -19,6 +19,7 @@ import {
 const isSessionPaused = (item) => Boolean(item?.paused ?? (item?.pausedAt && !item?.endedAt));
 const isSessionOngoing = (item) => Boolean(item?.ongoing ?? (!item?.endedAt && !isSessionPaused(item)));
 const isPrivateVisibility = (item) => String(item?.visibility || '').toUpperCase() === 'PRIVATE';
+const SUGGEST_AVATAR_TONES = ['teal', 'purple', 'amber'];
 
 const Feed = () => {
   const navigate = useNavigate();
@@ -320,6 +321,18 @@ const Feed = () => {
   };
 
   const getInitial = (text) => (text || '?').trim().charAt(0).toUpperCase() || '?';
+
+  const getSuggestionAvatarTone = (candidate) => {
+    const seed = String(candidate?.userId || candidate?.username || '');
+    if (!seed) return SUGGEST_AVATAR_TONES[0];
+    let hash = 0;
+    for (let index = 0; index < seed.length; index += 1) {
+      hash = ((hash << 5) - hash) + seed.charCodeAt(index);
+      hash |= 0;
+    }
+    const toneIndex = Math.abs(hash) % SUGGEST_AVATAR_TONES.length;
+    return SUGGEST_AVATAR_TONES[toneIndex];
+  };
 
   const getActivityIconKey = (activityName) => {
     const value = (activityName || '').toLowerCase();
@@ -719,7 +732,15 @@ const Feed = () => {
 
         <article className="feed-side-card">
           <p className="feed-side-kicker">Momentum</p>
-          <p className="feed-momentum-main">{sidebarStats.streak} day streak</p>
+          <p className="feed-momentum-main feed-momentum-main--rich">
+            <span className="feed-momentum-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" role="img" focusable="false">
+                <path d="M7.9 1.2c.3 2-.6 2.8-1.4 3.5-.8.7-1.5 1.3-1.5 2.8 0 1.5 1.2 2.7 2.8 2.7s2.8-1.2 2.8-2.7c0-.9-.4-1.5-.9-2.1-.5-.6-1-1.3-.8-2.2 2.1 1 3.4 3 3.4 5.2 0 3-2.4 5.4-5.3 5.4A5.4 5.4 0 0 1 1.7 8c0-2.9 2.1-5.4 5-6.1.5-.1.9-.4 1.2-.7Zm.2 7.2c.9.6 1.4 1.3 1.4 2.1 0 1-.8 1.8-1.8 1.8a1.8 1.8 0 0 1-1.8-1.8c0-.8.5-1.4 1.2-2 .4-.3.8-.7 1-1.3Z" />
+              </svg>
+            </span>
+            <span className="feed-momentum-count">{sidebarStats.streak}</span>
+            <span className="feed-momentum-label">day streak</span>
+          </p>
           <p className="feed-side-muted">Active on {sidebarStats.activeDaysLast7} of the last 7 days</p>
           <p className={`feed-momentum-trend ${sidebarStats.trendTone}`}>{sidebarStats.trendText}</p>
         </article>
@@ -1101,6 +1122,7 @@ const Feed = () => {
             <div className="feed-suggest-list">
               {suggestedFriends.map((candidate) => {
                 const candidateSignal = getSuggestedFriendSignal(candidate);
+                const avatarTone = getSuggestionAvatarTone(candidate);
                 return (
                   <article key={candidate.userId} className="feed-suggest-item">
                     <button
@@ -1117,7 +1139,7 @@ const Feed = () => {
                           aria-hidden="true"
                         />
                       ) : (
-                        <span className="feed-suggest-avatar" aria-hidden="true">
+                        <span className={`feed-suggest-avatar feed-suggest-avatar--${avatarTone}`} aria-hidden="true">
                           {getInitial(candidate.username)}
                         </span>
                       )}

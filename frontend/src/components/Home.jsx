@@ -149,6 +149,28 @@ const getLongestStreakThisMonth = (sessions) => {
   return longest;
 };
 
+const getCurrentStreak = (sessions) => {
+  const source = Array.isArray(sessions) ? sessions : [];
+  const activeDays = new Set();
+  source.forEach((session) => {
+    if (!session?.startedAt) return;
+    const started = new Date(session.startedAt);
+    if (Number.isNaN(started.getTime())) return;
+    activeDays.add(`${started.getFullYear()}-${started.getMonth() + 1}-${started.getDate()}`);
+  });
+
+  let streak = 0;
+  const cursor = new Date();
+  cursor.setHours(0, 0, 0, 0);
+  for (let i = 0; i < 365; i += 1) {
+    const key = `${cursor.getFullYear()}-${cursor.getMonth() + 1}-${cursor.getDate()}`;
+    if (!activeDays.has(key)) break;
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+};
+
 const Home = () => {
   const user = useMemo(() => getStoredUser(), []);
   const [activityTypes, setActivityTypes] = useState([]);
@@ -655,8 +677,11 @@ const Home = () => {
     const sessionsForSummary = mySessions.some((session) => session?.id === liveSessionSnapshot.id)
       ? mySessions
       : [...mySessions, liveSessionSnapshot];
+    const sessionsBeforeStop = mySessions.filter((session) => session?.id !== liveSessionSnapshot.id);
     const sessionsThisWeek = countSessionsWithinDays(sessionsForSummary, 7);
-    const currentStreak = homeMomentumStats.streak;
+    const currentStreak = getCurrentStreak(sessionsForSummary);
+    const streakBeforeSession = getCurrentStreak(sessionsBeforeStop);
+    const didStreakIncrease = currentStreak > streakBeforeSession;
     const longestStreakThisMonth = getLongestStreakThisMonth(sessionsForSummary);
     const streakMilestoneText = currentStreak >= 3
       ? (
@@ -698,6 +723,7 @@ const Home = () => {
         totalTimeLabel: formatDuration(durationSeconds),
         currentStreak,
         currentStreakLabel: `${currentStreak} day streak`,
+        didStreakIncrease,
         sessionsThisWeek,
         streakMilestoneText,
         showReflectionInput: !hadSessionNote,
@@ -1095,7 +1121,7 @@ const Home = () => {
   ]);
 
   return (
-    <div className={`home-stack${liveSession ? ' focus-mode' : ''}`}>
+    <div className={`home-stack${liveSession ? ' focus-mode' : ''}${liveSession && roomPanelOpen ? ' room-panel-open' : ''}${sessionCompleteModal ? ' session-complete-open' : ''}`}>
       <h1 className="page-title">{liveSession ? 'Live Session' : 'Home'}</h1>
       <p className="home-page-subtitle">
         {liveSession ? 'Track your focus in real time' : 'Keep your streak alive today'}
@@ -1120,13 +1146,17 @@ const Home = () => {
                     <span className="live-hero-started-at">Started {liveStartedAtLabel}</span>
                   </p>
                   <div className="live-hero-meta-cluster" aria-label="Session metadata">
-                    <span className="live-hero-meta-pill live-hero-meta-pill--config">{liveVisibilityLabel}</span>
-                    <span className="live-hero-meta-pill live-hero-meta-pill--config">{liveTrackingLabel}</span>
-                    <span className="live-hero-meta-pill live-hero-meta-pill--streak">{homeMomentumStats.streak} day streak</span>
+                    <span className="live-hero-meta-pill live-hero-meta-pill--config live-hero-meta-pill--setting">{liveVisibilityLabel}</span>
+                    <span className="live-hero-meta-pill live-hero-meta-pill--config live-hero-meta-pill--setting">{liveTrackingLabel}</span>
+                    <span className="live-hero-meta-pill live-hero-meta-pill--streak">
+                      <span className="live-hero-streak-dot" aria-hidden="true" />
+                      <span className="live-hero-streak-value">{homeMomentumStats.streak} day streak</span>
+                    </span>
                     <span className="live-hero-meta-pill live-hero-meta-pill--status">{liveFocusLabel}</span>
+                    <span className="live-hero-meta-divider" aria-hidden="true" />
                     <button
                       type="button"
-                      className={`live-hero-meta-pill live-hero-meta-pill--config live-hero-room-button${roomPanelOpen ? ' is-open' : ''}`}
+                      className={`live-hero-room-button${roomPanelOpen ? ' is-open' : ''}`}
                       onClick={openRoomPanel}
                     >
                       <span className="live-hero-room-button-icon" aria-hidden="true">
@@ -1788,7 +1818,7 @@ const Home = () => {
               onClick={() => setRoomPanelTab('participants')}
             >
               Participants
-              {roomMemberCount > 0 && <span className="home-room-panel-tab-count">{roomMemberCount}</span>}
+              {roomMemberCount > 0 && <span className="home-room-panel-tab-count home-room-panel-tab-count--participants">{roomMemberCount}</span>}
             </button>
             <button
               type="button"
@@ -1990,6 +2020,14 @@ const Home = () => {
               <p className="session-complete-subtext">
                 {sessionCompleteModal.activityName} · {sessionCompleteModal.durationLabel}
               </p>
+              <p className="session-complete-feed-line">
+                <span className="session-complete-feed-icon" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" role="img" focusable="false">
+                    <path d="M2.5 1.8h11a.7.7 0 0 1 .7.7v11a.7.7 0 0 1-.7.7h-11a.7.7 0 0 1-.7-.7v-11a.7.7 0 0 1 .7-.7Zm.3 1.4v10.3h10.3V3.2H2.8Zm2.1 1.4h6.2v1.1H4.9V4.6Zm0 2.5h6.2v1.1H4.9V7.1Zm0 2.5h4.1v1.1H4.9V9.6Z" />
+                  </svg>
+                </span>
+                <span>Shared to your feed</span>
+              </p>
             </div>
 
             {sessionCompleteModal.streakMilestoneText && (
@@ -2003,9 +2041,9 @@ const Home = () => {
                 <span>Total Time</span>
                 <strong>{sessionCompleteModal.totalTimeLabel}</strong>
               </div>
-              <div className="session-complete-stat-pill">
+              <div className={`session-complete-stat-pill session-complete-stat-pill--streak${sessionCompleteModal.didStreakIncrease ? ' is-incremented' : ''}`}>
                 <span>Current Streak</span>
-                <strong>{sessionCompleteModal.currentStreakLabel}</strong>
+                <strong>{sessionCompleteModal.currentStreak}</strong>
               </div>
               <div className="session-complete-stat-pill">
                 <span>Sessions This Week</span>
@@ -2023,7 +2061,7 @@ const Home = () => {
                   maxLength={180}
                   value={sessionCompleteReflection}
                   onChange={(event) => setSessionCompleteReflection(event.target.value)}
-                  placeholder="What worked well this session?"
+                  placeholder="Any notes for next time?"
                 />
               </div>
             )}
@@ -2031,7 +2069,7 @@ const Home = () => {
             <div className="session-complete-actions">
               <button
                 type="button"
-                className="compact-button"
+                className="compact-button session-complete-done-button"
                 onClick={handleDismissSessionCompleteModal}
               >
                 Done

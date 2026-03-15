@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getStoredUser, getUserProfile, sendFriendRequest } from '../lib/api';
 
-const CHART_PALETTE = ['#0ea5a8', '#3b82f6', '#f59e0b', '#ef4444', '#94a3b8'];
+const CHART_PALETTE = [
+  'var(--chart-series-1)',
+  'var(--chart-series-2)',
+  'var(--chart-series-3)',
+  'var(--chart-series-4)',
+];
+const ACTIVITY_BAR_PALETTE = ['var(--chart-activity-primary)', 'var(--chart-activity-secondary)'];
 
 const scopeLabel = (scope) => {
   if (scope === 'OWNER') return 'Your view';
@@ -138,7 +144,7 @@ const UserProfile = () => {
   });
   const donutGradient = donutSlices.length > 0
     ? `conic-gradient(${donutSlices.map((slice) => `${slice.color} ${slice.start}% ${slice.end}%`).join(', ')})`
-    : 'conic-gradient(#e5e7eb 0% 100%)';
+    : 'conic-gradient(var(--border-soft) 0% 100%)';
 
   const sortedRecentSessions = [...recentSessions]
     .filter((session) => session && session.startedAt)
@@ -362,7 +368,7 @@ const UserProfile = () => {
                                 className="user-profile-bar-fill"
                                 style={{
                                   width: `${width}%`,
-                                  backgroundColor: CHART_PALETTE[index % CHART_PALETTE.length],
+                                  backgroundColor: ACTIVITY_BAR_PALETTE[index % ACTIVITY_BAR_PALETTE.length],
                                 }}
                               />
                             </div>

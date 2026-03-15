@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect } from 'react';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import Home from './components/Home';
@@ -13,8 +14,24 @@ import Navbar from './components/Navbar';
 import { getStoredUser } from './lib/api';
 import './App.css';
 
+const THEME_STORAGE_KEY = 'progresspal-theme';
+
+const resolveInitialTheme = () => {
+  if (typeof window === 'undefined') return 'light';
+  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (stored === 'light' || stored === 'dark') return stored;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+};
+
 function App() {
   const user = getStoredUser();
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const appliedTheme = resolveInitialTheme();
+    root.dataset.theme = appliedTheme;
+  }, []);
+
   return (
     <Router>
       <div className="app-shell">
