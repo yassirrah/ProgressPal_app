@@ -285,6 +285,8 @@ const Navbar = () => {
   const navLinkClass = ({ isActive }) => `nav-link${isActive ? ' active' : ''}`;
   const userInitial = (user?.username || '?').trim().charAt(0).toUpperCase() || '?';
   const closeMobileNav = () => setMobileNavOpen(false);
+  const isLoginRoute = location.pathname === '/login';
+  const isSignupRoute = location.pathname === '/signup';
   const searchTargets = useMemo(() => {
     const baseTargets = [
       { id: 'home', label: 'Home', hint: 'Live and start session', path: '/', category: 'Page' },
@@ -462,6 +464,36 @@ const Navbar = () => {
     if (!searchOpen) return;
     searchInputRef.current?.focus();
   }, [searchOpen]);
+
+  if (isLoginRoute || isSignupRoute) {
+    return (
+      <nav>
+        <div className="nav-inner nav-inner--auth">
+          <div className="nav-zone nav-zone-left">
+            <Link to="/" className="brand-link" aria-label="ProgressPal home">
+              {!logoMissing ? (
+                <img
+                  src="/progresspal-logo.png"
+                  alt="ProgressPal"
+                  className="brand-logo"
+                  onError={() => setLogoMissing(true)}
+                />
+              ) : (
+                <span className="brand-text">ProgressPal</span>
+              )}
+            </Link>
+          </div>
+          <div className="nav-zone nav-zone-right">
+            {isLoginRoute ? (
+              <Link to="/signup" className="nav-auth-signup-link">Sign Up</Link>
+            ) : (
+              <Link to="/login" className="nav-auth-login-link">Login</Link>
+            )}
+          </div>
+        </div>
+      </nav>
+    );
+  }
 
   return (
     <nav>

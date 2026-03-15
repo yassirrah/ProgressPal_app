@@ -12,6 +12,24 @@ import {
   sendFriendRequest,
 } from '../lib/api';
 
+const AVATAR_TONE_STYLES = [
+  {
+    background: 'var(--tone-teal-bg)',
+    borderColor: 'color-mix(in srgb, var(--tone-teal-text) 24%, var(--border))',
+    color: 'var(--tone-teal-text)',
+  },
+  {
+    background: 'var(--tone-purple-bg)',
+    borderColor: 'color-mix(in srgb, var(--tone-purple-text) 24%, var(--border))',
+    color: 'var(--tone-purple-text)',
+  },
+  {
+    background: 'var(--tone-amber-bg)',
+    borderColor: 'color-mix(in srgb, var(--tone-amber-text) 24%, var(--border))',
+    color: 'var(--tone-amber-text)',
+  },
+];
+
 const formatRelativeFromNow = (value) => {
   if (!value) return '';
   const now = Date.now();
@@ -246,12 +264,8 @@ const Friends = () => {
       hash = ((hash << 5) - hash) + text.charCodeAt(i);
       hash |= 0;
     }
-    const hue = Math.abs(hash) % 360;
-    return {
-      background: `hsla(${hue}, 70%, 92%, 1)`,
-      borderColor: `hsla(${hue}, 55%, 78%, 1)`,
-      color: `hsla(${hue}, 55%, 28%, 1)`,
-    };
+    const toneIndex = Math.abs(hash) % AVATAR_TONE_STYLES.length;
+    return AVATAR_TONE_STYLES[toneIndex];
   };
 
   const friendPreviewFor = (friendId) => {
@@ -620,7 +634,7 @@ const Friends = () => {
                     </button>
                     <button
                       type="button"
-                      className="compact-button secondary-button"
+                      className="compact-button danger-soft-button"
                       disabled={deletingFriendId === friend.FriendId}
                       onClick={() => handleDeleteFriend(friend.FriendId)}
                     >

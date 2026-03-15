@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { loginUser, setStoredUser } from '../lib/api';
+import AuthValueColumn from './AuthValueColumn';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -22,45 +23,58 @@ const Login = () => {
 
   return (
     <div className="auth-page auth-page--login">
-      <section className="auth-card auth-card--login">
-        <header className="auth-card-head">
-          <h1 className="auth-title">Login</h1>
-          <p className="auth-subtitle">Welcome back. Continue where you left off.</p>
-        </header>
+      <section className="auth-login-split" aria-label="Login">
+        <AuthValueColumn />
 
-        {error && <p className="message-error auth-error">{error}</p>}
+        <section className="auth-login-form-col">
+          <header className="auth-card-head">
+            <h1 className="auth-title">Welcome back</h1>
+            <p className="auth-subtitle">Continue where you left off.</p>
+          </header>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <div>
-            <label htmlFor="login-email">Email</label>
-            <input
-              id="login-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="login-password">Password</label>
-            <input
-              id="login-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </div>
-          <button type="submit" className="auth-primary-button">Log In</button>
-        </form>
+          {error && <p className="message-error auth-error">{error}</p>}
 
-        <p className="auth-secondary-row">
-          Don&apos;t have an account?
-          {' '}
-          <Link to="/signup" className="auth-secondary-link">Sign up</Link>
-        </p>
+          <form className="auth-form auth-form--login" onSubmit={handleSubmit}>
+            <div>
+              <label htmlFor="login-email">Email</label>
+              <input
+                id="login-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="login-password">Password</label>
+              <input
+                id="login-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </div>
+
+            <a
+              href="/forgot-password"
+              className="auth-forgot-link"
+              onClick={(event) => event.preventDefault()}
+            >
+              Forgot password?
+            </a>
+
+            <button type="submit" className="auth-primary-button">Log In</button>
+          </form>
+
+          <p className="auth-secondary-row">
+            Don&apos;t have an account?
+            {' '}
+            <Link to="/signup" className="auth-secondary-link">Sign up</Link>
+          </p>
+        </section>
       </section>
     </div>
   );
