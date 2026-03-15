@@ -98,6 +98,57 @@ const toInitials = (value) => {
   return `${first}${second}`.toUpperCase();
 };
 
+const formatDurationLabel = (totalSeconds) => {
+  const safeSeconds = Math.max(0, Number(totalSeconds) || 0);
+  const minutes = Math.max(1, Math.round(safeSeconds / 60));
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (remainingMinutes === 0) return `${hours} hour${hours === 1 ? '' : 's'}`;
+  return `${hours}h ${remainingMinutes}m`;
+};
+
+const countSessionsWithinDays = (sessions, days) => {
+  const source = Array.isArray(sessions) ? sessions : [];
+  const nowMs = Date.now();
+  const since = nowMs - (days * 24 * 60 * 60 * 1000);
+  return source.reduce((count, session) => {
+    if (!session?.startedAt) return count;
+    const startedMs = new Date(session.startedAt).getTime();
+    if (Number.isNaN(startedMs)) return count;
+    return startedMs >= since ? count + 1 : count;
+  }, 0);
+};
+
+const getLongestStreakThisMonth = (sessions) => {
+  const source = Array.isArray(sessions) ? sessions : [];
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const activeDays = new Set();
+  source.forEach((session) => {
+    if (!session?.startedAt) return;
+    const started = new Date(session.startedAt);
+    if (Number.isNaN(started.getTime())) return;
+    if (started.getFullYear() !== year || started.getMonth() !== month) return;
+    activeDays.add(started.getDate());
+  });
+
+  let longest = 0;
+  let current = 0;
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    if (activeDays.has(day)) {
+      current += 1;
+      longest = Math.max(longest, current);
+    } else {
+      current = 0;
+    }
+  }
+  return longest;
+};
+
 const Home = () => {
   const user = useMemo(() => getStoredUser(), []);
   const [activityTypes, setActivityTypes] = useState([]);
@@ -111,6 +162,8 @@ const Home = () => {
   const [sessionNotice, setSessionNotice] = useState('');
   const [toast, setToast] = useState(null);
   const [goalReachedPromptOpen, setGoalReachedPromptOpen] = useState(false);
+  const [sessionCompleteModal, setSessionCompleteModal] = useState(null);
+  const [sessionCompleteReflection, setSessionCompleteReflection] = useState('');
 
   const [stopPanelOpen, setStopPanelOpen] = useState(false);
   const [goalPanelOpen, setGoalPanelOpen] = useState(false);
@@ -126,6 +179,7 @@ const Home = () => {
     goalTarget: '',
     goalNote: '',
   });
+  const [quickNoteSaveState, setQuickNoteSaveState] = useState('idle');
 
   const [sessionForm, setSessionForm] = useState({
     activityTypeId: '',
@@ -152,6 +206,7 @@ const Home = () => {
   const [decidingJoinRequestId, setDecidingJoinRequestId] = useState('');
   const roomPanelChatListRef = useRef(null);
   const roomPanelMessageInputRef = useRef(null);
+  const sessionCompleteReflectionRef = useRef(null);
   const previousTimeGoalDoneBySessionRef = useRef(new Map());
   const timeGoalPromptShownSessionIdsRef = useRef(new Set());
   const timeGoalPauseInFlightSessionIdRef = useRef(null);
@@ -221,6 +276,7 @@ const Home = () => {
         goalNote: '',
       });
       setLiveQuickNote('');
+      setQuickNoteSaveState('idle');
       return;
     }
     const backendGoalTarget = liveSession.goalTarget == null ? null : Number(liveSession.goalTarget);
@@ -237,8 +293,31 @@ const Home = () => {
     setMetricProgressDraft(
       liveSession.metricCurrentValue == null ? '' : String(liveSession.metricCurrentValue),
     );
-    setLiveQuickNote(liveSession.description || '');
+    const noteStorageKey = `progresspal-live-note-${liveSession.id}`;
+    let persistedQuickNote = '';
+    try {
+      persistedQuickNote = window.localStorage.getItem(noteStorageKey) || '';
+    } catch {
+      persistedQuickNote = '';
+    }
+    const nextQuickNote = persistedQuickNote || liveSession.description || '';
+    setLiveQuickNote(nextQuickNote);
+    setQuickNoteSaveState(nextQuickNote ? 'saved' : 'idle');
   }, [liveSession]);
+
+  useEffect(() => {
+    if (!liveSession?.id) return undefined;
+    setQuickNoteSaveState('saving');
+    const timeoutId = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(`progresspal-live-note-${liveSession.id}`, liveQuickNote);
+      } catch {
+        // Ignore local storage write errors and keep the UI responsive.
+      }
+      setQuickNoteSaveState('saved');
+    }, 420);
+    return () => window.clearTimeout(timeoutId);
+  }, [liveQuickNote, liveSession?.id]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -354,9 +433,6 @@ const Home = () => {
   const liveGoalTargetLabel = liveGoalTargetNumeric == null
     ? '-'
     : formatGoalValue(liveGoalTargetNumeric, liveSession?.goalType, liveMetricLabel);
-  const liveGoalDoneLabel = liveGoalDoneNumeric == null
-    ? '-'
-    : formatGoalValue(liveGoalDoneNumeric, liveSession?.goalType, liveMetricLabel);
   const liveGoalPercentLabel = liveGoalProgressPct == null
     ? '-'
     : `${Number(liveGoalProgressPct.toFixed(1))}%`;
@@ -375,21 +451,6 @@ const Home = () => {
   const liveGoalReached = liveGoalDeltaNumeric != null
     && liveGoalDeltaNumeric <= 0.0001
     && liveGoalDeltaNumeric >= -0.0001;
-  const liveGoalStateSummary = (() => {
-    if (!hasLiveGoal) {
-      return 'No goal set yet. Add one to keep your session intentional.';
-    }
-    if (liveGoalExceeded) {
-      return `Goal exceeded by ${liveGoalDeltaMagnitudeLabel}.`;
-    }
-    if (liveGoalReached) {
-      return 'Goal reached.';
-    }
-    if (liveGoalRemainingNumeric != null) {
-      return `${liveGoalRemainingLabel} left to target.`;
-    }
-    return 'Goal is active.';
-  })();
   const liveGoalStatusSecondaryLabel = liveGoalExceeded
     ? 'Exceeded'
     : (liveGoalReached ? 'Status' : 'Remaining');
@@ -588,6 +649,23 @@ const Home = () => {
     if (!user || !liveSession) return;
 
     const metricKind = liveMetricKind;
+    const liveSessionSnapshot = liveSession;
+    const fallbackDurationSeconds = getElapsedDurationSeconds(liveSessionSnapshot);
+    const activityName = liveSessionType?.name || 'Session';
+    const sessionsForSummary = mySessions.some((session) => session?.id === liveSessionSnapshot.id)
+      ? mySessions
+      : [...mySessions, liveSessionSnapshot];
+    const sessionsThisWeek = countSessionsWithinDays(sessionsForSummary, 7);
+    const currentStreak = homeMomentumStats.streak;
+    const longestStreakThisMonth = getLongestStreakThisMonth(sessionsForSummary);
+    const streakMilestoneText = currentStreak >= 3
+      ? (
+        currentStreak >= longestStreakThisMonth
+          ? `🔥 ${currentStreak} day streak — your longest this month`
+          : `🔥 ${currentStreak} day streak — momentum is building`
+      )
+      : '';
+    const hadSessionNote = Boolean((liveQuickNote || liveSessionSnapshot.description || '').trim());
     let payload = {};
 
     if (metricKind !== 'NONE' && stopMetricValue.trim() !== '') {
@@ -607,8 +685,23 @@ const Home = () => {
       setSessionError('');
       setSessionNotice('');
       const stopped = await stopSession(user.id, liveSession.id, payload);
+      const stoppedDurationSeconds = Number(stopped?.durationSeconds);
+      const durationSeconds = Number.isFinite(stoppedDurationSeconds) ? stoppedDurationSeconds : fallbackDurationSeconds;
       setStopPanelOpen(false);
       setSessionNotice(buildGoalFeedback(stopped, liveMetricLabel));
+      setSessionCompleteReflection('');
+      setSessionCompleteModal({
+        sessionId: stopped?.id || liveSessionSnapshot.id,
+        activityName,
+        durationSeconds,
+        durationLabel: formatDurationLabel(durationSeconds),
+        totalTimeLabel: formatDuration(durationSeconds),
+        currentStreak,
+        currentStreakLabel: `${currentStreak} day streak`,
+        sessionsThisWeek,
+        streakMilestoneText,
+        showReflectionInput: !hadSessionNote,
+      });
       await loadData();
     } catch (err) {
       setSessionError(err.message || 'Failed to stop session');
@@ -619,6 +712,11 @@ const Home = () => {
     if (!liveSession) return;
     setSessionError('');
     setStopPanelOpen(true);
+  };
+
+  const handleDismissSessionCompleteModal = () => {
+    setSessionCompleteModal(null);
+    setSessionCompleteReflection('');
   };
 
   const handleResumeFromToast = async (sessionId) => {
@@ -902,6 +1000,14 @@ const Home = () => {
   };
 
   useEffect(() => {
+    if (!sessionCompleteModal || !sessionCompleteModal.showReflectionInput) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      sessionCompleteReflectionRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [sessionCompleteModal]);
+
+  useEffect(() => {
     if (!roomPanelOpen || !liveSession?.id || !user?.id) return undefined;
 
     void loadRoomPanelData();
@@ -1014,13 +1120,13 @@ const Home = () => {
                     <span className="live-hero-started-at">Started {liveStartedAtLabel}</span>
                   </p>
                   <div className="live-hero-meta-cluster" aria-label="Session metadata">
-                    <span className="live-hero-meta-pill live-hero-meta-pill--info">{liveVisibilityLabel}</span>
-                    <span className="live-hero-meta-pill live-hero-meta-pill--info">{liveTrackingLabel}</span>
-                    <span className="live-hero-meta-pill live-hero-meta-pill--info">{homeMomentumStats.streak} day streak</span>
-                    <span className="live-hero-meta-pill live-hero-meta-pill--info">{liveFocusLabel}</span>
+                    <span className="live-hero-meta-pill live-hero-meta-pill--config">{liveVisibilityLabel}</span>
+                    <span className="live-hero-meta-pill live-hero-meta-pill--config">{liveTrackingLabel}</span>
+                    <span className="live-hero-meta-pill live-hero-meta-pill--streak">{homeMomentumStats.streak} day streak</span>
+                    <span className="live-hero-meta-pill live-hero-meta-pill--status">{liveFocusLabel}</span>
                     <button
                       type="button"
-                      className={`live-hero-meta-pill live-hero-room-button${roomPanelOpen ? ' is-open' : ''}`}
+                      className={`live-hero-meta-pill live-hero-meta-pill--config live-hero-room-button${roomPanelOpen ? ' is-open' : ''}`}
                       onClick={openRoomPanel}
                     >
                       <span className="live-hero-room-button-icon" aria-hidden="true">
@@ -1058,28 +1164,6 @@ const Home = () => {
                     </button>
                   </div>
                 )}
-
-                <div className="live-hero-row live-hero-row--goal">
-                  <div className="live-goal-compact">
-                    <p className="live-goal-compact-label">Session goal</p>
-                    <p className="live-goal-compact-value">
-                      {hasLiveGoal
-                        ? `Done ${liveGoalDoneLabel} of ${liveGoalTargetLabel}`
-                        : 'No goal set'}
-                    </p>
-                    <p className="live-goal-compact-state">{liveGoalStateSummary}</p>
-                  </div>
-                  {!goalPanelOpen && (
-                    <button
-                      type="button"
-                      className="secondary-button compact-button live-goal-cta live-action-button"
-                      onClick={() => setGoalPanelOpen(true)}
-                      aria-label={hasLiveGoal ? 'Edit goal' : 'Set goal'}
-                    >
-                      {hasLiveGoal ? 'Edit Goal' : 'Set Goal'}
-                    </button>
-                  )}
-                </div>
               </div>
 
               {stopPanelOpen && (
@@ -1195,7 +1279,19 @@ const Home = () => {
               </div>
               <div className="session-tools-grid">
                 <article className={`session-tools-panel session-tools-panel--overview${!hasLiveGoal ? ' session-tools-panel--overview-empty' : ''}`}>
-                  <h3>Goal status</h3>
+                  <div className="session-tools-head">
+                    <h3>Goal status</h3>
+                    {!goalPanelOpen && (
+                      <button
+                        type="button"
+                        className="secondary-button compact-button live-goal-tools-cta"
+                        onClick={() => setGoalPanelOpen(true)}
+                        aria-label={hasLiveGoal ? 'Edit goal' : 'Set goal'}
+                      >
+                        {hasLiveGoal ? 'Edit Goal' : 'Set Goal'}
+                      </button>
+                    )}
+                  </div>
                   {hasLiveGoal ? (
                     <>
                       <div className="session-tools-stats">
@@ -1231,13 +1327,6 @@ const Home = () => {
                       <p className="message-muted" style={{ margin: 0 }}>
                         No goal set for this session. Add one to keep your effort measurable.
                       </p>
-                      <button
-                        type="button"
-                        className="secondary-button compact-button"
-                        onClick={() => setGoalPanelOpen(true)}
-                      >
-                        Set Goal
-                      </button>
                     </div>
                   )}
 
@@ -1337,6 +1426,9 @@ const Home = () => {
                       onChange={(e) => setLiveQuickNote(e.target.value)}
                       placeholder="What are you focusing on right now?"
                     />
+                    <p className={`session-tools-note-save${quickNoteSaveState === 'saving' ? ' saving' : ''}`}>
+                      {quickNoteSaveState === 'saving' ? 'Auto-saving...' : 'Saved'}
+                    </p>
                   </div>
                 </article>
               </div>
@@ -1871,6 +1963,78 @@ const Home = () => {
                 disabled={savingPauseState}
               >
                 Stop
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sessionCompleteModal && (
+        <div className="modal-overlay session-complete-overlay" role="presentation">
+          <div
+            className="session-complete-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="session-complete-title"
+          >
+            <div className="session-complete-check-wrap">
+              <span className="session-complete-check" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img" focusable="false">
+                  <path d="M9.55 16.2 5.6 12.25l1.35-1.4 2.6 2.6 7.5-7.5 1.4 1.4-8.9 8.85Z" />
+                </svg>
+              </span>
+            </div>
+
+            <div className="session-complete-head">
+              <h2 id="session-complete-title">Session complete</h2>
+              <p className="session-complete-subtext">
+                {sessionCompleteModal.activityName} · {sessionCompleteModal.durationLabel}
+              </p>
+            </div>
+
+            {sessionCompleteModal.streakMilestoneText && (
+              <div className="session-complete-streak-banner">
+                {sessionCompleteModal.streakMilestoneText}
+              </div>
+            )}
+
+            <div className="session-complete-stats" aria-label="Session summary">
+              <div className="session-complete-stat-pill">
+                <span>Total Time</span>
+                <strong>{sessionCompleteModal.totalTimeLabel}</strong>
+              </div>
+              <div className="session-complete-stat-pill">
+                <span>Current Streak</span>
+                <strong>{sessionCompleteModal.currentStreakLabel}</strong>
+              </div>
+              <div className="session-complete-stat-pill">
+                <span>Sessions This Week</span>
+                <strong>{sessionCompleteModal.sessionsThisWeek}</strong>
+              </div>
+            </div>
+
+            {sessionCompleteModal.showReflectionInput && (
+              <div className="session-complete-reflection">
+                <label htmlFor="session-complete-reflection">Add a quick reflection (optional)</label>
+                <input
+                  id="session-complete-reflection"
+                  type="text"
+                  ref={sessionCompleteReflectionRef}
+                  maxLength={180}
+                  value={sessionCompleteReflection}
+                  onChange={(event) => setSessionCompleteReflection(event.target.value)}
+                  placeholder="What worked well this session?"
+                />
+              </div>
+            )}
+
+            <div className="session-complete-actions">
+              <button
+                type="button"
+                className="compact-button"
+                onClick={handleDismissSessionCompleteModal}
+              >
+                Done
               </button>
             </div>
           </div>

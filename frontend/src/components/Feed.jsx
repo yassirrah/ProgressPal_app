@@ -18,6 +18,7 @@ import {
 
 const isSessionPaused = (item) => Boolean(item?.paused ?? (item?.pausedAt && !item?.endedAt));
 const isSessionOngoing = (item) => Boolean(item?.ongoing ?? (!item?.endedAt && !isSessionPaused(item)));
+const isPrivateVisibility = (item) => String(item?.visibility || '').toUpperCase() === 'PRIVATE';
 
 const Feed = () => {
   const navigate = useNavigate();
@@ -51,6 +52,13 @@ const Feed = () => {
     }
 
     const summaries = await Promise.all(items.map(async (item) => {
+      if (isPrivateVisibility(item)) {
+        return {
+          sessionId: item.id,
+          likesCount: 0,
+          likedByMe: false,
+        };
+      }
       try {
         const summary = await getSessionLikes(currentUser.id, item.id);
         return {
@@ -313,15 +321,65 @@ const Feed = () => {
 
   const getInitial = (text) => (text || '?').trim().charAt(0).toUpperCase() || '?';
 
-  const getActivityIcon = (activityName) => {
+  const getActivityIconKey = (activityName) => {
     const value = (activityName || '').toLowerCase();
-    if (value.includes('study') || value.includes('read') || value.includes('learn')) return '📚';
-    if (value.includes('gym') || value.includes('workout') || value.includes('fitness')) return '🏋️';
-    if (value.includes('chess')) return '♟️';
-    if (value.includes('code') || value.includes('program') || value.includes('dev')) return '💻';
-    if (value.includes('run') || value.includes('jog')) return '🏃';
-    if (value.includes('write')) return '✍️';
-    return '⭐';
+    if (value.includes('study') || value.includes('read') || value.includes('learn')) return 'study';
+    if (value.includes('gym') || value.includes('workout') || value.includes('fitness')) return 'fitness';
+    if (value.includes('chess')) return 'chess';
+    if (value.includes('code') || value.includes('program') || value.includes('dev')) return 'coding';
+    if (value.includes('run') || value.includes('jog')) return 'run';
+    if (value.includes('write')) return 'write';
+    return 'default';
+  };
+
+  const renderActivityIcon = (iconKey) => {
+    if (iconKey === 'study') {
+      return (
+        <svg viewBox="0 0 20 20" focusable="false">
+          <path d="M3 4.5h6.5a2.3 2.3 0 0 1 2 1.2V16a2.6 2.6 0 0 0-2-1H3v-10.5Zm14 0h-6.5a2.3 2.3 0 0 0-2 1.2V16a2.6 2.6 0 0 1 2-1H17v-10.5Z" />
+        </svg>
+      );
+    }
+    if (iconKey === 'fitness') {
+      return (
+        <svg viewBox="0 0 20 20" focusable="false">
+          <path d="M2.5 8h2v4h-2V8Zm13 0h2v4h-2V8Zm-11 1.2h2.2V7h2v2.2h2.6V7h2v2.2h2.2v1.6h-2.2V13h-2v-2.2H8.7V13h-2v-2.2H4.5V9.2Z" />
+        </svg>
+      );
+    }
+    if (iconKey === 'chess') {
+      return (
+        <svg viewBox="0 0 20 20" focusable="false">
+          <path d="M9.2 3.2a1.8 1.8 0 1 1 1.6 0V5h2l-.8 1.8h-1v1.5h1.2l-.8 1.9h-1.6v2.1h2.6v1.8H6.6v-1.8h2.6v-2.1H7.6l-.8-1.9H8V6.8H7l-.8-1.8h2v-1.8Z" />
+        </svg>
+      );
+    }
+    if (iconKey === 'coding') {
+      return (
+        <svg viewBox="0 0 20 20" focusable="false">
+          <path d="m7 6-4 4 4 4 1.1-1.1L5.2 10l2.9-2.9L7 6Zm6 0-1.1 1.1L14.8 10l-2.9 2.9L13 14l4-4-4-4Z" />
+        </svg>
+      );
+    }
+    if (iconKey === 'run') {
+      return (
+        <svg viewBox="0 0 20 20" focusable="false">
+          <path d="M11 3.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm1.3 3 .9 1.6 2 .8-.7 1.7-2.5-1-1-1.7-1.3 1.4L11 11v4h-2v-4.4L7.3 8.8 8.6 7l2 1.5 1.7-2Z" />
+        </svg>
+      );
+    }
+    if (iconKey === 'write') {
+      return (
+        <svg viewBox="0 0 20 20" focusable="false">
+          <path d="m13.8 2.8 3.4 3.4-8.9 8.9H4.9v-3.4l8.9-8.9ZM3 16h14v1.8H3V16Z" />
+        </svg>
+      );
+    }
+    return (
+      <svg viewBox="0 0 20 20" focusable="false">
+        <path d="M10 2.7 12 7l4.8.6-3.6 3.3 1 4.7L10 13.5 5.8 15.6l1-4.7L3.2 7.6 8 7l2-4.3Z" />
+      </svg>
+    );
   };
 
   const formatMetricPill = (item) => {
@@ -332,6 +390,35 @@ const Feed = () => {
       return `${item.metricValue} ${label} played`;
     }
     return metricText;
+  };
+
+  const getSuggestedFriendSignal = (candidate) => {
+    if (!candidate) return '';
+    const signalParts = [];
+    if (candidate.mutualFriends > 0) {
+      signalParts.push(`${candidate.mutualFriends} mutual connection${candidate.mutualFriends === 1 ? '' : 's'}`);
+    }
+    if (candidate.sharedActivityTypes > 0) {
+      signalParts.push(`${candidate.sharedActivityTypes} shared habit${candidate.sharedActivityTypes === 1 ? '' : 's'}`);
+    }
+    if (candidate.interactionCount > 0) {
+      signalParts.push(`${candidate.interactionCount} recent interaction${candidate.interactionCount === 1 ? '' : 's'}`);
+    }
+    if (candidate.recentlyActive) {
+      signalParts.push('Active in live sessions');
+    }
+
+    if (signalParts.length > 0) {
+      return signalParts.slice(0, 2).join(' · ');
+    }
+
+    const reason = (Array.isArray(candidate.reasons) ? candidate.reasons : [])
+      .map((value) => String(value || '').trim())
+      .find((value) => {
+        const lower = value.toLowerCase();
+        return value && lower !== 'new to your network' && lower !== 'suggested for you';
+      });
+    return reason || '';
   };
 
   const showToast = (text, options = {}) => {
@@ -517,6 +604,7 @@ const Feed = () => {
   useEffect(() => {
     if (!currentUser?.id || visibleFeedItems.length === 0) return;
     visibleFeedItems.forEach((item) => {
+      if (isPrivateVisibility(item)) return;
       if (commentsBySession[item.id] !== undefined || commentLoadingBySession[item.id]) return;
       void loadCommentsForSession(item.id);
     });
@@ -618,6 +706,15 @@ const Feed = () => {
             </div>
           </div>
           {identityBio && <p className="feed-identity-bio">{identityBio}</p>}
+          {currentUser?.id && (
+            <button
+              type="button"
+              className="feed-profile-link"
+              onClick={() => navigate(`/users/${currentUser.id}/profile`)}
+            >
+              View profile →
+            </button>
+          )}
         </article>
 
         <article className="feed-side-card">
@@ -704,6 +801,7 @@ const Feed = () => {
               .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
             const commentsCount = orderedComments.length;
             const isLiveCard = isSessionOngoing(item) || isSessionPaused(item);
+            const isPrivateSession = isPrivateVisibility(item);
             const joinStatus = getJoinRequestStatus(item.id);
             const roomParticipantCount = getRoomParticipantCount(item);
             const roomParticipantLabel = roomParticipantCount === 1
@@ -712,17 +810,21 @@ const Feed = () => {
             const visibilityLabel = item.visibility
               ? `${item.visibility.charAt(0)}${item.visibility.slice(1).toLowerCase()}`
               : 'Private';
-            const footerScopeLabel = isLiveCard
+            const footerScopeLabel = isPrivateSession
+              ? 'Private session'
+              : isLiveCard
               ? `${visibilityLabel} room`
               : `${visibilityLabel} session recap`;
-            const shouldShowCommentsPanel = isCommentComposerOpen
+            const shouldShowCommentsPanel = !isPrivateSession && (
+              isCommentComposerOpen
               || Boolean(commentLoadingBySession[item.id])
               || Boolean(commentErrorBySession[item.id])
-              || orderedComments.length > 0;
+              || orderedComments.length > 0
+            );
             return (
             <article
               key={item.id}
-              className={`feed-card ${isLiveCard ? 'feed-card--live' : 'feed-card--ended'}`}
+              className={`feed-card ${isLiveCard ? 'feed-card--live' : 'feed-card--ended'}${shouldShowCommentsPanel ? ' feed-card--comments-open' : ''}`}
             >
               <div className="feed-card-head">
                 <div className="feed-author">
@@ -769,7 +871,7 @@ const Feed = () => {
 
               <div className="feed-activity-hero">
                 <div className="feed-activity-icon" aria-hidden="true">
-                  {getActivityIcon(item.activityTypeName)}
+                  {renderActivityIcon(getActivityIconKey(item.activityTypeName))}
                 </div>
                 <div>
                   <p className="feed-title-large">{item.activityTypeName}</p>
@@ -842,67 +944,80 @@ const Feed = () => {
               )}
 
               <div className="feed-card-footer">
-                <div className="feed-engagement-summary">
-                  {item.profileImage ? (
-                    <img
-                      src={item.profileImage}
-                      alt=""
-                      className="feed-engagement-avatar-image"
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    <span className="feed-engagement-avatar" aria-hidden="true">
-                      {getInitial(item.username)}
+                {isPrivateSession ? (
+                  <div className="feed-private-session-label" aria-label="Private session">
+                    <span className="feed-private-session-icon" aria-hidden="true">
+                      <svg viewBox="0 0 16 16" focusable="false">
+                        <path d="M8 1.8a3 3 0 0 0-3 3V6H4a1 1 0 0 0-1 1v6.2a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-1V4.8a3 3 0 0 0-3-3Zm1.8 4.2H6.2V4.8a1.8 1.8 0 0 1 3.6 0V6Z" />
+                      </svg>
                     </span>
-                  )}
-                  <span className="feed-engagement-text">
-                    {footerScopeLabel}
-                  </span>
-                </div>
+                    <span>{footerScopeLabel}</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="feed-engagement-summary">
+                      {item.profileImage ? (
+                        <img
+                          src={item.profileImage}
+                          alt=""
+                          className="feed-engagement-avatar-image"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <span className="feed-engagement-avatar" aria-hidden="true">
+                          {getInitial(item.username)}
+                        </span>
+                      )}
+                      <span className="feed-engagement-text">
+                        {footerScopeLabel}
+                      </span>
+                    </div>
 
-                <div className="feed-engagement-actions">
-                  <button
-                    type="button"
-                    className={`feed-action-icon-button kudos-button ${likeState.likedByMe ? 'active' : ''}`}
-                    onClick={() => handleToggleLike(item)}
-                    disabled={likePendingBySession[item.id]}
-                    aria-label={likeState.likedByMe ? 'Unlike session' : 'Like session'}
-                    title={likeState.likedByMe ? 'Unlike' : 'Like'}
-                  >
-                    <span className="feed-action-icon" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" focusable="false">
-                        <path
-                          d="M12.001 20.727l-.886-.808C6.12 15.36 3 12.527 3 9.045 3 6.207 5.239 4 8.032 4c1.579 0 3.094.734 3.969 1.904C12.874 4.734 14.389 4 15.968 4 18.761 4 21 6.207 21 9.045c0 3.482-3.12 6.315-8.115 10.874z"
-                          fill={likeState.likedByMe ? 'currentColor' : 'none'}
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </span>
-                    <span className="feed-action-count">{likeState.likesCount || 0}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`feed-action-icon-button feed-comment-button ${isCommentComposerOpen ? 'active' : ''}`}
-                    onClick={() => handleToggleCommentComposer(item.id)}
-                    aria-label={isCommentComposerOpen ? 'Hide comment form' : 'Add comment'}
-                    title="Comment"
-                  >
-                    <span className="feed-action-icon" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" focusable="false">
-                        <path
-                          d="M4 5.5h16a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 20 17.5H9l-4.5 3v-3H4A1.5 1.5 0 0 1 2.5 16V7A1.5 1.5 0 0 1 4 5.5z"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </span>
-                    <span className="feed-action-count">{commentsCount}</span>
-                  </button>
-                </div>
+                    <div className="feed-engagement-actions">
+                      <button
+                        type="button"
+                        className={`feed-action-icon-button kudos-button ${likeState.likedByMe ? 'active' : ''}`}
+                        onClick={() => handleToggleLike(item)}
+                        disabled={likePendingBySession[item.id]}
+                        aria-label={likeState.likedByMe ? 'Unlike session' : 'Like session'}
+                        title={likeState.likedByMe ? 'Unlike' : 'Like'}
+                      >
+                        <span className="feed-action-icon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" focusable="false">
+                            <path
+                              d="M12.001 20.727l-.886-.808C6.12 15.36 3 12.527 3 9.045 3 6.207 5.239 4 8.032 4c1.579 0 3.094.734 3.969 1.904C12.874 4.734 14.389 4 15.968 4 18.761 4 21 6.207 21 9.045c0 3.482-3.12 6.315-8.115 10.874z"
+                              fill={likeState.likedByMe ? 'currentColor' : 'none'}
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </span>
+                        <span className="feed-action-count">{likeState.likesCount || 0}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`feed-action-icon-button feed-comment-button ${isCommentComposerOpen ? 'active' : ''}`}
+                        onClick={() => handleToggleCommentComposer(item.id)}
+                        aria-label={isCommentComposerOpen ? 'Hide comment form' : 'Add comment'}
+                        title="Comment"
+                      >
+                        <span className="feed-action-icon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" focusable="false">
+                            <path
+                              d="M4 5.5h16a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 20 17.5H9l-4.5 3v-3H4A1.5 1.5 0 0 1 2.5 16V7A1.5 1.5 0 0 1 4 5.5z"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </span>
+                        <span className="feed-action-count">{commentsCount}</span>
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
 
               {shouldShowCommentsPanel && (
@@ -984,48 +1099,49 @@ const Feed = () => {
             <p className="feed-side-muted">No suggestions right now.</p>
           ) : (
             <div className="feed-suggest-list">
-              {suggestedFriends.map((candidate) => (
-                <article key={candidate.userId} className="feed-suggest-item">
-                  <button
-                    type="button"
-                    className="feed-suggest-main feed-suggest-main-button"
-                    onClick={() => navigate(`/users/${candidate.userId}/profile`)}
-                    aria-label={`Open ${candidate.username || 'user'} profile`}
-                  >
-                    {candidate.profileImage ? (
-                      <img
-                        src={candidate.profileImage}
-                        alt=""
-                        className="feed-suggest-avatar-image"
-                        aria-hidden="true"
-                      />
-                    ) : (
-                      <span className="feed-suggest-avatar" aria-hidden="true">
-                        {getInitial(candidate.username)}
-                      </span>
-                    )}
-                    <div className="feed-suggest-text">
-                      <p className="feed-suggest-name">{candidate.username || 'Unknown user'}</p>
-                      <p className="feed-side-muted">
-                        {Array.isArray(candidate.reasons) && candidate.reasons.length > 0
-                          ? candidate.reasons[0]
-                          : 'Suggested for you'}
-                      </p>
-                      {candidate.bio && candidate.bio.trim() && (
-                        <p className="feed-suggest-bio">{candidate.bio.trim()}</p>
+              {suggestedFriends.map((candidate) => {
+                const candidateSignal = getSuggestedFriendSignal(candidate);
+                return (
+                  <article key={candidate.userId} className="feed-suggest-item">
+                    <button
+                      type="button"
+                      className="feed-suggest-main feed-suggest-main-button"
+                      onClick={() => navigate(`/users/${candidate.userId}/profile`)}
+                      aria-label={`Open ${candidate.username || 'user'} profile`}
+                    >
+                      {candidate.profileImage ? (
+                        <img
+                          src={candidate.profileImage}
+                          alt=""
+                          className="feed-suggest-avatar-image"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <span className="feed-suggest-avatar" aria-hidden="true">
+                          {getInitial(candidate.username)}
+                        </span>
                       )}
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    className="compact-button secondary-button feed-suggest-add-button"
-                    onClick={() => handleSendSuggestionRequest(candidate)}
-                    disabled={sendingSuggestionId === candidate.userId}
-                  >
-                    {sendingSuggestionId === candidate.userId ? 'Adding...' : 'Add'}
-                  </button>
-                </article>
-              ))}
+                      <div className="feed-suggest-text">
+                        <p className="feed-suggest-name">{candidate.username || 'Unknown user'}</p>
+                        {candidateSignal && (
+                          <p className="feed-suggest-signal">{candidateSignal}</p>
+                        )}
+                        {candidate.bio && candidate.bio.trim() && (
+                          <p className="feed-suggest-bio">{candidate.bio.trim()}</p>
+                        )}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="compact-button secondary-button feed-suggest-add-button"
+                      onClick={() => handleSendSuggestionRequest(candidate)}
+                      disabled={sendingSuggestionId === candidate.userId}
+                    >
+                      {sendingSuggestionId === candidate.userId ? 'Adding...' : 'Add'}
+                    </button>
+                  </article>
+                );
+              })}
             </div>
           )}
         </article>
