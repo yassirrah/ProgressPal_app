@@ -12,6 +12,39 @@ import {
   sendFriendRequest,
 } from '../lib/api';
 
+const AVATAR_TONE_STYLES = [
+  {
+    background: 'var(--tone-teal-bg)',
+    borderColor: 'color-mix(in srgb, var(--tone-teal-text) 24%, var(--border))',
+    color: 'var(--tone-teal-text)',
+  },
+  {
+    background: 'var(--tone-purple-bg)',
+    borderColor: 'color-mix(in srgb, var(--tone-purple-text) 24%, var(--border))',
+    color: 'var(--tone-purple-text)',
+  },
+  {
+    background: 'var(--tone-amber-bg)',
+    borderColor: 'color-mix(in srgb, var(--tone-amber-text) 24%, var(--border))',
+    color: 'var(--tone-amber-text)',
+  },
+];
+
+const formatRelativeFromNow = (value) => {
+  if (!value) return '';
+  const now = Date.now();
+  const ts = new Date(value).getTime();
+  if (Number.isNaN(ts)) return '';
+  const diffSeconds = Math.max(0, Math.floor((now - ts) / 1000));
+  if (diffSeconds < 60) return `${diffSeconds}s ago`;
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+};
+
 const Friends = () => {
   const navigate = useNavigate();
   const user = useMemo(() => getStoredUser(), []);
@@ -31,7 +64,8 @@ const Friends = () => {
   const [sendingSuggestionId, setSendingSuggestionId] = useState('');
   const [sendSuccessPulse, setSendSuccessPulse] = useState(false);
   const [showAddPanel, setShowAddPanel] = useState(false);
-  const [showRequestsPanel, setShowRequestsPanel] = useState(false);
+  const [showRequestsPanel, setShowRequestsPanel] = useState(true);
+  const [showAllSuggestions, setShowAllSuggestions] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
@@ -230,12 +264,8 @@ const Friends = () => {
       hash = ((hash << 5) - hash) + text.charCodeAt(i);
       hash |= 0;
     }
-    const hue = Math.abs(hash) % 360;
-    return {
-      background: `hsla(${hue}, 70%, 92%, 1)`,
-      borderColor: `hsla(${hue}, 55%, 78%, 1)`,
-      color: `hsla(${hue}, 55%, 28%, 1)`,
-    };
+    const toneIndex = Math.abs(hash) % AVATAR_TONE_STYLES.length;
+    return AVATAR_TONE_STYLES[toneIndex];
   };
 
   const friendPreviewFor = (friendId) => {
@@ -254,29 +284,103 @@ const Friends = () => {
     };
   };
 
+  const suggestionContextFor = (candidate) => {
+    const reasons = (Array.isArray(candidate?.reasons) ? candidate.reasons : [])
+      .map((reason) => String(reason || '').trim())
+      .filter(Boolean);
+
+    const reasonSignals = [];
+    if (candidate?.mutualFriends > 0) {
+      reasonSignals.push(`${candidate.mutualFriends} mutual connection${candidate.mutualFriends === 1 ? '' : 's'}`);
+    }
+    if (candidate?.sharedActivityTypes > 0) {
+      reasonSignals.push(`${candidate.sharedActivityTypes} shared habit${candidate.sharedActivityTypes === 1 ? '' : 's'}`);
+    }
+    if (candidate?.interactionCount > 0) {
+      reasonSignals.push(`${candidate.interactionCount} recent interaction${candidate.interactionCount === 1 ? '' : 's'}`);
+    }
+    if (candidate?.recentlyActive) {
+      reasonSignals.push('Active in live sessions');
+    }
+
+    const fallbackReasonSignals = reasons.length > 0 ? reasons : (
+      candidate?.score > 0
+        ? [`Momentum alignment score ${candidate.score}`]
+        : ['Emerging in your network']
+    );
+
+    const reasonLine = (reasonSignals.length > 0 ? reasonSignals : fallbackReasonSignals)
+      .slice(0, 2)
+      .join(' · ');
+
+    const tags = [];
+    if (candidate?.sharedActivityTypes > 0) {
+      tags.push({ label: 'Habit overlap', type: 'activity' });
+    }
+    if (candidate?.recentlyActive) {
+      tags.push({ label: 'Study rhythm', type: 'activity' });
+    }
+    if (candidate?.mutualFriends > 0) {
+      tags.push({ label: 'Community pick', type: 'social' });
+    }
+    if (candidate?.interactionCount > 0) {
+      tags.push({ label: 'Shared momentum', type: 'goal' });
+    }
+    if (tags.length === 0) {
+      tags.push({ label: 'Goal aligned', type: 'goal' });
+    }
+
+    return { reasonLine, tags: tags.slice(0, 2) };
+  };
+
+  const MAX_VISIBLE_SUGGESTIONS = 5;
+  const displayedSuggestions = showAllSuggestions
+    ? visibleFriendSuggestions
+    : visibleFriendSuggestions.slice(0, MAX_VISIBLE_SUGGESTIONS);
+  const hiddenSuggestionsCount = Math.max(0, visibleFriendSuggestions.length - MAX_VISIBLE_SUGGESTIONS);
+
   if (!user) {
     return <p>Please log in to manage friendships.</p>;
   }
 
   return (
     <div className="friends-page">
-      <h1>Friends</h1>
-      <div className="friends-toolbar">
-        <button
-          type="button"
-          className={`compact-button ${showAddPanel ? 'secondary-button' : ''}`}
-          onClick={() => setShowAddPanel((prev) => !prev)}
-        >
-          Add Friend
-        </button>
-        <button
-          type="button"
-          className={`compact-button ${showRequestsPanel ? 'secondary-button' : ''}`}
-          onClick={() => setShowRequestsPanel((prev) => !prev)}
-        >
-          Requests ({incomingRequests.length})
-        </button>
-      </div>
+      <section className="friends-top">
+        <section className="friends-hero">
+          <div>
+            <h1 className="friends-title-main">Friends</h1>
+            <p className="friends-subtitle">Build a focused circle, discover people, and keep momentum together.</p>
+          </div>
+          <div className="friends-hero-stats" aria-label="Friendship overview">
+            <span className="friends-hero-stat">{friends.length} friend{friends.length === 1 ? '' : 's'}</span>
+            <span className="friends-hero-stat">{incomingRequests.length} request{incomingRequests.length === 1 ? '' : 's'}</span>
+            <span className="friends-hero-stat">{visibleFriendSuggestions.length} suggestion{visibleFriendSuggestions.length === 1 ? '' : 's'}</span>
+          </div>
+        </section>
+        <div className="friends-toolbar">
+          <button
+            type="button"
+            className={`compact-button friends-toolbar-button ${showAddPanel ? 'secondary-button active' : ''}`}
+            onClick={() => setShowAddPanel((prev) => !prev)}
+          >
+            Add Friend
+          </button>
+          <div className="friends-toolbar-count-wrap">
+            <button
+              type="button"
+              className={`compact-button friends-toolbar-button ${showRequestsPanel ? 'secondary-button active' : ''}`}
+              onClick={() => setShowRequestsPanel((prev) => !prev)}
+            >
+              Requests
+            </button>
+            {incomingRequests.length > 0 && (
+              <span className="friends-toolbar-count-pill" aria-label={`${incomingRequests.length} pending requests`}>
+                {incomingRequests.length}
+              </span>
+            )}
+          </div>
+        </div>
+      </section>
       <div className="friends-divider" />
       {error && <p className="message-error">{error}</p>}
       {message && <p className="message-muted">{message}</p>}
@@ -284,6 +388,12 @@ const Friends = () => {
 
       {showAddPanel && (
         <section className="friends-section-card friends-section-card--accent">
+          <div className="friends-section-head">
+            <div>
+              <p className="friends-section-kicker">ADD</p>
+              <h2>Find by Username</h2>
+            </div>
+          </div>
           <form onSubmit={handleSendRequest} className="friends-form">
             <div>
               <label>Search by Username or User ID</label>
@@ -344,17 +454,88 @@ const Friends = () => {
         </section>
       )}
 
-      {showRequestsPanel && (
-        <section className="friends-section-card">
-          {incomingRequests.length === 0 ? (
-            <p className="message-muted">No new requests right now.</p>
-          ) : (
+      {incomingRequests.length > 0 && showRequestsPanel && (
+        <section className="friends-section-card friends-section-card--requests">
+          <div className="friends-section-head">
+            <div>
+              <p className="friends-section-kicker">REQUESTS</p>
+              <h2>Incoming Requests</h2>
+              <p className="friends-section-subtitle">Respond to pending invites from people who want to connect.</p>
+            </div>
+          </div>
+          <div className="friends-list">
+            {incomingRequests.map((request) => {
+              const username = request.requesterUsername || 'Unknown user';
+              return (
+                <article key={`${request.requesterId}-${request.createdAt || ''}`} className="friend-row-card">
+                  <div className="friend-row-main">
+                    <div
+                      className="friend-avatar"
+                      style={avatarStyleFor(username)}
+                      aria-hidden="true"
+                    >
+                      {getInitial(username)}
+                    </div>
+                    <div>
+                      <p className="friend-name">{username}</p>
+                      <p className="friend-meta">Sent you a friend request</p>
+                    </div>
+                  </div>
+                  <div className="friend-row-actions">
+                    <button
+                      type="button"
+                      className="compact-button"
+                      disabled={
+                        acceptingRequesterId === request.requesterId
+                        || rejectingRequesterId === request.requesterId
+                      }
+                      onClick={() => handleAcceptRequest(request.requesterId)}
+                    >
+                      {acceptingRequesterId === request.requesterId ? 'Accepting...' : 'Accept'}
+                    </button>
+                    <button
+                      type="button"
+                      className="compact-button secondary-button"
+                      disabled={
+                        acceptingRequesterId === request.requesterId
+                        || rejectingRequesterId === request.requesterId
+                      }
+                      onClick={() => handleRejectRequest(request.requesterId)}
+                    >
+                      {rejectingRequesterId === request.requesterId ? 'Rejecting...' : 'Reject'}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      <section className="friends-section-card">
+        <div className="friends-section-head">
+          <div>
+            <p className="friends-section-kicker">DISCOVER</p>
+            <h2 className="friends-title">Suggested for You</h2>
+            <p className="friends-section-subtitle">People likely to fit your productivity and focus network.</p>
+          </div>
+        </div>
+        {visibleFriendSuggestions.length === 0 ? (
+          <p className="message-muted">No suggestions right now. Check back soon.</p>
+        ) : (
+          <>
             <div className="friends-list">
-              {incomingRequests.map((request) => {
-                const username = request.requesterUsername || 'Unknown user';
+              {displayedSuggestions.map((candidate) => {
+                const username = candidate.username || 'Unknown user';
+                const context = suggestionContextFor(candidate);
                 return (
-                  <article key={`${request.requesterId}-${request.createdAt || ''}`} className="friend-row-card">
-                    <div className="friend-row-main">
+                  <article key={candidate.userId} className="friend-row-card friend-row-card--suggested">
+                    <button
+                      type="button"
+                      className="friend-row-main friend-row-main-button"
+                      onClick={() => navigate(`/users/${candidate.userId}/profile`)}
+                      aria-label={`Open ${username} profile`}
+                    >
                       <div
                         className="friend-avatar"
                         style={avatarStyleFor(username)}
@@ -364,58 +545,70 @@ const Friends = () => {
                       </div>
                       <div>
                         <p className="friend-name">{username}</p>
-                        <p className="friend-meta">Sent you a friend request</p>
+                        <p className="friend-meta friend-meta--single-line">{context.reasonLine}</p>
+                        <div className="friend-context-row friend-context-row--suggested" aria-hidden="true">
+                          {context.tags.map((tag) => (
+                            <span
+                              key={`${candidate.userId}-${tag.label}-${tag.type}`}
+                              className={`friend-context-chip friend-context-chip--${tag.type}`}
+                            >
+                              {tag.label}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                    <div className="friend-row-actions">
+                    </button>
+                    <div className="friend-row-actions friend-row-actions--suggested">
                       <button
                         type="button"
                         className="compact-button"
-                        disabled={
-                          acceptingRequesterId === request.requesterId
-                          || rejectingRequesterId === request.requesterId
-                        }
-                        onClick={() => handleAcceptRequest(request.requesterId)}
+                        disabled={sendingSuggestionId === candidate.userId}
+                        onClick={() => handleSendSuggestionRequest(candidate)}
                       >
-                        {acceptingRequesterId === request.requesterId ? 'Accepting...' : 'Accept'}
-                      </button>
-                      <button
-                        type="button"
-                        className="compact-button secondary-button"
-                        disabled={
-                          acceptingRequesterId === request.requesterId
-                          || rejectingRequesterId === request.requesterId
-                        }
-                        onClick={() => handleRejectRequest(request.requesterId)}
-                      >
-                        {rejectingRequesterId === request.requesterId ? 'Rejecting...' : 'Reject'}
+                        {sendingSuggestionId === candidate.userId ? 'Sending...' : 'Add'}
                       </button>
                     </div>
                   </article>
                 );
               })}
             </div>
-          )}
-        </section>
-      )}
+            {!showAllSuggestions && hiddenSuggestionsCount > 0 && (
+              <button
+                type="button"
+                className="friends-more-suggestions-link"
+                onClick={() => setShowAllSuggestions(true)}
+              >
+                + {hiddenSuggestionsCount} more suggestions
+              </button>
+            )}
+          </>
+        )}
+      </section>
 
       <section className="friends-section-card">
-        <h2 className="friends-title">Suggested for You</h2>
-        {visibleFriendSuggestions.length === 0 ? (
-          <p className="message-muted">No suggestions right now. Check back soon.</p>
+        <div className="friends-section-head">
+          <div>
+            <p className="friends-section-kicker">CIRCLE</p>
+            <h2 className="friends-title">Your Friends</h2>
+            <p className="friends-section-subtitle">Your active network for shared focus and accountability.</p>
+          </div>
+        </div>
+        {friends.length === 0 ? (
+          <p className="message-muted">No friends yet. Add someone from the feed or send a request above.</p>
         ) : (
           <div className="friends-list">
-            {visibleFriendSuggestions.map((candidate) => {
-              const username = candidate.username || 'Unknown user';
-              const reasonText = Array.isArray(candidate.reasons) && candidate.reasons.length > 0
-                ? candidate.reasons.slice(0, 2).join(' • ')
-                : 'Suggested for you';
+            {friends.map((friend) => {
+              const username = friend.friendusername || 'Unknown user';
+              const preview = friendPreviewFor(friend.FriendId);
+              const connectedAt = friend.createdAt
+                ? `Connected ${formatRelativeFromNow(friend.createdAt)}`
+                : 'Connected recently';
               return (
-                <article key={candidate.userId} className="friend-row-card">
+                <article key={`${friend.FriendId}-${friend.createdAt || ''}`} className="friend-row-card">
                   <button
                     type="button"
                     className="friend-row-main friend-row-main-button"
-                    onClick={() => navigate(`/users/${candidate.userId}/profile`)}
+                    onClick={() => navigate(`/users/${friend.FriendId}/profile`)}
                     aria-label={`Open ${username} profile`}
                   >
                     <div
@@ -427,57 +620,10 @@ const Friends = () => {
                     </div>
                     <div>
                       <p className="friend-name">{username}</p>
-                      <p className="friend-meta">{reasonText}</p>
+                      <p className="friend-meta">{connectedAt}</p>
+                      <p className="friend-meta friend-meta-secondary">{preview.meta}</p>
                     </div>
                   </button>
-                  <div className="friend-row-actions">
-                    <button
-                      type="button"
-                      className="compact-button secondary-button"
-                      onClick={() => navigate(`/users/${candidate.userId}/profile`)}
-                    >
-                      View
-                    </button>
-                    <button
-                      type="button"
-                      className="compact-button"
-                      disabled={sendingSuggestionId === candidate.userId}
-                      onClick={() => handleSendSuggestionRequest(candidate)}
-                    >
-                      {sendingSuggestionId === candidate.userId ? 'Sending...' : 'Add'}
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <section className="friends-section-card">
-        <h2 className="friends-title">Your Friends</h2>
-        {friends.length === 0 ? (
-          <p className="message-muted">No friends yet. Add someone from the feed or send a request above.</p>
-        ) : (
-          <div className="friends-list">
-            {friends.map((friend) => {
-              const username = friend.friendusername || 'Unknown user';
-              const preview = friendPreviewFor(friend.FriendId);
-              return (
-                <article key={`${friend.FriendId}-${friend.createdAt || ''}`} className="friend-row-card">
-                  <div className="friend-row-main">
-                    <div
-                      className="friend-avatar"
-                      style={avatarStyleFor(username)}
-                      aria-hidden="true"
-                    >
-                      {getInitial(username)}
-                    </div>
-                    <div>
-                      <p className="friend-name">{username}</p>
-                      <p className="friend-meta">{preview.meta}</p>
-                    </div>
-                  </div>
                   <div className="friend-row-actions">
                     <button
                       type="button"
@@ -488,7 +634,7 @@ const Friends = () => {
                     </button>
                     <button
                       type="button"
-                      className="compact-button secondary-button"
+                      className="compact-button danger-soft-button"
                       disabled={deletingFriendId === friend.FriendId}
                       onClick={() => handleDeleteFriend(friend.FriendId)}
                     >

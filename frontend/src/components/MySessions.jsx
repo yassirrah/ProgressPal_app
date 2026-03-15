@@ -190,7 +190,32 @@ const MySessions = () => {
 
   const formatInstant = (value) => {
     if (!value) return '-';
-    return new Date(value).toLocaleString();
+    return new Date(value).toLocaleString([], {
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatVisibilityLabel = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return 'Private';
+    return `${raw.charAt(0)}${raw.slice(1).toLowerCase()}`;
+  };
+
+  const formatSessionDuration = (session) => {
+    if (Number.isFinite(Number(session?.durationSeconds))) {
+      return formatDuration(Number(session.durationSeconds));
+    }
+
+    const started = new Date(session?.startedAt).getTime();
+    if (Number.isNaN(started)) return '-';
+    const ended = session?.endedAt ? new Date(session.endedAt).getTime() : Date.now();
+    if (Number.isNaN(ended)) return '-';
+
+    const totalSeconds = Math.max(0, Math.floor((ended - started) / 1000));
+    return formatDuration(totalSeconds);
   };
 
   const formatMetric = (session) => {
@@ -242,7 +267,7 @@ const MySessions = () => {
 
   return (
     <div className="home-stack">
-      <section className="home-card my-sessions-header-card">
+      <section className="home-card my-sessions-header-card my-sessions-toolbar-card">
         <div className="my-sessions-header">
           <div>
             <h1 style={{ marginBottom: '0.15rem' }}>My Sessions</h1>
@@ -257,14 +282,16 @@ const MySessions = () => {
           </div>
         </div>
 
-        <div className="my-sessions-date-grid">
-          <div>
-            <label>From</label>
-            <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} />
-          </div>
-          <div>
-            <label>To</label>
-            <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} />
+        <div className="my-sessions-toolbar">
+          <div className="my-sessions-date-grid">
+            <div>
+              <label>From</label>
+              <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} />
+            </div>
+            <div>
+              <label>To</label>
+              <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} />
+            </div>
           </div>
           <div className="my-sessions-date-actions">
             <button
@@ -281,7 +308,7 @@ const MySessions = () => {
         </div>
       </section>
 
-      <section className="home-card">
+      <section className="home-card my-sessions-stats-card">
         <div className="home-section-head">
           <div>
             <h2>Quick Stats</h2>
@@ -294,7 +321,7 @@ const MySessions = () => {
         {summaryLoading ? (
           <p>Loading summary...</p>
         ) : (
-          <div className="summary-grid">
+          <div className="summary-grid my-sessions-summary-grid">
             <article className="summary-stat-card">
               <p className="summary-stat-label">Total Sessions</p>
               <p className="summary-stat-value">{summary.totalSessions ?? 0}</p>
@@ -320,17 +347,26 @@ const MySessions = () => {
         )}
       </section>
 
-      <section className="home-card">
+      <section className="home-card my-sessions-history-card">
         <div className="home-section-head">
           <div>
             <h2>Session History</h2>
             <p className="message-muted" style={{ margin: 0 }}>
-              Main view of your sessions. Advanced filters are optional.
+              Browse your sessions at a glance. Filters are optional.
             </p>
           </div>
+        </div>
+        <div className="my-sessions-history-toolbar">
+          <p className="my-sessions-history-meta">
+            {pageData.totalElements ?? 0} session(s)
+            {' '}
+            •
+            {' '}
+            page {(pageData.number ?? 0) + 1} of {Math.max(pageData.totalPages || 1, 1)}
+          </p>
           <button
             type="button"
-            className="secondary-button"
+            className={`secondary-button my-sessions-history-filter-toggle${historyFiltersOpen ? ' open' : ''}`}
             onClick={() => setHistoryFiltersOpen((prev) => !prev)}
           >
             {historyFiltersOpen ? 'Hide Filters' : 'Advanced Filters'}
@@ -340,8 +376,8 @@ const MySessions = () => {
         {error && <p className="message-error">{error}</p>}
 
         {historyFiltersOpen && (
-          <>
-            <div className="home-filter-grid" style={{ marginTop: 0 }}>
+          <div className="my-sessions-history-filters">
+            <div className="home-filter-grid my-sessions-history-filter-grid" style={{ marginTop: 0 }}>
               <div>
                 <label>Status</label>
                 <select value={filters.status} onChange={(e) => handleFilterChange('status', e.target.value)}>
@@ -382,12 +418,12 @@ const MySessions = () => {
               </div>
             </div>
 
-            <div className="home-row" style={{ marginTop: '0.25rem' }}>
+            <div className="home-row my-sessions-history-filter-actions" style={{ marginTop: '0.25rem' }}>
               <button type="button" className="secondary-button" onClick={resetFilters}>
                 Reset Filters
               </button>
             </div>
-          </>
+          </div>
         )}
 
         {loading ? (
@@ -398,47 +434,51 @@ const MySessions = () => {
               {pageData.content.map((session) => {
                 const type = activityTypes.find((entry) => entry.id === session.activityTypeId);
                 const metricText = formatMetric(session);
+                const isLive = !session.endedAt;
 
                 return (
-                  <article key={session.id} className="my-session-item">
-                    <div className="my-session-head">
-                      <div>
-                        <p className="feed-user">{type?.name || 'Activity'}</p>
-                        <p className="feed-activity">{session.title || 'Untitled session'}</p>
+                  <article key={session.id} className="my-session-item my-session-history-item">
+                    <div className="my-session-card-top">
+                      <div className="my-session-card-title">
+                        <p className="my-session-activity-name">{type?.name || 'Activity'}</p>
+                        <p className="my-session-subtitle">
+                          {session.title || session.description || 'No note for this session'}
+                        </p>
                       </div>
-                      <span className={`feed-status-badge ${session.endedAt ? 'ended' : 'live'}`}>
-                        {session.endedAt ? 'Ended' : 'Live'}
+                      <span className={`feed-status-badge ${isLive ? 'live' : 'ended'}`}>
+                        {isLive ? 'Live' : 'Ended'}
                       </span>
                     </div>
 
-                    <div className="feed-meta">
-                      <div className="feed-meta-row">
-                        <span className="feed-meta-label">Visibility</span>
-                        <span>{session.visibility}</span>
+                    <p className="my-session-timeline">
+                      <span>Started {formatInstant(session.startedAt)}</span>
+                      <span>Ended {session.endedAt ? formatInstant(session.endedAt) : 'Live now'}</span>
+                    </p>
+
+                    <div className="my-session-facts">
+                      <div className="my-session-fact">
+                        <span>Duration</span>
+                        <strong>{formatSessionDuration(session)}</strong>
+                      </div>
+                      <div className="my-session-fact">
+                        <span>Visibility</span>
+                        <strong>{formatVisibilityLabel(session.visibility)}</strong>
                       </div>
                       {metricText && (
-                        <div className="feed-meta-row">
-                          <span className="feed-meta-label">Metric</span>
-                          <span>{metricText}</span>
+                        <div className="my-session-fact">
+                          <span>Metric</span>
+                          <strong>{metricText}</strong>
                         </div>
                       )}
-                      <div className="feed-meta-row">
-                        <span className="feed-meta-label">Started</span>
-                        <span>{formatInstant(session.startedAt)}</span>
-                      </div>
-                      <div className="feed-meta-row">
-                        <span className="feed-meta-label">Ended</span>
-                        <span>{session.endedAt ? formatInstant(session.endedAt) : 'Live'}</span>
-                      </div>
                     </div>
                   </article>
                 );
               })}
             </div>
 
-            <div className="home-section-head" style={{ marginTop: '0.75rem', marginBottom: 0 }}>
-              <p className="message-muted" style={{ margin: 0 }}>
-                {pageData.totalElements ?? 0} session(s) • page {(pageData.number ?? 0) + 1} of {Math.max(pageData.totalPages || 1, 1)}
+            <div className="home-section-head my-sessions-pagination-row" style={{ marginTop: '0.75rem', marginBottom: 0 }}>
+              <p className="message-muted my-sessions-pagination-meta" style={{ margin: 0 }}>
+                Showing {(pageData.number ?? 0) + 1} / {Math.max(pageData.totalPages || 1, 1)}
               </p>
               <div className="home-row" style={{ marginTop: 0 }}>
                 <button

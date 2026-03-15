@@ -285,6 +285,8 @@ const Navbar = () => {
   const navLinkClass = ({ isActive }) => `nav-link${isActive ? ' active' : ''}`;
   const userInitial = (user?.username || '?').trim().charAt(0).toUpperCase() || '?';
   const closeMobileNav = () => setMobileNavOpen(false);
+  const isLoginRoute = location.pathname === '/login';
+  const isSignupRoute = location.pathname === '/signup';
   const searchTargets = useMemo(() => {
     const baseTargets = [
       { id: 'home', label: 'Home', hint: 'Live and start session', path: '/', category: 'Page' },
@@ -463,6 +465,36 @@ const Navbar = () => {
     searchInputRef.current?.focus();
   }, [searchOpen]);
 
+  if (isLoginRoute || isSignupRoute) {
+    return (
+      <nav>
+        <div className="nav-inner nav-inner--auth">
+          <div className="nav-zone nav-zone-left">
+            <Link to="/" className="brand-link" aria-label="ProgressPal home">
+              {!logoMissing ? (
+                <img
+                  src="/progresspal-logo.png"
+                  alt="ProgressPal"
+                  className="brand-logo"
+                  onError={() => setLogoMissing(true)}
+                />
+              ) : (
+                <span className="brand-text">ProgressPal</span>
+              )}
+            </Link>
+          </div>
+          <div className="nav-zone nav-zone-right">
+            {isLoginRoute ? (
+              <Link to="/signup" className="nav-auth-signup-link">Sign Up</Link>
+            ) : (
+              <Link to="/login" className="nav-auth-login-link">Login</Link>
+            )}
+          </div>
+        </div>
+      </nav>
+    );
+  }
+
   return (
     <nav>
       <div className="nav-inner">
@@ -591,7 +623,25 @@ const Navbar = () => {
                 aria-haspopup="menu"
                 aria-label="Open notifications"
               >
-                <span className="nav-notification-icon" aria-hidden="true">🔔</span>
+                <span className="nav-notification-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false">
+                    <path
+                      d="M15.8 17.5H8.2c-1 0-1.6-1.1-1-2l1-1.4V10a3.8 3.8 0 1 1 7.6 0v4.1l1 1.4c.6.9 0 2-1 2z"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M10.2 18.5a1.8 1.8 0 0 0 3.6 0"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.7"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </span>
                 {unreadCount > 0 && (
                   <span className="nav-notification-badge" aria-label={`${unreadCount} unread notifications`}>
                     {unreadCount > 99 ? '99+' : unreadCount}
