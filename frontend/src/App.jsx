@@ -1,7 +1,8 @@
 import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Login from './components/Login';
 import Signup from './components/Signup';
+import AuthCallback from './components/AuthCallback';
 import Home from './components/Home';
 import Feed from './components/Feed';
 import Friends from './components/Friends';
@@ -24,12 +25,22 @@ const resolveInitialTheme = () => {
 };
 
 function App() {
-  const user = getStoredUser();
+  const [user, setUser] = useState(() => getStoredUser());
 
   useEffect(() => {
     const root = document.documentElement;
     const appliedTheme = resolveInitialTheme();
     root.dataset.theme = appliedTheme;
+  }, []);
+
+  useEffect(() => {
+    const syncUser = () => setUser(getStoredUser());
+    window.addEventListener('storage', syncUser);
+    window.addEventListener('progresspal-auth-changed', syncUser);
+    return () => {
+      window.removeEventListener('storage', syncUser);
+      window.removeEventListener('progresspal-auth-changed', syncUser);
+    };
   }, []);
 
   return (
@@ -46,6 +57,7 @@ function App() {
             <Route path="/account" element={<Account />} />
             <Route path="/users/:userId/profile" element={<UserProfile />} />
             <Route path="/sessions/:sessionId/room" element={<SessionRoom />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
             <Route path="/signup" element={user ? <Navigate to="/" replace /> : <Signup />} />
           </Routes>

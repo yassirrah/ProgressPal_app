@@ -974,16 +974,19 @@ const Home = () => {
     for (let day = 1; day <= daysInMonth; day += 1) {
       const sessions = daySessionCounts.get(day) || 0;
       const isToday = day === today.getDate();
+      const intensity = sessions >= 2 ? 'high' : sessions === 1 ? 'low' : 'none';
       cells.push({
         key: `day-${day}`,
         day,
         isEmpty: false,
         isToday,
-        isActive: sessions > 0,
+        intensity,
         sessions,
-        tooltip: sessions > 0
-          ? `${sessions} session${sessions === 1 ? '' : 's'}`
-          : 'No activity',
+        tooltip: isToday
+          ? `Today${sessions > 0 ? ` • ${sessions} session${sessions === 1 ? '' : 's'}` : ''}`
+          : sessions > 0
+            ? `${sessions} session${sessions === 1 ? '' : 's'}`
+            : 'No activity',
       });
     }
 
@@ -1761,16 +1764,32 @@ const Home = () => {
                           key={cell.key}
                           role="gridcell"
                           title={cell.tooltip}
-                          className={`home-active-day-cell${cell.isActive ? ' is-active' : ''}${cell.isToday ? ' is-today' : ''}`}
+                          className={`home-active-day-cell${cell.intensity !== 'none' ? ` is-${cell.intensity}` : ''}${cell.isToday ? ' is-today' : ''}`}
                         >
                           {cell.day}
                         </span>
                       )
                     ))}
                   </div>
-                  <p className="home-active-days-summary">
-                    {activeDaysWidget.activeDaysCount} active day{activeDaysWidget.activeDaysCount === 1 ? '' : 's'} this month
-                  </p>
+                  <div className="home-active-days-legend" aria-label="Active day legend">
+                    <div className="home-active-days-legend-items">
+                      <span className="home-active-days-legend-item">
+                        <span className="home-active-days-swatch is-low" aria-hidden="true" />
+                        <span>1 session</span>
+                      </span>
+                      <span className="home-active-days-legend-item">
+                        <span className="home-active-days-swatch is-high" aria-hidden="true" />
+                        <span>2+ sessions</span>
+                      </span>
+                      <span className="home-active-days-legend-item">
+                        <span className="home-active-days-swatch is-today" aria-hidden="true" />
+                        <span>today</span>
+                      </span>
+                    </div>
+                    <span className="home-active-days-count">
+                      {activeDaysWidget.activeDaysCount} day{activeDaysWidget.activeDaysCount === 1 ? '' : 's'}
+                    </span>
+                  </div>
                 </article>
               </aside>
             </section>

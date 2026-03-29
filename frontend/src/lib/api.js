@@ -557,6 +557,19 @@ export async function getMyAccount(userId) {
   }
 }
 
+export async function hydrateAccountFromToken(token) {
+  try {
+    const { data } = await client.get('/me/account', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return data;
+  } catch (error) {
+    throw new Error(toErrorMessage(error, 'Failed to hydrate your account'));
+  }
+}
+
 export async function updateMyAccount(userId, payload) {
   try {
     const { data } = await client.patch('/me/account', payload, {

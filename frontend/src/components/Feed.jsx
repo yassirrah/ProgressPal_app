@@ -129,6 +129,7 @@ const Feed = () => {
       const dedupedItems = Array.from(new Map(mergedItems.map((item) => [item.id, item])).values());
 
       const nextItems = dedupedItems;
+      setError('');
       setFeedItems(nextItems);
       void loadLikeSummaries(nextItems);
     } catch (err) {

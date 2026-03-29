@@ -87,12 +87,14 @@ const UserProfile = () => {
     const loadProfile = async () => {
       if (!currentUser?.id || !userId) return;
       setLoading(true);
+      setProfile(null);
       setError('');
       setRequestMessage('');
       try {
         const data = await getUserProfile(currentUser.id, userId);
         setProfile(data);
       } catch (err) {
+        setProfile(null);
         setError(err.message || 'Failed to load profile');
       } finally {
         setLoading(false);
