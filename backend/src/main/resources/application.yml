@@ -38,3 +38,6 @@ app:
       lock-duration: ${APP_SECURITY_LOGIN_LOCK_DURATION:PT15M}
     jwt:
       secret: ${APP_SECURITY_JWT_SECRET}
+    keycloak:
+      issuer-uri: ${APP_SECURITY_KEYCLOAK_ISSUER_URI:}
+      jwk-set-uri: ${APP_SECURITY_KEYCLOAK_JWK_SET_URI:}

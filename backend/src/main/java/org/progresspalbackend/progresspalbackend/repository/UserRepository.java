@@ -10,6 +10,8 @@ import java.util.UUID;
 public interface UserRepository extends JpaRepository<User, UUID> {
     List<User> findTop10ByUsernameContainingIgnoreCaseOrderByUsernameAsc(String username);
     Optional<User> findByEmailIgnoreCase(String email);
+    Optional<User> findByAuthIssuerAndAuthSubject(String authIssuer, String authSubject);
+    boolean existsByUsernameIgnoreCase(String username);
     boolean existsByEmailIgnoreCaseAndIdNot(String email, UUID id);
     boolean existsByUsernameIgnoreCaseAndIdNot(String username, UUID id);
 }

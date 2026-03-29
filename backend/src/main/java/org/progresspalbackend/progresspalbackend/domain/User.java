@@ -25,11 +25,14 @@ public class User {
     @Column(nullable = false, unique = true)
     private String email;
 
-    @Column(nullable = false)
+    @Column
     private String password;
 
     private String profileImage;
     private String bio;
+    private String authProvider;
+    private String authSubject;
+    private String authIssuer;
 
     private Instant createdAt = Instant.now();
     private Instant updatedAt;

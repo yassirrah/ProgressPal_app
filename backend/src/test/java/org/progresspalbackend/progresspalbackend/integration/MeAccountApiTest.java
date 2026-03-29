@@ -169,6 +169,27 @@ class MeAccountApiTest {
         assertThat(passwordEncoder.matches("next-strong-pass", updated.getPassword())).isTrue();
     }
 
+    @Test
+    void meAccount_patch_password_forKeycloakLinkedAccount_returns400() throws Exception {
+        User user = persistUser("kc_user", "kc@test.com", "pw123");
+        user.setAuthProvider("KEYCLOAK");
+        user.setAuthIssuer("http://localhost:8081/realms/progresspal");
+        user.setAuthSubject("keycloak-subject");
+        userRepo.save(user);
+
+        String payload = json.writeValueAsString(Map.of(
+                "currentPassword", "pw123",
+                "newPassword", "next-strong-pass"
+        ));
+
+        mvc.perform(patch("/api/me/account")
+                        .header("X-User-Id", user.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("password changes are disabled for Keycloak-linked accounts"));
+    }
+
     private User persistUser(String username, String email, String rawPassword) {
         User user = new User();
         user.setUsername(username);

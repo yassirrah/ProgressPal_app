@@ -16,11 +16,17 @@ public interface UserMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
+    @Mapping(target = "authProvider", ignore = true)
+    @Mapping(target = "authSubject", ignore = true)
+    @Mapping(target = "authIssuer", ignore = true)
     User toEntity(UserCreateDto dto);
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
+    @Mapping(target = "authProvider", ignore = true)
+    @Mapping(target = "authSubject", ignore = true)
+    @Mapping(target = "authIssuer", ignore = true)
     void updateFromDto(UserCreateDto dto,
                        @MappingTarget User entity);
 }
