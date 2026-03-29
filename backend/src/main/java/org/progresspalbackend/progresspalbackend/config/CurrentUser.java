@@ -17,9 +17,9 @@ public class CurrentUser {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
         }
 
-        String rawUserId = jwtAuthenticationToken.getToken().getSubject();
+        String rawUserId = jwtAuthenticationToken.getToken().getClaimAsString("user_id");
         if (!StringUtils.hasText(rawUserId)) {
-            rawUserId = jwtAuthenticationToken.getToken().getClaimAsString("user_id");
+            rawUserId = jwtAuthenticationToken.getToken().getSubject();
         }
 
         if (!StringUtils.hasText(rawUserId)) {

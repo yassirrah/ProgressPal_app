@@ -12,6 +12,12 @@ import {
   markNotificationRead,
   searchUsersByUsername,
 } from '../lib/api';
+import {
+  clearKeycloakSession,
+  getKeycloakLogoutUrl,
+  getStoredKeycloakSession,
+  hasStoredKeycloakSession,
+} from '../lib/oidc';
 
 const formatRelativeFromNow = (value) => {
   const now = Date.now();
@@ -214,8 +220,15 @@ const Navbar = () => {
     setNotificationsOpen(false);
     setSearchOpen(false);
     setMobileNavOpen(false);
+    const keycloakSession = hasStoredKeycloakSession() ? getStoredKeycloakSession() : null;
+    const keycloakLogoutUrl = keycloakSession ? getKeycloakLogoutUrl(keycloakSession) : null;
     clearStoredUser();
-    window.location.href = '/login';
+    clearKeycloakSession();
+    if (keycloakLogoutUrl) {
+      window.location.assign(keycloakLogoutUrl);
+      return;
+    }
+    navigate('/login');
   };
 
   const handleToggleNotifications = () => {
@@ -287,6 +300,7 @@ const Navbar = () => {
   const closeMobileNav = () => setMobileNavOpen(false);
   const isLoginRoute = location.pathname === '/login';
   const isSignupRoute = location.pathname === '/signup';
+  const isCallbackRoute = location.pathname === '/auth/callback';
   const searchTargets = useMemo(() => {
     const baseTargets = [
       { id: 'home', label: 'Home', hint: 'Live and start session', path: '/', category: 'Page' },
@@ -465,7 +479,7 @@ const Navbar = () => {
     searchInputRef.current?.focus();
   }, [searchOpen]);
 
-  if (isLoginRoute || isSignupRoute) {
+  if (isLoginRoute || isSignupRoute || isCallbackRoute) {
     return (
       <nav>
         <div className="nav-inner nav-inner--auth">
@@ -486,9 +500,9 @@ const Navbar = () => {
           <div className="nav-zone nav-zone-right">
             {isLoginRoute ? (
               <Link to="/signup" className="nav-auth-signup-link">Sign Up</Link>
-            ) : (
+            ) : isSignupRoute ? (
               <Link to="/login" className="nav-auth-login-link">Login</Link>
-            )}
+            ) : null}
           </div>
         </div>
       </nav>

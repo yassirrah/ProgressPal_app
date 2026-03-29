@@ -1,224 +1,206 @@
-# Live Session Join Request + Room Chat Contract
+# Keycloak + Google OIDC Auth Contract
 
 ## Title and Scope
 
-Actors:
+This contract supersedes previous contract content and becomes the contract of record for authentication migration.
 
-- User A = requester
-- User B = host (session owner)
+Scope:
 
-Transport:
+- Introduce Keycloak as the OIDC provider for ProgressPal.
+- Enable Google login/signup through Keycloak.
+- Keep existing native email/password auth temporarily during migration.
+- Preserve the local ProgressPal `users` table as the canonical domain identity.
 
-- HTTP polling in v1 (no websocket requirement)
+Out of scope for v1:
 
-Source of truth:
-
-- this file supersedes previous contract content and is the contract of record for this feature.
+- Production Keycloak deployment strategy
+- SSO across multiple apps
+- Password reset through Keycloak
+- Removal of native auth endpoints in the same release
 
 ## Core Rules
 
-- Join request is allowed only if requester currently passes existing visibility access to that session:
-  - `PUBLIC`, or
-  - `FRIENDS` with friendship access.
-- Join request is never allowed for inaccessible `PRIVATE` sessions.
-- Requester cannot request their own session.
-- Requests are allowed only while session is live (`endedAt == null`).
-- Exactly one request record per `(sessionId, requesterId)` for the same live session.
-- If an existing request for that live session is `PENDING`, `ACCEPTED`, or `REJECTED`, creating another request returns `409 Conflict`.
-- Accepted requester can enter room via explicit `Enter Room` CTA.
-- Room access and room chat access are restricted to host + accepted participants only.
+- Frontend authentication uses Keycloak Authorization Code Flow with PKCE.
+- Google login/signup is provided through a Keycloak identity provider, not direct frontend-to-Google integration.
+- Backend protected APIs accept Keycloak bearer tokens directly.
+- Existing native auth remains temporarily available:
+  - `POST /api/auth/login`
+  - `POST /api/users`
+- Local ProgressPal user remains the source of truth for all business data, relations, and foreign keys.
+- Keycloak identity is linked to a local user by unique `(authIssuer, authSubject)`.
+- On first Keycloak-authenticated request:
+  - if `(authIssuer, authSubject)` already exists, use that linked local user
+  - else if token has verified email and a matching local user exists by case-insensitive email, link that local user
+  - else if token has verified email and no local user exists, create a new local user
+  - else deny access
+- Email must be present and verified for first-time Keycloak access.
+- Username bootstrap precedence:
+  - `preferred_username`
+  - email local-part
+  - generated fallback
+- Username creation must remain unique; collisions are resolved by suffixing.
+- Keycloak-managed accounts do not require a local password.
+- In-app password changes are disabled for Keycloak-linked accounts.
+- Existing app authorization rules remain unchanged after local user resolution.
 
-## Public APIs
+## Public Interfaces
 
-### 1) `POST /api/sessions/{sessionId}/join-requests`
+### Existing APIs kept during migration
 
-Request:
+- `POST /api/auth/login`
+- `POST /api/users`
 
-- no body
+Behavior:
 
-Response:
+- These remain functional for native auth during migration.
+- No request or response shape changes are introduced in v1.
 
-- `201 Created`
-- `SessionJoinRequestDto { id, sessionId, requesterId, requesterUsername, status, createdAt, respondedAt }`
+### Existing protected APIs
 
-Errors:
+- All existing protected endpoints continue to require bearer authentication.
+- For Keycloak-authenticated requests, backend resolves the local ProgressPal user from token claims before applying business rules.
 
-- `401 Unauthorized`
-- `403 Forbidden`
-- `404 Not Found`
-- `409 Conflict`
+### Account bootstrap behavior
 
-### 2) `GET /api/me/join-requests/outgoing`
+- `GET /api/me/account` is the frontend bootstrap endpoint after successful Keycloak login.
+- Frontend must call `GET /api/me/account` after OIDC login to hydrate the local ProgressPal user profile.
 
-Query params:
+## Token and Claim Resolution
 
-- `status` optional: `PENDING | ACCEPTED | REJECTED`
-- `liveOnly` optional, default `true`
+### Accepted token sources
 
-Response:
+- Native ProgressPal JWT during migration
+- Keycloak JWT access token
 
-- `200 OK`
-- list of `MyJoinRequestDto { requestId, sessionId, hostUserId, status, createdAt, respondedAt }`
+### Local JWT behavior
 
-### 3) `GET /api/sessions/{sessionId}/join-requests/incoming`
+- Existing native JWT behavior remains unchanged during migration.
+- Native JWT `sub` may continue to represent the local ProgressPal user ID.
 
-Authorization:
+### Keycloak JWT behavior
 
-- host-only endpoint
+Required claims for first-time access:
 
-Response:
+- `iss`
+- `sub`
+- `email`
+- `email_verified`
 
-- `200 OK`
-- list of `SessionJoinRequestDto` (typically `PENDING` rows)
+Preferred claims for profile bootstrap:
 
-Errors:
+- `preferred_username`
+- `name`
+- `given_name`
+- `family_name`
+- `picture`
 
-- `401 Unauthorized`
-- `403 Forbidden`
-- `404 Not Found`
-- `409 Conflict` (session not live)
+Resolution rules:
 
-### 4) `PATCH /api/sessions/{sessionId}/join-requests/{requestId}`
+- `iss` maps to `authIssuer`
+- `sub` maps to `authSubject`
+- `email` is used only for first-link or first-create decisions
+- `picture` may initialize `profileImage` for newly created local users only
 
-Authorization:
+## Persistence Changes
 
-- host-only endpoint
+### Users table additions
 
-Request body:
+Add nullable columns to `users`:
 
-- `{ "decision": "ACCEPT" | "REJECT" }`
+- `auth_provider`
+- `auth_subject`
+- `auth_issuer`
 
-Response:
+Add constraint:
 
-- `200 OK`
-- updated `SessionJoinRequestDto`
+- unique `(auth_issuer, auth_subject)`
 
-Errors:
+### Password changes
 
-- `400 Bad Request`
-- `401 Unauthorized`
-- `403 Forbidden`
-- `404 Not Found`
-- `409 Conflict` (already decided or session not live)
+- `users.password` becomes nullable to support Keycloak-only accounts.
 
-### 5) `GET /api/sessions/{sessionId}/room`
+### Linking semantics
 
-Authorization:
-
-- host or accepted participant only
-
-Response:
-
-- `200 OK`
-- `RoomStateDto { sessionId, host { id, username, profileImage }, participants[], live }`
-
-Errors:
-
-- `401 Unauthorized`
-- `403 Forbidden`
-- `404 Not Found`
-- `409 Conflict` (session not live)
-
-### 6) `GET /api/sessions/{sessionId}/room/messages`
-
-Authorization:
-
-- host or accepted participant only
-
-Query params:
-
-- `page`
-- `size`
-
-Response:
-
-- `200 OK`
-- paged `RoomMessageDto { id, sessionId, senderId, senderUsername, senderProfileImage, content, createdAt }`
-
-### 7) `POST /api/sessions/{sessionId}/room/messages`
-
-Authorization:
-
-- host or accepted participant only
-
-Request body:
-
-- `{ "content": "..." }`
-
-Validation:
-
-- content is required
-- content is trimmed
-- content must be non-blank after trimming
-- max content length is `1000`
-
-Response:
-
-- `201 Created`
-- `RoomMessageDto`
-
-Errors:
-
-- `400 Bad Request`
-- `401 Unauthorized`
-- `403 Forbidden`
-- `404 Not Found`
-- `409 Conflict` (session not live)
+- Native-only users may have null auth-link columns.
+- Keycloak-linked users must have non-null `auth_issuer` and `auth_subject`.
+- A Keycloak identity cannot link to more than one local user.
 
 ## Frontend Behavior Obligations
 
-- Feed live cards requester states:
-  - `Request to Join` -> `Pending` -> `Enter Room` (accepted) or `Rejected`.
-- Home host UX:
-  - right-side room panel as a toggle,
-  - pending requests list,
-  - accept/reject controls,
-  - participant list,
-  - room chat stream + composer.
-- Accepted requester enters a separate room component/page (not host Home panel).
-- Polling is active only while relevant view is active.
-- Existing loading/empty/error state patterns must be preserved.
+### Login page
 
-## Persistence and Enums
+- Keep current login page route.
+- Add primary CTA for Google/Keycloak login.
+- Keep legacy email/password form as secondary during migration.
 
-- New table: `session_join_request`
-  - unique constraint on `(session_id, requester_id)`.
-- New table: `session_room_message`
-  - linked to session and sender.
-- Join request status enum values:
-  - `PENDING`
-  - `ACCEPTED`
-  - `REJECTED`
-- Implementation requires Flyway migration(s) for:
-  - both tables,
-  - required constraints and indexes,
-  - enum/check-constraint compatibility.
+### Signup page
+
+- Keep current signup page route.
+- Add primary CTA for Google/Keycloak signup through the same Keycloak login flow.
+- Keep legacy signup form as secondary during migration.
+
+### Session bootstrap
+
+After successful Keycloak login:
+
+- frontend stores the Keycloak access token
+- frontend calls `GET /api/me/account`
+- frontend persists local user profile plus token in the existing auth storage shape
+
+### Logout
+
+- Native session logout clears local auth state.
+- Keycloak session logout clears local auth state and triggers Keycloak end-session flow.
+
+## Infrastructure Contract
+
+### Docker Compose
+
+Add optional auth profile services in `backend/docker-compose.yml`:
+
+- `keycloak-db`
+- `keycloak`
+
+Rules:
+
+- Keycloak remains optional in local development via Compose profile `auth`
+- Keycloak uses its own database storage, separate from the app database
+- Keycloak startup imports a local dev realm from versioned files
+
+### Realm import
+
+Add a versioned import folder:
+
+- `backend/keycloak/import/`
+
+Realm requirements:
+
+- realm name: `progresspal`
+- SPA client for frontend
+- roles:
+  - `user`
+  - `admin`
+- local redirect URIs for frontend development
+- Google identity provider configuration placeholders or documented setup points
+
+### Environment variables
+
+Frontend env:
+
+- `VITE_KEYCLOAK_URL`
+- `VITE_KEYCLOAK_REALM`
+- `VITE_KEYCLOAK_CLIENT_ID`
+
+Backend env/config:
+
+- Keycloak issuer URI / JWK validation configuration
+- Existing native JWT secret remains during migration
 
 ## Compatibility
 
-- Existing session start/stop/pause/resume APIs are unchanged.
-- Existing comments/likes/notifications APIs are unchanged for v1.
-- No websocket or push delivery guarantees in v1.
+- Existing session, feed, friends, notifications, comments, likes, join-request, and room APIs remain unchanged in request/response shape.
+- Existing authorization behavior remains unchanged after local user resolution.
+- Existing native auth remains temporary and backward compatible during migration.
+- Header-based local dev auth may remain only as a local-development fallback until explicitly removed.
 
 ## Acceptance and Validation Matrix
-
-- Requester can submit join request for visible live session.
-- Requester is blocked for:
-  - own session,
-  - private inaccessible session,
-  - ended session,
-  - duplicate request.
-- Host sees incoming requests on Home polling endpoint.
-- Host accept/reject updates requester outgoing status.
-- Accepted requester can fetch room state/messages and post chat.
-- Rejected or non-participant requester gets `403` on room state/messages/post.
-- Room endpoints return `409` when session is ended.
-- Feed and Home UI transitions match statuses:
-  - `Request`, `Pending`, `Enter Room`, `Rejected`.
-
-## Assumptions and Defaults
-
-- Contract scope is join-room only and replaces previous file content.
-- Polling cadence is implementation detail; contract requires eventual consistency via repeated `GET` polling.
-- No leave-room or kick-participant capability in v1.
-- Chat history is persisted and visible to authorized room members while the session is live.

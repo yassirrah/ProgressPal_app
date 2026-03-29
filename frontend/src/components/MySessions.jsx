@@ -12,7 +12,8 @@ import {
 const MySessions = () => {
   const user = useMemo(() => getStoredUser(), []);
   const [activityTypes, setActivityTypes] = useState([]);
-  const [error, setError] = useState('');
+  const [activityTypesError, setActivityTypesError] = useState('');
+  const [sessionsError, setSessionsError] = useState('');
   const [loading, setLoading] = useState(false);
   const [summaryError, setSummaryError] = useState('');
   const [summaryLoading, setSummaryLoading] = useState(false);
@@ -64,10 +65,11 @@ const MySessions = () => {
     const loadActivityTypes = async () => {
       if (!user) return;
       try {
+        setActivityTypesError('');
         const data = await getActivityTypes(user.id, 'ALL');
         setActivityTypes(data || []);
       } catch (err) {
-        setError(err.message || 'Failed to load activity types');
+        setActivityTypesError(err.message || 'Failed to load activity types');
       }
     };
 
@@ -78,12 +80,12 @@ const MySessions = () => {
     const loadSessions = async () => {
       if (!user) return;
       setLoading(true);
-      setError('');
+      setSessionsError('');
       try {
         const data = await getMySessions(user.id, filters);
         setPageData(data);
       } catch (err) {
-        setError(err.message || 'Failed to load your sessions');
+        setSessionsError(err.message || 'Failed to load your sessions');
       } finally {
         setLoading(false);
       }
@@ -373,7 +375,8 @@ const MySessions = () => {
           </button>
         </div>
 
-        {error && <p className="message-error">{error}</p>}
+        {activityTypesError && <p className="message-error">{activityTypesError}</p>}
+        {sessionsError && <p className="message-error">{sessionsError}</p>}
 
         {historyFiltersOpen && (
           <div className="my-sessions-history-filters">
@@ -391,6 +394,7 @@ const MySessions = () => {
                 <label>Visibility</label>
                 <select value={filters.visibility} onChange={(e) => handleFilterChange('visibility', e.target.value)}>
                   <option value="">Any</option>
+                  <option value="FRIENDS">FRIENDS</option>
                   <option value="PUBLIC">PUBLIC</option>
                   <option value="PRIVATE">PRIVATE</option>
                 </select>

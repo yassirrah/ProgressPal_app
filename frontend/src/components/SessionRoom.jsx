@@ -63,6 +63,7 @@ const SessionRoom = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [errorKind, setErrorKind] = useState('');
+  const [pollError, setPollError] = useState('');
   const [roomState, setRoomState] = useState(null);
   const [messages, setMessages] = useState([]);
   const [messageDraft, setMessageDraft] = useState('');
@@ -77,19 +78,26 @@ const SessionRoom = () => {
 
     if (!silent) {
       setLoading(true);
+      setError('');
+      setErrorKind('');
     }
 
     try {
-      setError('');
-      setErrorKind('');
       const [room, messagePage] = await Promise.all([
         getSessionRoomState(user.id, sessionId),
         getSessionRoomMessages(user.id, sessionId, 0, 80),
       ]);
       setRoomState(room || null);
       setMessages(normalizeRoomMessages(messagePage));
+      setError('');
+      setErrorKind('');
+      setPollError('');
     } catch (err) {
       const message = err.message || 'Failed to load room';
+      if (silent) {
+        setPollError((prev) => (prev === message ? prev : message));
+        return;
+      }
       const normalized = message.toLowerCase();
       if (normalized.includes('unauthorized')) {
         setErrorKind('unauthorized');
@@ -187,6 +195,7 @@ const SessionRoom = () => {
   }
 
   const participants = Array.isArray(roomState?.participants) ? roomState.participants : [];
+  const hasLiveRoomUi = Boolean(roomState);
   const roomLive = roomState?.live !== false;
   const routeContext = location.state?.sessionContext || {};
   const hostName = roomState?.host?.username || routeContext.hostName || 'Host';
@@ -206,7 +215,6 @@ const SessionRoom = () => {
     <div className="session-room-page">
       <div className="session-room-head">
         <div className="session-room-head-main">
-          <p className="friends-section-kicker">SESSION ROOM</p>
           <h1>{roomTitle}</h1>
           <p className="session-room-status-line">
             <span className={`session-room-live-pill${roomLive ? ' is-live' : ''}`}>
@@ -219,37 +227,37 @@ const SessionRoom = () => {
         </div>
         <button
           type="button"
-          className="secondary-button compact-button session-room-back-button"
+          className="session-room-back-link"
           onClick={() => navigate('/feed')}
         >
-          Back to Feed
+          &larr; Feed
         </button>
       </div>
 
       {loading && <p>Loading...</p>}
-      {!loading && errorKind === 'unauthorized' && (
+      {!loading && !hasLiveRoomUi && errorKind === 'unauthorized' && (
         <p className="message-error">You need to log in again to access this room.</p>
       )}
-      {!loading && errorKind === 'forbidden' && (
+      {!loading && !hasLiveRoomUi && errorKind === 'forbidden' && (
         <p className="message-error">You are not allowed in this room.</p>
       )}
-      {!loading && errorKind === 'not-live' && (
+      {!loading && !hasLiveRoomUi && errorKind === 'not-live' && (
         <p className="message-error">This room is no longer live.</p>
       )}
-      {!loading && errorKind === 'generic' && error && <p className="message-error">{error}</p>}
+      {!loading && !hasLiveRoomUi && errorKind === 'generic' && error && <p className="message-error">{error}</p>}
 
-      {!loading && !error && (
+      {!loading && hasLiveRoomUi && (
         <>
+          {(pollError || error) && <p className="message-error">{pollError || error}</p>}
           <section className="session-room-timer-strip" aria-live="polite">
             <p className="session-room-timer-copy">
               <span className="session-room-timer-indicator" aria-hidden="true" />
               Focused for <strong>{elapsedLabel}</strong>
             </p>
-            {startedLabel ? <span className="session-room-timer-meta">Session started at {startedLabel}</span> : null}
           </section>
 
           <div className="session-room-grid">
-            <section className="session-room-card">
+            <section className="session-room-card session-room-card--participants">
               <h2>Participants</h2>
               {!roomState?.host && participants.length === 0 ? (
                 <p className="message-muted">No participant data available.</p>
@@ -295,57 +303,63 @@ const SessionRoom = () => {
                   ))}
                 </ul>
               )}
+              <button
+                type="button"
+                className="session-room-invite-button"
+                onClick={() => navigate('/friends')}
+              >
+                Invite a friend +
+              </button>
             </section>
 
             <section className="session-room-card session-room-card--chat">
               <h2>Room Chat</h2>
-              <div className="session-room-chat-shell">
-                <div className="session-room-chat-list" aria-live="polite" ref={chatListRef}>
-                  {messages.length === 0 ? (
-                    <p className="message-muted">No messages yet.</p>
-                  ) : (
-                    messages.map((message, index) => {
-                      const previous = messages[index - 1];
-                      const isOwn = message.senderId === user.id;
-                      const startsGroup = !previous || previous.senderId !== message.senderId;
+              <div className="session-room-chat-list" aria-live="polite" ref={chatListRef}>
+                {messages.length === 0 ? (
+                  <p className="message-muted">No messages yet.</p>
+                ) : (
+                  messages.map((message) => {
+                    const messageOwnerId = message.senderId ?? message.userId ?? message.authorId ?? null;
+                    const messageSenderName = message.senderUsername || message.username || message.authorUsername || 'User';
+                    const isOwn = String(messageOwnerId) === String(user.id)
+                      || (!messageOwnerId && messageSenderName === user.username);
 
-                      return (
-                        <article
-                          key={message.id}
-                          className={`session-room-chat-item${isOwn ? ' own' : ''}${startsGroup ? ' group-start' : ''}`}
-                        >
-                          {startsGroup ? (
-                            <div className="session-room-chat-meta">
-                              <strong>{message.senderUsername || 'User'}</strong>
-                              <span>{formatClock(message.createdAt)}</span>
-                            </div>
-                          ) : null}
-                          <p>{message.content}</p>
-                        </article>
-                      );
-                    })
-                  )}
-                </div>
-
-                <form className="session-room-composer" onSubmit={handleSendMessage}>
-                  <input
-                    type="text"
-                    ref={messageInputRef}
-                    maxLength={1000}
-                    value={messageDraft}
-                    onChange={(event) => setMessageDraft(event.target.value)}
-                    placeholder={roomLive ? 'Write a message...' : 'Room is not live'}
-                    disabled={!roomLive}
-                  />
-                  <button
-                    type="submit"
-                    className="compact-button"
-                    disabled={!roomLive || sending || !messageDraft.trim()}
-                  >
-                    {sending ? 'Sending...' : 'Send'}
-                  </button>
-                </form>
+                    return (
+                      <article
+                        key={message.id}
+                        className={`session-room-chat-item${isOwn ? ' own' : ''}`}
+                      >
+                        <div className="session-room-chat-meta">
+                          <strong>{isOwn ? (user.username || 'You') : messageSenderName}</strong>
+                          <span>{formatClock(message.createdAt)}</span>
+                        </div>
+                        <div className="session-room-chat-bubble">
+                          <p className="session-room-chat-text">{message.content}</p>
+                        </div>
+                      </article>
+                    );
+                  })
+                )}
               </div>
+
+              <form className="session-room-composer" onSubmit={handleSendMessage}>
+                <input
+                  type="text"
+                  ref={messageInputRef}
+                  maxLength={1000}
+                  value={messageDraft}
+                  onChange={(event) => setMessageDraft(event.target.value)}
+                  placeholder={roomLive ? 'Write a message...' : 'Room is not live'}
+                  disabled={!roomLive}
+                />
+                <button
+                  type="submit"
+                  className="compact-button"
+                  disabled={!roomLive || sending || !messageDraft.trim()}
+                >
+                  {sending ? 'Sending...' : 'Send'}
+                </button>
+              </form>
             </section>
           </div>
         </>

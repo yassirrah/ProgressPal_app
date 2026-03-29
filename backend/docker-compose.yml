@@ -5,6 +5,7 @@ networks:
 
 volumes:
   pgdata:
+  keycloak-pgdata:
 
 services:
   db:
@@ -36,6 +37,38 @@ services:
       retries: 10
     restart: unless-stopped
     networks: [progresspal-net]
+
+  keycloak-db:
+    image: postgres:15-alpine
+    container_name: progresspal-keycloak-db
+    env_file: ./env/keycloak-db.dev.env
+    volumes:
+      - keycloak-pgdata:/var/lib/postgresql/data
+    environment:
+      TZ: UTC
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+    networks: [progresspal-net]
+    profiles: ["auth"]
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.5.5
+    container_name: progresspal-keycloak
+    env_file: ./env/keycloak.dev.env
+    command: ["start-dev", "--import-realm"]
+    ports: ["8081:8080"]
+    volumes:
+      - ./keycloak/import:/opt/keycloak/data/import:ro
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [progresspal-net]
+    profiles: ["auth"]
 
   # Optional helper UI
   # pgadmin:

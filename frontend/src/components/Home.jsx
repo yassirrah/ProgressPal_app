@@ -108,6 +108,15 @@ const formatDurationLabel = (totalSeconds) => {
   return `${hours}h ${remainingMinutes}m`;
 };
 
+const formatCompactDuration = (totalSeconds) => {
+  const safeSeconds = Math.max(0, Number(totalSeconds) || 0);
+  const totalMinutes = Math.floor(safeSeconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+  return `${totalMinutes}m`;
+};
+
 const countSessionsWithinDays = (sessions, days) => {
   const source = Array.isArray(sessions) ? sessions : [];
   const nowMs = Date.now();
@@ -382,7 +391,7 @@ const Home = () => {
   const liveMetricLabel = liveSessionType?.metricLabel || 'metric';
   const showStopMetricInput = !!liveSession && liveMetricKind !== 'NONE';
   const isSessionPaused = !!liveSession?.paused;
-  const getElapsedDurationSeconds = (session) => {
+  const getElapsedDurationSeconds = useCallback((session) => {
     if (!session?.startedAt) return 0;
     const startedMs = new Date(session.startedAt).getTime();
     const endMs = session.endedAt ? new Date(session.endedAt).getTime() : now;
@@ -394,7 +403,7 @@ const Home = () => {
       pausedSeconds += Math.max(0, Math.floor((endMs - pausedStartMs) / 1000));
     }
     return Math.max(0, rawSeconds - pausedSeconds);
-  };
+  }, [now]);
   const hasLiveGoal = !!liveSession && liveSession.goalType && liveSession.goalType !== 'NONE';
   const liveGoalTargetNumeric = liveSession?.goalTarget == null ? null : Number(liveSession.goalTarget);
   const liveGoalDoneNumeric = (() => {
@@ -491,6 +500,62 @@ const Home = () => {
   const formatLiveDuration = (session) => {
     return formatDuration(getElapsedDurationSeconds(session));
   };
+
+  const liveElapsedSeconds = liveSession ? getElapsedDurationSeconds(liveSession) : 0;
+  const liveTimerDisplay = liveSession ? formatLiveDuration(liveSession) : formatDuration(0);
+  const liveRingTargetMinutes = Number.isFinite(liveTimeGoalTargetMinutes) && liveTimeGoalTargetMinutes > 0
+    ? liveTimeGoalTargetMinutes
+    : 25;
+  const liveRingProgress = Math.min(1, Math.max(0, liveElapsedSeconds / (liveRingTargetMinutes * 60)));
+  const liveRingRadius = 74;
+  const liveRingCircumference = 2 * Math.PI * liveRingRadius;
+  const liveRingDashOffset = liveRingCircumference * (1 - liveRingProgress);
+  const livePhaseStates = Array.from({ length: 5 }, (_, index) => {
+    const elapsedMinutes = liveElapsedSeconds / 60;
+    const phaseStart = index * 5;
+    const phaseEnd = (index + 1) * 5;
+    if (elapsedMinutes >= phaseEnd) return 'done';
+    if (elapsedMinutes >= phaseStart) return 'current';
+    return 'upcoming';
+  });
+  const liveSessionInsights = useMemo(() => {
+    const dedupedSessions = Array.from(
+      new Map(
+        [...mySessions, ...(liveSession ? [liveSession] : [])]
+          .filter((session) => session?.id)
+          .map((session) => [session.id, session]),
+      ).values(),
+    );
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    const dailyTotals = Array.from({ length: 7 }, (_, index) => {
+      const day = new Date(today);
+      day.setDate(today.getDate() - (6 - index));
+      const dayStart = day.getTime();
+      const dayEnd = dayStart + (24 * 60 * 60 * 1000);
+      const totalSeconds = dedupedSessions.reduce((sum, session) => {
+        if (!session?.startedAt) return sum;
+        const startedMs = new Date(session.startedAt).getTime();
+        if (Number.isNaN(startedMs) || startedMs < dayStart || startedMs >= dayEnd) return sum;
+        return sum + getElapsedDurationSeconds(session);
+      }, 0);
+      return {
+        key: `live-day-${index}`,
+        totalSeconds,
+        isToday: index === 6,
+      };
+    });
+    const peakSeconds = dailyTotals.reduce((max, bucket) => Math.max(max, bucket.totalSeconds), 0);
+    return {
+      todayTotalSeconds: dailyTotals[6]?.totalSeconds || 0,
+      bars: dailyTotals.map((bucket) => ({
+        ...bucket,
+        height: bucket.totalSeconds > 0
+          ? Math.max(0.22, bucket.totalSeconds / (peakSeconds || bucket.totalSeconds || 1))
+          : 0.12,
+      })),
+    };
+  }, [getElapsedDurationSeconds, liveSession, mySessions, now]);
 
   function formatGoalValue(value, goalType, metricLabel) {
     if (value == null || value === '') return '-';
@@ -974,16 +1039,19 @@ const Home = () => {
     for (let day = 1; day <= daysInMonth; day += 1) {
       const sessions = daySessionCounts.get(day) || 0;
       const isToday = day === today.getDate();
+      const intensity = sessions >= 2 ? 'high' : sessions === 1 ? 'low' : 'none';
       cells.push({
         key: `day-${day}`,
         day,
         isEmpty: false,
         isToday,
-        isActive: sessions > 0,
+        intensity,
         sessions,
-        tooltip: sessions > 0
-          ? `${sessions} session${sessions === 1 ? '' : 's'}`
-          : 'No activity',
+        tooltip: isToday
+          ? `Today${sessions > 0 ? ` • ${sessions} session${sessions === 1 ? '' : 's'}` : ''}`
+          : sessions > 0
+            ? `${sessions} session${sessions === 1 ? '' : 's'}`
+            : 'No activity',
       });
     }
 
@@ -1122,10 +1190,24 @@ const Home = () => {
 
   return (
     <div className={`home-stack${liveSession ? ' focus-mode' : ''}${liveSession && roomPanelOpen ? ' room-panel-open' : ''}${sessionCompleteModal ? ' session-complete-open' : ''}`}>
-      <h1 className="page-title">{liveSession ? 'Live Session' : 'Home'}</h1>
-      <p className="home-page-subtitle">
-        {liveSession ? 'Track your focus in real time' : 'Keep your streak alive today'}
-      </p>
+      {liveSession ? (
+        <div className="live-page-heading">
+          <span className="live-page-kicker">
+            <span className="live-page-kicker-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" role="img" focusable="false">
+                <path d="M8.7 1.3 3.9 8h3l-.7 6.7L12.1 8H9.2l-.5-6.7Z" />
+              </svg>
+            </span>
+            <span>Activity</span>
+          </span>
+          <h1 className="page-title">{liveSessionType?.name || 'Live session'}</h1>
+        </div>
+      ) : (
+        <h1 className="page-title">Home</h1>
+      )}
+      {!liveSession && (
+        <p className="home-page-subtitle">Keep your streak alive today</p>
+      )}
       {!user && <p>Please <a href="/login">login</a> or <a href="/signup">sign up</a> to get started.</p>}
       {dashboardError && <p className="message-error">{dashboardError}</p>}
       {loading && <p>Loading...</p>}
@@ -1137,48 +1219,110 @@ const Home = () => {
               {sessionError && <p className="message-error">{sessionError}</p>}
               {sessionNotice && <p className="message-muted live-inline-feedback">{sessionNotice}</p>}
               <div className="live-hero-layout">
-                <div className="live-hero-row live-hero-row--status">
-                  <p className="home-live-status-line live-hero-meta-line">
-                    <span className="home-live-activity">{liveSessionType?.name || 'Live session'}</span>
-                    <span className={`home-live-state ${isSessionPaused ? 'paused' : 'live'}`}>
-                      {isSessionPaused ? 'Paused' : 'Live'}
-                    </span>
-                    <span className="live-hero-started-at">Started {liveStartedAtLabel}</span>
-                  </p>
-                  <div className="live-hero-meta-cluster" aria-label="Session metadata">
-                    <span className="live-hero-meta-pill live-hero-meta-pill--config live-hero-meta-pill--setting">{liveVisibilityLabel}</span>
-                    <span className="live-hero-meta-pill live-hero-meta-pill--config live-hero-meta-pill--setting">{liveTrackingLabel}</span>
-                    <span className="live-hero-meta-pill live-hero-meta-pill--streak">
-                      <span className="live-hero-streak-dot" aria-hidden="true" />
-                      <span className="live-hero-streak-value">{homeMomentumStats.streak} day streak</span>
-                    </span>
-                    <span className="live-hero-meta-pill live-hero-meta-pill--status">{liveFocusLabel}</span>
-                    <span className="live-hero-meta-divider" aria-hidden="true" />
-                    <button
-                      type="button"
-                      className={`live-hero-room-button${roomPanelOpen ? ' is-open' : ''}`}
-                      onClick={openRoomPanel}
-                    >
-                      <span className="live-hero-room-button-icon" aria-hidden="true">
-                        <svg viewBox="0 0 16 16" role="img" focusable="false">
-                          <path d="M5.2 8.3a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2Zm0-4.1a1.5 1.5 0 1 0 0 3.1 1.5 1.5 0 0 0 0-3.1Zm5.6 3.3a2.2 2.2 0 1 1 0-4.4 2.2 2.2 0 0 1 0 4.4Zm0-3.3a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2ZM1.3 13c0-2.1 2.1-3.3 3.9-3.3s3.9 1.2 3.9 3.3v.4H1.3V13Zm6.6-.7c-.3-1.1-1.6-1.5-2.7-1.5-1 0-2.4.4-2.7 1.5H8Zm.9 1.1c0-1.6 1.6-2.5 3-2.5s3 1 3 2.5v.1H8.8v-.1Zm4.7-.9c-.3-.7-1.2-.9-1.8-.9-.6 0-1.5.2-1.8.9h3.6Z" />
-                        </svg>
-                      </span>
-                      <span>{pendingRequestCount > 0 ? `Open Room (${pendingRequestCount})` : 'Open Room'}</span>
-                    </button>
-                  </div>
-                </div>
+                <div className="live-session-stage">
+                  <aside className="live-session-facts" aria-label="Session details">
+                    <div className="live-session-fact">
+                      <span className="live-session-fact-label">Status</span>
+                      <strong className={`live-session-fact-value live-session-fact-value--status${isSessionPaused ? ' is-paused' : ''}`}>
+                        <span className="live-session-fact-dot" aria-hidden="true" />
+                        <span>{isSessionPaused ? 'Paused' : 'Live now'}</span>
+                      </strong>
+                    </div>
+                    <div className="live-session-fact">
+                      <span className="live-session-fact-label">Started</span>
+                      <strong className="live-session-fact-value">{liveStartedAtLabel}</strong>
+                    </div>
+                    <div className="live-session-fact">
+                      <span className="live-session-fact-label">Visibility</span>
+                      <strong className="live-session-fact-value">{liveVisibilityLabel}</strong>
+                    </div>
+                    <div className="live-session-fact">
+                      <span className="live-session-fact-label">Tracking</span>
+                      <strong className="live-session-fact-value">{liveTrackingLabel}</strong>
+                    </div>
+                  </aside>
 
-                <div className="live-hero-row live-hero-row--timer">
-                  <span className="live-timer-value live-timer-value--hero">{formatLiveDuration(liveSession)}</span>
-                  <span className="live-timer-subtle">Elapsed focus time</span>
+                  <div className="live-session-focus">
+                    <div className="live-timer-ring-shell" aria-label={`Focused for ${liveTimerDisplay}`}>
+                      <svg
+                        className="live-timer-ring-svg"
+                        viewBox="0 0 180 180"
+                        role="img"
+                        aria-hidden="true"
+                      >
+                        <circle
+                          className="live-timer-ring-track"
+                          cx="90"
+                          cy="90"
+                          r={liveRingRadius}
+                        />
+                        <circle
+                          className="live-timer-ring-progress"
+                          cx="90"
+                          cy="90"
+                          r={liveRingRadius}
+                          strokeDasharray={liveRingCircumference}
+                          strokeDashoffset={liveRingDashOffset}
+                        />
+                      </svg>
+                      <div className="live-timer-ring-center">
+                        <span className="live-timer-value live-timer-value--hero">{liveTimerDisplay}</span>
+                        <span className="live-timer-subtle">Focused</span>
+                      </div>
+                    </div>
+                    <div className="live-phase-indicator" aria-label="Session phase progress">
+                      {livePhaseStates.map((state, index) => (
+                        <span
+                          key={`phase-${index + 1}`}
+                          className={`live-phase-segment live-phase-segment--${state}`}
+                          aria-hidden="true"
+                        />
+                      ))}
+                    </div>
+                    <div className="live-hero-meta-cluster" aria-label="Session status">
+                      <span className="live-hero-meta-pill live-hero-meta-pill--streak">
+                        <span className="live-hero-streak-dot" aria-hidden="true" />
+                        <span className="live-hero-streak-value">{homeMomentumStats.streak}-day streak</span>
+                      </span>
+                      <span className="live-hero-meta-pill live-hero-meta-pill--status">{liveFocusLabel}</span>
+                      <button
+                        type="button"
+                        className={`live-hero-room-button${roomPanelOpen ? ' is-open' : ''}`}
+                        onClick={openRoomPanel}
+                      >
+                        <span className="live-hero-room-button-icon" aria-hidden="true">
+                          <svg viewBox="0 0 16 16" role="img" focusable="false">
+                            <path d="M5.2 8.3a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2Zm0-4.1a1.5 1.5 0 1 0 0 3.1 1.5 1.5 0 0 0 0-3.1Zm5.6 3.3a2.2 2.2 0 1 1 0-4.4 2.2 2.2 0 0 1 0 4.4Zm0-3.3a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2ZM1.3 13c0-2.1 2.1-3.3 3.9-3.3s3.9 1.2 3.9 3.3v.4H1.3V13Zm6.6-.7c-.3-1.1-1.6-1.5-2.7-1.5-1 0-2.4.4-2.7 1.5H8Zm.9 1.1c0-1.6 1.6-2.5 3-2.5s3 1 3 2.5v.1H8.8v-.1Zm4.7-.9c-.3-.7-1.2-.9-1.8-.9-.6 0-1.5.2-1.8.9h3.6Z" />
+                          </svg>
+                        </span>
+                        <span>Open Room</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <aside className="live-session-today" aria-label="Today's sessions">
+                    <span className="live-session-today-label">Today&apos;s sessions</span>
+                    <div className="live-session-mini-chart" aria-hidden="true">
+                      {liveSessionInsights.bars.map((bar) => (
+                        <span
+                          key={bar.key}
+                          className={`live-session-mini-bar${bar.isToday ? ' is-today' : ''}${bar.totalSeconds > 0 ? ' is-active' : ''}`}
+                          style={{ '--bar-height': `${bar.height}` }}
+                        />
+                      ))}
+                    </div>
+                    <strong className="live-session-today-total">
+                      {formatCompactDuration(liveSessionInsights.todayTotalSeconds)}
+                    </strong>
+                    <span className="live-session-today-subtitle">total today</span>
+                  </aside>
                 </div>
 
                 {!stopPanelOpen && (
-                  <div className="live-hero-row live-hero-row--actions">
+                  <div className="live-session-action-bar">
                     <button
                       type="button"
-                      className="live-primary-button compact-button live-action-button"
+                      className="live-ghost-button compact-button live-action-button"
                       onClick={handleTogglePauseState}
                       disabled={savingPauseState}
                     >
@@ -1186,7 +1330,7 @@ const Home = () => {
                     </button>
                     <button
                       type="button"
-                      className="danger-outline-button compact-button live-end-button live-action-button"
+                      className="live-primary-button compact-button live-end-button live-action-button"
                       onClick={handleStopClick}
                     >
                       <span className="danger-soft-button-icon" aria-hidden="true">■</span>
@@ -1305,7 +1449,7 @@ const Home = () => {
           {liveSession && (
             <section className="home-card session-tools-card">
               <div className="home-section-head">
-                <h2>Session Tools</h2>
+                <p className="session-tools-section-label">Session tools</p>
               </div>
               <div className="session-tools-grid">
                 <article className={`session-tools-panel session-tools-panel--overview${!hasLiveGoal ? ' session-tools-panel--overview-empty' : ''}`}>
@@ -1314,7 +1458,7 @@ const Home = () => {
                     {!goalPanelOpen && (
                       <button
                         type="button"
-                        className="secondary-button compact-button live-goal-tools-cta"
+                        className="compact-button live-goal-tools-cta"
                         onClick={() => setGoalPanelOpen(true)}
                         aria-label={hasLiveGoal ? 'Edit goal' : 'Set goal'}
                       >
@@ -1372,6 +1516,10 @@ const Home = () => {
                     <div className="session-tools-detail">
                       <span>Visibility</span>
                       <strong>{liveVisibilityLabel}</strong>
+                    </div>
+                    <div className="session-tools-detail">
+                      <span>Tracking</span>
+                      <strong>{liveTrackingLabel}</strong>
                     </div>
                   </div>
 
@@ -1761,16 +1909,32 @@ const Home = () => {
                           key={cell.key}
                           role="gridcell"
                           title={cell.tooltip}
-                          className={`home-active-day-cell${cell.isActive ? ' is-active' : ''}${cell.isToday ? ' is-today' : ''}`}
+                          className={`home-active-day-cell${cell.intensity !== 'none' ? ` is-${cell.intensity}` : ''}${cell.isToday ? ' is-today' : ''}`}
                         >
                           {cell.day}
                         </span>
                       )
                     ))}
                   </div>
-                  <p className="home-active-days-summary">
-                    {activeDaysWidget.activeDaysCount} active day{activeDaysWidget.activeDaysCount === 1 ? '' : 's'} this month
-                  </p>
+                  <div className="home-active-days-legend" aria-label="Active day legend">
+                    <div className="home-active-days-legend-items">
+                      <span className="home-active-days-legend-item">
+                        <span className="home-active-days-swatch is-low" aria-hidden="true" />
+                        <span>1 session</span>
+                      </span>
+                      <span className="home-active-days-legend-item">
+                        <span className="home-active-days-swatch is-high" aria-hidden="true" />
+                        <span>2+ sessions</span>
+                      </span>
+                      <span className="home-active-days-legend-item">
+                        <span className="home-active-days-swatch is-today" aria-hidden="true" />
+                        <span>today</span>
+                      </span>
+                    </div>
+                    <span className="home-active-days-count">
+                      {activeDaysWidget.activeDaysCount} day{activeDaysWidget.activeDaysCount === 1 ? '' : 's'}
+                    </span>
+                  </div>
                 </article>
               </aside>
             </section>

@@ -120,6 +120,9 @@ public class UserService {
         }
 
         if (dto.newPassword() != null && !dto.newPassword().isBlank()) {
+            if (isKeycloakLinked(existing)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "password changes are disabled for Keycloak-linked accounts");
+            }
             if (dto.currentPassword() == null || dto.currentPassword().isBlank()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "currentPassword is required to change password");
             }
@@ -150,5 +153,10 @@ public class UserService {
     private boolean isBcryptHash(String value) {
         return value != null
                 && (value.startsWith("$2a$") || value.startsWith("$2b$") || value.startsWith("$2y$"));
+    }
+
+    private boolean isKeycloakLinked(User user) {
+        return user.getAuthIssuer() != null && !user.getAuthIssuer().isBlank()
+                && user.getAuthSubject() != null && !user.getAuthSubject().isBlank();
     }
 }
