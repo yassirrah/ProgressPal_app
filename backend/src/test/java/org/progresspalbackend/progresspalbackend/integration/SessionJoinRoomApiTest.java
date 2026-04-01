@@ -5,6 +5,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
 import org.progresspalbackend.progresspalbackend.domain.Friendship;
+import org.progresspalbackend.progresspalbackend.domain.Notification;
+import org.progresspalbackend.progresspalbackend.domain.NotificationResourceType;
+import org.progresspalbackend.progresspalbackend.domain.NotificationType;
 import org.progresspalbackend.progresspalbackend.domain.Session;
 import org.progresspalbackend.progresspalbackend.domain.SessionJoinRequest;
 import org.progresspalbackend.progresspalbackend.domain.SessionJoinRequestStatus;
@@ -12,10 +15,12 @@ import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
 import org.progresspalbackend.progresspalbackend.repository.FriendRepository;
+import org.progresspalbackend.progresspalbackend.repository.NotificationRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionJoinRequestRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionRoomMessageRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
+import org.progresspalbackend.progresspalbackend.service.NotificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -28,6 +33,11 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -73,6 +83,12 @@ class SessionJoinRoomApiTest {
     FriendRepository friendRepository;
 
     @Autowired
+    NotificationRepository notificationRepository;
+
+    @Autowired
+    NotificationService notificationService;
+
+    @Autowired
     SessionJoinRequestRepository sessionJoinRequestRepository;
 
     @Autowired
@@ -80,6 +96,7 @@ class SessionJoinRoomApiTest {
 
     @BeforeEach
     void cleanDb() {
+        notificationRepository.deleteAll();
         sessionRoomMessageRepository.deleteAll();
         sessionJoinRequestRepository.deleteAll();
         sessionRepository.deleteAll();
@@ -104,6 +121,14 @@ class SessionJoinRoomApiTest {
                 .andExpect(jsonPath("$.status").value("PENDING"));
 
         assertThat(sessionJoinRequestRepository.findAll()).hasSize(1);
+        assertThat(notificationRepository.findAll()).hasSize(1);
+        Notification notification = notificationRepository.findAll().get(0);
+        assertThat(notification.getRecipient().getId()).isEqualTo(host.getId());
+        assertThat(notification.getActor().getId()).isEqualTo(requester.getId());
+        assertThat(notification.getType()).isEqualTo(NotificationType.SESSION_JOIN_REQUEST_RECEIVED);
+        assertThat(notification.getResourceType()).isEqualTo(NotificationResourceType.SESSION);
+        assertThat(notification.getResourceId()).isEqualTo(session.getId());
+        assertThat(notification.getReadAt()).isNull();
     }
 
     @Test
@@ -229,6 +254,78 @@ class SessionJoinRoomApiTest {
     }
 
     @Test
+    void acceptJoinRequest_createsRequesterNotification_andMarksHostJoinRequestNotificationRead() throws Exception {
+        User host = persistUser("host");
+        User requester = persistUser("requester");
+        ActivityType type = persistActivityType("Study");
+        Session session = persistSession(host, type, Visibility.PUBLIC, false);
+        String joinRequestBody = mvc.perform(post("/api/sessions/{sessionId}/join-requests", session.getId())
+                        .header("X-User-Id", requester.getId().toString()))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String requestId = JsonPath.read(joinRequestBody, "$.id");
+
+        mvc.perform(patch("/api/sessions/{sessionId}/join-requests/{requestId}", session.getId(), requestId)
+                        .header("X-User-Id", host.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"ACCEPT\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACCEPTED"));
+
+        assertThat(notificationRepository.findAll()).hasSize(2);
+
+        Notification requesterNotification = notificationRepository.findAll().stream()
+                .filter(notification -> notification.getRecipient().getId().equals(requester.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(requesterNotification.getActor().getId()).isEqualTo(host.getId());
+        assertThat(requesterNotification.getType()).isEqualTo(NotificationType.SESSION_JOIN_REQUEST_ACCEPTED);
+        assertThat(requesterNotification.getResourceType()).isEqualTo(NotificationResourceType.SESSION);
+        assertThat(requesterNotification.getResourceId()).isEqualTo(session.getId());
+        assertThat(requesterNotification.getMessage()).isEqualTo(host.getUsername() + " accepted your join request.");
+        assertThat(requesterNotification.getReadAt()).isNull();
+
+        Notification hostNotification = notificationRepository.findAll().stream()
+                .filter(notification -> notification.getRecipient().getId().equals(host.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(hostNotification.getActor().getId()).isEqualTo(requester.getId());
+        assertThat(hostNotification.getType()).isEqualTo(NotificationType.SESSION_JOIN_REQUEST_RECEIVED);
+        assertThat(hostNotification.getReadAt()).isNotNull();
+    }
+
+    @Test
+    void rejectJoinRequest_doesNotCreateRequesterNotification_andMarksHostJoinRequestNotificationRead() throws Exception {
+        User host = persistUser("host");
+        User requester = persistUser("requester");
+        ActivityType type = persistActivityType("Study");
+        Session session = persistSession(host, type, Visibility.PUBLIC, false);
+        String joinRequestBody = mvc.perform(post("/api/sessions/{sessionId}/join-requests", session.getId())
+                        .header("X-User-Id", requester.getId().toString()))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String requestId = JsonPath.read(joinRequestBody, "$.id");
+
+        mvc.perform(patch("/api/sessions/{sessionId}/join-requests/{requestId}", session.getId(), requestId)
+                        .header("X-User-Id", host.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"REJECT\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"));
+
+        assertThat(notificationRepository.findAll()).hasSize(1);
+        Notification hostNotification = notificationRepository.findAll().get(0);
+        assertThat(hostNotification.getRecipient().getId()).isEqualTo(host.getId());
+        assertThat(hostNotification.getActor().getId()).isEqualTo(requester.getId());
+        assertThat(hostNotification.getType()).isEqualTo(NotificationType.SESSION_JOIN_REQUEST_RECEIVED);
+        assertThat(hostNotification.getReadAt()).isNotNull();
+    }
+
+    @Test
     void roomAccess_acceptedParticipant_canReadAndChat() throws Exception {
         User host = persistUser("host");
         User participant = persistUser("participant");
@@ -264,6 +361,140 @@ class SessionJoinRoomApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.content[0].content").value("hello room"));
+
+        assertThat(notificationRepository.findAll()).hasSize(1);
+        Notification notification = notificationRepository.findAll().get(0);
+        assertThat(notification.getRecipient().getId()).isEqualTo(host.getId());
+        assertThat(notification.getActor().getId()).isEqualTo(participant.getId());
+        assertThat(notification.getType()).isEqualTo(NotificationType.SESSION_ROOM_MESSAGE_RECEIVED);
+        assertThat(notification.getResourceType()).isEqualTo(NotificationResourceType.SESSION);
+        assertThat(notification.getResourceId()).isEqualTo(session.getId());
+        assertThat(notification.getReadAt()).isNull();
+    }
+
+    @Test
+    void secondUnreadParticipantRoomMessage_sameSession_updatesExistingUnreadNotification() throws Exception {
+        User host = persistUser("host");
+        User participantA = persistUser("participantA");
+        User participantB = persistUser("participantB");
+        ActivityType type = persistActivityType("Study");
+        Session session = persistSession(host, type, Visibility.PUBLIC, false);
+        persistJoinRequest(session, participantA, SessionJoinRequestStatus.ACCEPTED);
+        persistJoinRequest(session, participantB, SessionJoinRequestStatus.ACCEPTED);
+
+        mvc.perform(post("/api/sessions/{sessionId}/room/messages", session.getId())
+                        .header("X-User-Id", participantA.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"first\"}"))
+                .andExpect(status().isCreated());
+
+        mvc.perform(post("/api/sessions/{sessionId}/room/messages", session.getId())
+                        .header("X-User-Id", participantB.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"second\"}"))
+                .andExpect(status().isCreated());
+
+        assertThat(notificationRepository.findAll()).hasSize(1);
+        Notification notification = notificationRepository.findAll().get(0);
+        assertThat(notification.getType()).isEqualTo(NotificationType.SESSION_ROOM_MESSAGE_RECEIVED);
+        assertThat(notification.getRecipient().getId()).isEqualTo(host.getId());
+        assertThat(notification.getActor().getId()).isEqualTo(participantB.getId());
+        assertThat(notification.getMessage()).isEqualTo(participantB.getUsername() + " sent a message in your room.");
+        assertThat(notification.getReadAt()).isNull();
+    }
+
+    @Test
+    void hostAuthoredRoomMessage_createsNoHostRoomMessageNotification() throws Exception {
+        User host = persistUser("host");
+        ActivityType type = persistActivityType("Study");
+        Session session = persistSession(host, type, Visibility.PUBLIC, false);
+
+        mvc.perform(post("/api/sessions/{sessionId}/room/messages", session.getId())
+                        .header("X-User-Id", host.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"host update\"}"))
+                .andExpect(status().isCreated());
+
+        assertThat(notificationRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void roomMessage_afterUnreadNotificationIsRead_createsNewUnreadNotification() throws Exception {
+        User host = persistUser("host");
+        User participant = persistUser("participant");
+        ActivityType type = persistActivityType("Study");
+        Session session = persistSession(host, type, Visibility.PUBLIC, false);
+        persistJoinRequest(session, participant, SessionJoinRequestStatus.ACCEPTED);
+
+        mvc.perform(post("/api/sessions/{sessionId}/room/messages", session.getId())
+                        .header("X-User-Id", participant.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"first\"}"))
+                .andExpect(status().isCreated());
+
+        Notification firstNotification = notificationRepository.findAll().get(0);
+
+        mvc.perform(patch("/api/me/notifications/{notificationId}/read", firstNotification.getId())
+                        .header("X-User-Id", host.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.readAt").isNotEmpty());
+
+        mvc.perform(post("/api/sessions/{sessionId}/room/messages", session.getId())
+                        .header("X-User-Id", participant.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"second\"}"))
+                .andExpect(status().isCreated());
+
+        assertThat(notificationRepository.findAll()).hasSize(2);
+        long unreadNotifications = notificationRepository.findAll().stream()
+                .filter(notification -> notification.getReadAt() == null)
+                .count();
+        assertThat(unreadNotifications).isEqualTo(1);
+
+        Notification unreadNotification = notificationRepository.findAll().stream()
+                .filter(notification -> notification.getReadAt() == null)
+                .findFirst()
+                .orElseThrow();
+        assertThat(unreadNotification.getId()).isNotEqualTo(firstNotification.getId());
+        assertThat(unreadNotification.getType()).isEqualTo(NotificationType.SESSION_ROOM_MESSAGE_RECEIVED);
+        assertThat(unreadNotification.getMessage()).isEqualTo(participant.getUsername() + " sent a message in your room.");
+    }
+
+    @Test
+    void concurrentRoomMessageNotifications_keepSingleUnreadNotificationRow() throws Exception {
+        User host = persistUser("host");
+        User participantA = persistUser("participantA");
+        User participantB = persistUser("participantB");
+        ActivityType type = persistActivityType("Study");
+        Session session = persistSession(host, type, Visibility.PUBLIC, false);
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+
+        try {
+            Future<?> firstNotification = executor.submit(() ->
+                    sendConcurrentRoomNotification(host, participantA, session.getId(), ready, start));
+            Future<?> secondNotification = executor.submit(() ->
+                    sendConcurrentRoomNotification(host, participantB, session.getId(), ready, start));
+
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            firstNotification.get(5, TimeUnit.SECONDS);
+            secondNotification.get(5, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(notificationRepository.findAll()).hasSize(1);
+        Notification notification = notificationRepository.findAll().get(0);
+        assertThat(notification.getRecipient().getId()).isEqualTo(host.getId());
+        assertThat(notification.getType()).isEqualTo(NotificationType.SESSION_ROOM_MESSAGE_RECEIVED);
+        assertThat(notification.getResourceType()).isEqualTo(NotificationResourceType.SESSION);
+        assertThat(notification.getResourceId()).isEqualTo(session.getId());
+        assertThat(notification.getReadAt()).isNull();
+        assertThat(notification.getActor().getId()).isIn(participantA.getId(), participantB.getId());
     }
 
     @Test
@@ -377,5 +608,22 @@ class SessionJoinRoomApiTest {
         request.setCreatedAt(Instant.now());
         request.setRespondedAt(status == SessionJoinRequestStatus.PENDING ? null : Instant.now());
         return sessionJoinRequestRepository.save(request);
+    }
+
+    private void sendConcurrentRoomNotification(User host,
+                                                User participant,
+                                                UUID sessionId,
+                                                CountDownLatch ready,
+                                                CountDownLatch start) {
+        try {
+            ready.countDown();
+            if (!start.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting to start concurrent notification write");
+            }
+            notificationService.notifySessionRoomMessageReceived(host, participant, sessionId);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting to send concurrent notification", ex);
+        }
     }
 }

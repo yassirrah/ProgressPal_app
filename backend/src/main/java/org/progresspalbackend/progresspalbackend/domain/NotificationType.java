@@ -3,6 +3,9 @@ package org.progresspalbackend.progresspalbackend.domain;
 public enum NotificationType {
     FRIEND_REQUEST_RECEIVED,
     FRIEND_REQUEST_ACCEPTED,
+    SESSION_JOIN_REQUEST_RECEIVED,
+    SESSION_JOIN_REQUEST_ACCEPTED,
+    SESSION_ROOM_MESSAGE_RECEIVED,
     SESSION_COMMENT,
     SESSION_LIKE,
     SESSION_STARTED

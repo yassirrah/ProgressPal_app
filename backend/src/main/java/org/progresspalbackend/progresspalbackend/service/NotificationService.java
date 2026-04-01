@@ -2,6 +2,7 @@ package org.progresspalbackend.progresspalbackend.service;
 
 import lombok.RequiredArgsConstructor;
 import org.progresspalbackend.progresspalbackend.domain.Notification;
+import org.progresspalbackend.progresspalbackend.domain.NotificationScope;
 import org.progresspalbackend.progresspalbackend.domain.NotificationResourceType;
 import org.progresspalbackend.progresspalbackend.domain.NotificationType;
 import org.progresspalbackend.progresspalbackend.domain.User;
@@ -16,11 +17,18 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.EnumSet;
+import java.util.List;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class NotificationService {
+
+    private static final EnumSet<NotificationType> HOST_ROOM_TYPES = EnumSet.of(
+            NotificationType.SESSION_JOIN_REQUEST_RECEIVED,
+            NotificationType.SESSION_ROOM_MESSAGE_RECEIVED
+    );
 
     private final NotificationRepository notificationRepository;
 
@@ -68,6 +76,47 @@ public class NotificationService {
         );
     }
 
+    public void notifySessionJoinRequestReceived(User recipient, User actor, UUID sessionId) {
+        create(
+                recipient,
+                actor,
+                NotificationType.SESSION_JOIN_REQUEST_RECEIVED,
+                NotificationResourceType.SESSION,
+                sessionId,
+                actor.getUsername() + " requested to join your session."
+        );
+    }
+
+    public void notifySessionJoinRequestAccepted(User recipient, User actor, UUID sessionId) {
+        create(
+                recipient,
+                actor,
+                NotificationType.SESSION_JOIN_REQUEST_ACCEPTED,
+                NotificationResourceType.SESSION,
+                sessionId,
+                actor.getUsername() + " accepted your join request."
+        );
+    }
+
+    @Transactional
+    public void notifySessionRoomMessageReceived(User recipient, User actor, UUID sessionId) {
+        if (recipient == null || actor == null || recipient.getId().equals(actor.getId())) {
+            return;
+        }
+
+        Instant createdAt = Instant.now();
+        notificationRepository.upsertUnreadRoomMessageNotification(
+                UUID.randomUUID(),
+                recipient.getId(),
+                actor.getId(),
+                NotificationType.SESSION_ROOM_MESSAGE_RECEIVED.name(),
+                NotificationResourceType.SESSION.name(),
+                sessionId,
+                actor.getUsername() + " sent a message in your room.",
+                createdAt
+        );
+    }
+
     public void notifySessionStarted(User recipient, User actor, UUID sessionId) {
         create(
                 recipient,
@@ -80,13 +129,29 @@ public class NotificationService {
     }
 
     @Transactional(readOnly = true)
-    public Page<NotificationDto> list(UUID recipientId, Pageable pageable) {
-        return notificationRepository.findAllByRecipient_IdOrderByCreatedAtDesc(recipientId, pageable)
+    public Page<NotificationDto> list(UUID recipientId, NotificationScope scope, Pageable pageable) {
+        return (switch (normalizeScope(scope)) {
+            case ALL -> notificationRepository.findAllByRecipient_IdOrderByCreatedAtDesc(recipientId, pageable);
+            case HOST_ROOM -> notificationRepository.findAllByRecipient_IdAndTypeInOrderByCreatedAtDesc(
+                    recipientId,
+                    HOST_ROOM_TYPES,
+                    pageable
+            );
+            case NAVBAR -> notificationRepository.findAllByRecipient_IdAndTypeNotInOrderByCreatedAtDesc(
+                    recipientId,
+                    HOST_ROOM_TYPES,
+                    pageable
+            );
+        })
                 .map(this::toDto);
     }
 
-    public NotificationUnreadCountDto unreadCount(UUID recipientId) {
-        long count = notificationRepository.countByRecipient_IdAndReadAtIsNull(recipientId);
+    public NotificationUnreadCountDto unreadCount(UUID recipientId, NotificationScope scope) {
+        long count = switch (normalizeScope(scope)) {
+            case ALL -> notificationRepository.countByRecipient_IdAndReadAtIsNull(recipientId);
+            case HOST_ROOM -> notificationRepository.countByRecipient_IdAndReadAtIsNullAndTypeIn(recipientId, HOST_ROOM_TYPES);
+            case NAVBAR -> notificationRepository.countByRecipient_IdAndReadAtIsNullAndTypeNotIn(recipientId, HOST_ROOM_TYPES);
+        };
         return new NotificationUnreadCountDto(count);
     }
 
@@ -104,13 +169,42 @@ public class NotificationService {
     }
 
     @Transactional
-    public void markAllRead(UUID recipientId) {
-        notificationRepository.markAllUnreadAsRead(recipientId, Instant.now());
+    public void markAllRead(UUID recipientId, NotificationScope scope, UUID resourceId) {
+        Instant readAt = Instant.now();
+        List<Notification> unreadNotifications = resourceId == null
+                ? notificationRepository.findAllByRecipient_IdAndReadAtIsNull(recipientId)
+                : notificationRepository.findAllByRecipient_IdAndReadAtIsNullAndResourceId(recipientId, resourceId);
+
+        List<Notification> notificationsToRead = unreadNotifications.stream()
+                .filter(notification -> matchesScope(notification.getType(), normalizeScope(scope)))
+                .toList();
+
+        notificationsToRead.forEach(notification -> notification.setReadAt(readAt));
+        notificationRepository.saveAll(notificationsToRead);
     }
 
     @Transactional
     public void clearAll(UUID recipientId) {
         notificationRepository.deleteByRecipient_Id(recipientId);
+    }
+
+    @Transactional
+    public void markSessionJoinRequestReceivedAsRead(User recipient, User actor, UUID sessionId) {
+        if (recipient == null || actor == null) {
+            return;
+        }
+
+        Instant readAt = Instant.now();
+        List<Notification> notifications = notificationRepository
+                .findAllByRecipient_IdAndActor_IdAndTypeAndResourceTypeAndResourceIdAndReadAtIsNull(
+                        recipient.getId(),
+                        actor.getId(),
+                        NotificationType.SESSION_JOIN_REQUEST_RECEIVED,
+                        NotificationResourceType.SESSION,
+                        sessionId
+                );
+        notifications.forEach(notification -> notification.setReadAt(readAt));
+        notificationRepository.saveAll(notifications);
     }
 
     private void create(User recipient,
@@ -137,6 +231,18 @@ public class NotificationService {
         notification.setCreatedAt(Instant.now());
 
         notificationRepository.save(notification);
+    }
+
+    private NotificationScope normalizeScope(NotificationScope scope) {
+        return scope == null ? NotificationScope.NAVBAR : scope;
+    }
+
+    private boolean matchesScope(NotificationType type, NotificationScope scope) {
+        return switch (scope) {
+            case ALL -> true;
+            case HOST_ROOM -> HOST_ROOM_TYPES.contains(type);
+            case NAVBAR -> !HOST_ROOM_TYPES.contains(type);
+        };
     }
 
     private NotificationDto toDto(Notification notification) {
