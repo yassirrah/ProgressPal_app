@@ -5,6 +5,7 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 
 
+import org.progresspalbackend.progresspalbackend.config.SessionFreshnessProperties;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
 import org.progresspalbackend.progresspalbackend.domain.GoalType;
 import org.progresspalbackend.progresspalbackend.domain.MetricKind;
@@ -33,6 +34,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -67,6 +69,7 @@ public class SessionService {
     private final SessionMapper mapper;
     private final ActivityTypeRepository activityTypeRepository;
     private final NotificationService notificationService;
+    private final SessionFreshnessProperties sessionFreshnessProperties;
 
     public SessionDto create(SessionCreateDto dto, UUID user_id) {
         if(dto.activityTypeId() == null){
@@ -88,9 +91,11 @@ public class SessionService {
         entity.setUser(user);
         entity.setActivityType(activityType);
         validateAndApplyGoal(entity, dto.goalType(), dto.goalTarget(), dto.goalNote());
-        entity.setStartedAt(Instant.now());
+        Instant now = Instant.now();
+        entity.setStartedAt(now);
         entity.setPausedAt(null);
         entity.setPausedDurationSeconds(0L);
+        entity.setLastSentHeartBeat(now);
         Session saved = sessionRepo.save(entity);
         notifyFriendsAboutSessionStart(saved, user, dto.notifyFriends());
         return mapper.toDto(saved);
@@ -198,6 +203,7 @@ public class SessionService {
         Instant resumedAt = Instant.now();
         accruePausedDurationSeconds(session, resumedAt);
         session.setPausedAt(null);
+        session.setLastSentHeartBeat(resumedAt);
         return mapper.toDto(sessionRepo.save(session));
     }
 
@@ -293,9 +299,45 @@ public class SessionService {
                 || friendRepository.existsByUser_IdAndFriend_Id(targetUserId, actorUserId);
     }
 
+    @Transactional
     public Optional<SessionDto> getLiveSessionOfUser(UUID actorUserId) {
         return sessionRepo.findFirstByUser_IdAndEndedAtIsNullOrderByStartedAtDesc(actorUserId)
-                .map(mapper::toDto);
+                .map(session -> {
+                    autoPauseIfStale(session, Instant.now());
+                    return mapper.toDto(session);
+                });
+    }
+
+    @Transactional(dontRollbackOn = ResponseStatusException.class)
+    public void heartbeat(UUID id, UUID actorUserId) {
+        Session session = sessionRepo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
+
+        if (!session.getUser().getId().equals(actorUserId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You cannot heartbeat another user's session");
+        }
+        if (session.getEndedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Session already stopped");
+        }
+
+        Instant now = Instant.now();
+        autoPauseIfStale(session, now);
+
+        if (session.getPausedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Session already paused");
+        }
+
+        session.setLastSentHeartBeat(now);
+        sessionRepo.save(session);
+    }
+
+    @Scheduled(fixedDelayString = "${app.sessions.freshness.sweep-interval:60s}")
+    @Transactional
+    public void autoPauseStaleLiveSessions() {
+        Instant now = Instant.now();
+        for (Session session : sessionRepo.findAllByEndedAtIsNullAndPausedAtIsNull()) {
+            autoPauseIfStale(session, now);
+        }
     }
 
     public Page<SessionDto> getMySessions(UUID userId,
@@ -602,6 +644,27 @@ public class SessionService {
         session.setPausedDurationSeconds(current + delta);
     }
 
+    private void autoPauseIfStale(Session session, Instant now) {
+        if (session.getEndedAt() != null || session.getPausedAt() != null) {
+            return;
+        }
+
+        Instant staleCutoff = computeStaleCutoff(session);
+        if (staleCutoff.isAfter(now)) {
+            return;
+        }
+
+        session.setPausedAt(staleCutoff);
+        sessionRepo.save(session);
+    }
+
+    private Instant computeStaleCutoff(Session session) {
+        Instant freshnessBase = session.getLastSentHeartBeat() != null
+                ? session.getLastSentHeartBeat()
+                : session.getStartedAt();
+        return freshnessBase.plus(sessionFreshnessProperties.getStaleAfter());
+    }
+
     private LocalDate bucketStartOf(Instant instant, TrendBucket bucket) {
         LocalDate day = instant.atOffset(ZoneOffset.UTC).toLocalDate();
         if (bucket == TrendBucket.DAY) {
@@ -721,4 +784,5 @@ public class SessionService {
             );
         }
     }
+
 }

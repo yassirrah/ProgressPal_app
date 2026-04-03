@@ -37,5 +37,6 @@ public interface SessionRepository extends JpaRepository<Session, UUID>, JpaSpec
     Page<Session> findByUser_IdInAndVisibilityInOrderByStartedAtDesc(List<UUID> userIds, List<Visibility> visibilities, Pageable pageable);
 
     Optional<Session> findFirstByUser_IdAndEndedAtIsNullOrderByStartedAtDesc(UUID userId);
+    List<Session> findAllByEndedAtIsNullAndPausedAtIsNull();
 
 }

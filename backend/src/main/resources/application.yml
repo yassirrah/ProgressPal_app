@@ -41,3 +41,8 @@ app:
     keycloak:
       issuer-uri: ${APP_SECURITY_KEYCLOAK_ISSUER_URI:}
       jwk-set-uri: ${APP_SECURITY_KEYCLOAK_JWK_SET_URI:}
+  sessions:
+    freshness:
+      heartbeat-interval: 45s
+      stale-after: 15m
+      sweep-interval: 60s
