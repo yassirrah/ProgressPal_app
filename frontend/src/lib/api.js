@@ -247,6 +247,23 @@ export async function resumeSession(userId, sessionId) {
   }
 }
 
+export async function sendSessionHeartbeat(userId, sessionId) {
+  try {
+    await client.patch(
+      `/sessions/${sessionId}/heartbeat`,
+      null,
+      {
+        headers: authHeaders(userId),
+        validateStatus: (status) => status === 204,
+      },
+    );
+  } catch (error) {
+    const heartbeatError = new Error(toErrorMessage(error, 'Failed to send session heartbeat'));
+    heartbeatError.status = error?.response?.status;
+    throw heartbeatError;
+  }
+}
+
 export async function updateSessionGoal(userId, sessionId, payload) {
   try {
     const { data } = await client.patch(
@@ -581,11 +598,17 @@ export async function updateMyAccount(userId, payload) {
   }
 }
 
-export async function getMyNotifications(userId, page = 0, size = 12) {
+function buildNotificationScopeParams(baseParams = {}, options = {}) {
+  const params = { ...baseParams };
+  if (options.scope) params.scope = options.scope;
+  return params;
+}
+
+export async function getMyNotifications(userId, page = 0, size = 12, options = {}) {
   try {
     const { data } = await client.get('/me/notifications', {
       headers: authHeaders(userId),
-      params: { page, size },
+      params: buildNotificationScopeParams({ page, size }, options),
     });
     return data;
   } catch (error) {
@@ -593,10 +616,11 @@ export async function getMyNotifications(userId, page = 0, size = 12) {
   }
 }
 
-export async function getUnreadNotificationsCount(userId) {
+export async function getUnreadNotificationsCount(userId, options = {}) {
   try {
     const { data } = await client.get('/me/notifications/unread-count', {
       headers: authHeaders(userId),
+      params: buildNotificationScopeParams({}, options),
     });
     return data;
   } catch (error) {
@@ -615,10 +639,13 @@ export async function markNotificationRead(userId, notificationId) {
   }
 }
 
-export async function markAllNotificationsRead(userId) {
+export async function markAllNotificationsRead(userId, options = {}) {
   try {
+    const params = buildNotificationScopeParams({}, options);
+    if (options.resourceId) params.resourceId = options.resourceId;
     await client.patch('/me/notifications/read-all', null, {
       headers: authHeaders(userId),
+      params,
     });
   } catch (error) {
     throw new Error(toErrorMessage(error, 'Failed to mark all notifications as read'));

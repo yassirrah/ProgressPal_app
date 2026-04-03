@@ -2,6 +2,7 @@ package org.progresspalbackend.progresspalbackend.web;
 
 import lombok.RequiredArgsConstructor;
 import org.progresspalbackend.progresspalbackend.config.CurrentUser;
+import org.progresspalbackend.progresspalbackend.domain.NotificationScope;
 import org.progresspalbackend.progresspalbackend.dto.notification.NotificationDto;
 import org.progresspalbackend.progresspalbackend.dto.notification.NotificationUnreadCountDto;
 import org.progresspalbackend.progresspalbackend.service.NotificationService;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,15 +33,17 @@ public class NotificationController {
 
     @GetMapping
     public Page<NotificationDto> list(Authentication authentication,
+                                      @RequestParam(required = false) NotificationScope scope,
                                       @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         UUID userId = currentUser.id(authentication);
-        return notificationService.list(userId, pageable);
+        return notificationService.list(userId, scope, pageable);
     }
 
     @GetMapping("/unread-count")
-    public NotificationUnreadCountDto unreadCount(Authentication authentication) {
+    public NotificationUnreadCountDto unreadCount(Authentication authentication,
+                                                  @RequestParam(required = false) NotificationScope scope) {
         UUID userId = currentUser.id(authentication);
-        return notificationService.unreadCount(userId);
+        return notificationService.unreadCount(userId, scope);
     }
 
     @PatchMapping("/{notificationId}/read")
@@ -51,9 +55,11 @@ public class NotificationController {
 
     @PatchMapping("/read-all")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void markAllRead(Authentication authentication) {
+    public void markAllRead(Authentication authentication,
+                            @RequestParam(required = false) NotificationScope scope,
+                            @RequestParam(required = false) UUID resourceId) {
         UUID userId = currentUser.id(authentication);
-        notificationService.markAllRead(userId);
+        notificationService.markAllRead(userId, scope, resourceId);
     }
 
     @DeleteMapping

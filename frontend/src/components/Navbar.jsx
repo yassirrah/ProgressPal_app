@@ -66,6 +66,12 @@ const notificationPath = (notification) => {
   }
 
   if (
+    type === 'SESSION_JOIN_REQUEST_ACCEPTED'
+  ) {
+    return '/feed';
+  }
+
+  if (
     type === 'SESSION_COMMENT'
     || type === 'SESSION_LIKE'
     || resourceType === 'COMMENT'

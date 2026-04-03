@@ -97,4 +97,12 @@ public class SessionController {
         return service.getLiveSessionOfUser(userId).map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
+
+    @PatchMapping("/{id}/heartbeat")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void heartbeat(Authentication authentication,
+                          @PathVariable UUID id) {
+        UUID userId = currentUser.id(authentication);
+        service.heartbeat(id, userId);
+    }
 }

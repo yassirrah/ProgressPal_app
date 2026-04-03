@@ -38,6 +38,7 @@ public class SessionJoinRoomService {
     private final SessionJoinRequestRepository sessionJoinRequestRepository;
     private final SessionRoomMessageRepository sessionRoomMessageRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
     @Transactional
     public SessionJoinRequestDto createJoinRequest(UUID actorUserId, UUID sessionId) {
@@ -61,7 +62,9 @@ public class SessionJoinRoomService {
         request.setCreatedAt(Instant.now());
 
         try {
-            return toSessionJoinRequestDto(sessionJoinRequestRepository.save(request));
+            SessionJoinRequest savedRequest = sessionJoinRequestRepository.save(request);
+            notificationService.notifySessionJoinRequestReceived(session.getUser(), requester, sessionId);
+            return toSessionJoinRequestDto(savedRequest);
         } catch (DataIntegrityViolationException ex) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Join request already exists for this session");
         }
@@ -115,7 +118,20 @@ public class SessionJoinRoomService {
                 ? SessionJoinRequestStatus.ACCEPTED
                 : SessionJoinRequestStatus.REJECTED);
         request.setRespondedAt(Instant.now());
-        return toSessionJoinRequestDto(sessionJoinRequestRepository.save(request));
+        SessionJoinRequest savedRequest = sessionJoinRequestRepository.save(request);
+        notificationService.markSessionJoinRequestReceivedAsRead(
+                session.getUser(),
+                savedRequest.getRequester(),
+                session.getId()
+        );
+        if (decision == JoinRequestDecision.ACCEPT) {
+            notificationService.notifySessionJoinRequestAccepted(
+                    savedRequest.getRequester(),
+                    session.getUser(),
+                    session.getId()
+            );
+        }
+        return toSessionJoinRequestDto(savedRequest);
     }
 
     @Transactional(readOnly = true)
@@ -166,7 +182,11 @@ public class SessionJoinRoomService {
         message.setSender(sender);
         message.setContent(trimmed);
         message.setCreatedAt(Instant.now());
-        return toRoomMessageDto(sessionRoomMessageRepository.save(message));
+        SessionRoomMessage savedMessage = sessionRoomMessageRepository.save(message);
+        if (!session.getUser().getId().equals(actorUserId)) {
+            notificationService.notifySessionRoomMessageReceived(session.getUser(), sender, session.getId());
+        }
+        return toRoomMessageDto(savedMessage);
     }
 
     private Session requireRoomMemberOnLiveSession(UUID actorUserId, UUID sessionId) {

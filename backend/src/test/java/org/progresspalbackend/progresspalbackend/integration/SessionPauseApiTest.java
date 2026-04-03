@@ -94,9 +94,11 @@ class SessionPauseApiTest {
     }
 
     @Test
-    void resume_paused_session_returns200_and_accumulates_paused_duration() throws Exception {
+    void resume_paused_session_returns200_and_accumulates_paused_duration_and_reseeds_heartbeat() throws Exception {
         Session session = sessionRepo.findById(sessionId).orElseThrow();
         session.setPausedAt(Instant.now().minusSeconds(90));
+        Instant previousHeartbeat = Instant.now().minusSeconds(600);
+        session.setLastSentHeartBeat(previousHeartbeat);
         sessionRepo.save(session);
 
                 mvc.perform(patch("/api/sessions/{id}/resume", sessionId)
@@ -109,6 +111,7 @@ class SessionPauseApiTest {
         Session resumed = sessionRepo.findById(sessionId).orElseThrow();
         assertThat(resumed.getPausedDurationSeconds()).isGreaterThanOrEqualTo(90L);
         assertThat(resumed.getPausedAt()).isNull();
+        assertThat(resumed.getLastSentHeartBeat()).isAfter(previousHeartbeat);
     }
 
     @Test

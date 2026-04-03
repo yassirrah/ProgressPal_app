@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
 import org.progresspalbackend.progresspalbackend.domain.Friendship;
 import org.progresspalbackend.progresspalbackend.domain.Session;
+import org.progresspalbackend.progresspalbackend.domain.SessionJoinRequest;
+import org.progresspalbackend.progresspalbackend.domain.SessionJoinRequestStatus;
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
@@ -13,6 +15,7 @@ import org.progresspalbackend.progresspalbackend.repository.FriendRepository;
 import org.progresspalbackend.progresspalbackend.repository.FriendRequestRepository;
 import org.progresspalbackend.progresspalbackend.repository.NotificationRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionCommentRepository;
+import org.progresspalbackend.progresspalbackend.repository.SessionJoinRequestRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionReactionRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
@@ -28,8 +31,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -74,6 +79,9 @@ class NotificationApiTest {
     SessionRepository sessionRepository;
 
     @Autowired
+    SessionJoinRequestRepository sessionJoinRequestRepository;
+
+    @Autowired
     FriendRepository friendRepository;
 
     @Autowired
@@ -90,6 +98,7 @@ class NotificationApiTest {
         notificationRepository.deleteAll();
         reactionRepository.deleteAll();
         commentRepository.deleteAll();
+        sessionJoinRequestRepository.deleteAll();
         sessionRepository.deleteAll();
         friendRepository.deleteAll();
         friendRequestRepository.deleteAll();
@@ -167,6 +176,186 @@ class NotificationApiTest {
                         .header("X-User-Id", actor.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(0));
+    }
+
+    @Test
+    void joinRequestAccepted_createsNotificationForRequester() throws Exception {
+        User host = persistUser();
+        User requester = persistUser();
+        ActivityType type = persistActivityType("Study");
+        Session session = persistSession(host, type, Visibility.PUBLIC);
+
+        String joinRequestBody = mvc.perform(post("/api/sessions/{sessionId}/join-requests", session.getId())
+                        .header("X-User-Id", requester.getId().toString()))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String requestId = JsonPath.read(joinRequestBody, "$.id");
+
+        mvc.perform(patch("/api/sessions/{sessionId}/join-requests/{requestId}", session.getId(), requestId)
+                        .header("X-User-Id", host.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"ACCEPT\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACCEPTED"));
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", requester.getId().toString())
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].type").value("SESSION_JOIN_REQUEST_ACCEPTED"))
+                .andExpect(jsonPath("$.content[0].resourceType").value("SESSION"))
+                .andExpect(jsonPath("$.content[0].resourceId").value(session.getId().toString()))
+                .andExpect(jsonPath("$.content[0].actorId").value(host.getId().toString()))
+                .andExpect(jsonPath("$.content[0].actorUsername").value(host.getUsername()))
+                .andExpect(jsonPath("$.content[0].message").value(host.getUsername() + " accepted your join request."));
+    }
+
+    @Test
+    void hostRoomNotifications_areExcludedFromNavbarScope_andVisibleInHostRoomScope() throws Exception {
+        User host = persistUser();
+        User requester = persistUser();
+        ActivityType type = persistActivityType("Study");
+        Session session = persistSession(host, type, Visibility.PUBLIC);
+
+        mvc.perform(post("/api/sessions/{sessionId}/join-requests", session.getId())
+                        .header("X-User-Id", requester.getId().toString()))
+                .andExpect(status().isCreated());
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", host.getId().toString())
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(0));
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", host.getId().toString())
+                        .param("scope", "NAVBAR")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(0));
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", host.getId().toString())
+                        .param("scope", "HOST_ROOM")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].type").value("SESSION_JOIN_REQUEST_RECEIVED"))
+                .andExpect(jsonPath("$.content[0].resourceType").value("SESSION"))
+                .andExpect(jsonPath("$.content[0].resourceId").value(session.getId().toString()))
+                .andExpect(jsonPath("$.content[0].actorId").value(requester.getId().toString()))
+                .andExpect(jsonPath("$.content[0].actorUsername").value(requester.getUsername()))
+                .andExpect(jsonPath("$.content[0].message").value(requester.getUsername() + " requested to join your session."));
+
+        mvc.perform(get("/api/me/notifications/unread-count")
+                        .header("X-User-Id", host.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(0));
+
+        mvc.perform(get("/api/me/notifications/unread-count")
+                        .header("X-User-Id", host.getId().toString())
+                        .param("scope", "NAVBAR"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(0));
+
+        mvc.perform(get("/api/me/notifications/unread-count")
+                        .header("X-User-Id", host.getId().toString())
+                        .param("scope", "HOST_ROOM"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(1));
+    }
+
+    @Test
+    void hostRoomReadAll_bySession_clearsOnlyHostRoomNotificationsForThatSession() throws Exception {
+        User host = persistUser();
+        User pendingRequester = persistUser();
+        User participant = persistUser();
+        User friendRequester = persistUser();
+        ActivityType type = persistActivityType("Study");
+        Session session = persistSession(host, type, Visibility.PUBLIC);
+        persistJoinRequest(session, participant, SessionJoinRequestStatus.ACCEPTED);
+
+        mvc.perform(post("/api/sessions/{sessionId}/join-requests", session.getId())
+                        .header("X-User-Id", pendingRequester.getId().toString()))
+                .andExpect(status().isCreated());
+
+        mvc.perform(post("/api/sessions/{sessionId}/room/messages", session.getId())
+                        .header("X-User-Id", participant.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"hello host"}
+                                """))
+                .andExpect(status().isCreated());
+
+        mvc.perform(post("/api/friends/send")
+                        .header("X-User-Id", friendRequester.getId().toString())
+                        .param("receiverId", host.getId().toString()))
+                .andExpect(status().isCreated());
+
+        mvc.perform(get("/api/me/notifications/unread-count")
+                        .header("X-User-Id", host.getId().toString())
+                        .param("scope", "NAVBAR"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(1));
+
+        mvc.perform(get("/api/me/notifications/unread-count")
+                        .header("X-User-Id", host.getId().toString())
+                        .param("scope", "HOST_ROOM"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(2));
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", host.getId().toString())
+                        .param("scope", "HOST_ROOM")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].type").value("SESSION_ROOM_MESSAGE_RECEIVED"))
+                .andExpect(jsonPath("$.content[1].type").value("SESSION_JOIN_REQUEST_RECEIVED"));
+
+        mvc.perform(patch("/api/me/notifications/read-all")
+                        .header("X-User-Id", host.getId().toString())
+                        .param("scope", "HOST_ROOM")
+                        .param("resourceId", session.getId().toString()))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(get("/api/me/notifications/unread-count")
+                        .header("X-User-Id", host.getId().toString())
+                        .param("scope", "HOST_ROOM"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(0));
+
+        mvc.perform(get("/api/me/notifications/unread-count")
+                        .header("X-User-Id", host.getId().toString())
+                        .param("scope", "NAVBAR"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(1));
+
+        mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", host.getId().toString())
+                        .param("scope", "NAVBAR")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].type").value("FRIEND_REQUEST_RECEIVED"));
+
+        String hostRoomBody = mvc.perform(get("/api/me/notifications")
+                        .header("X-User-Id", host.getId().toString())
+                        .param("scope", "HOST_ROOM")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].readAt").isNotEmpty())
+                .andExpect(jsonPath("$.content[1].readAt").isNotEmpty())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        List<String> types = JsonPath.read(hostRoomBody, "$.content[*].type");
+        assertThat(types).containsExactly("SESSION_ROOM_MESSAGE_RECEIVED", "SESSION_JOIN_REQUEST_RECEIVED");
     }
 
     @Test
@@ -373,6 +562,16 @@ class NotificationApiTest {
         session.setEndedAt(null);
         session.setTitle("focus");
         return sessionRepository.save(session);
+    }
+
+    private SessionJoinRequest persistJoinRequest(Session session, User requester, SessionJoinRequestStatus status) {
+        SessionJoinRequest request = new SessionJoinRequest();
+        request.setSession(session);
+        request.setRequester(requester);
+        request.setStatus(status);
+        request.setCreatedAt(Instant.now());
+        request.setRespondedAt(status == SessionJoinRequestStatus.PENDING ? null : Instant.now());
+        return sessionJoinRequestRepository.save(request);
     }
 
     private void persistFriendship(User user, User friend) {

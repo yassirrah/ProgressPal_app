@@ -77,6 +77,9 @@ public class Session {
 
     private Visibility visibility;
 
+    @Column(name = "last_sent_heartbeat")
+    private Instant lastSentHeartBeat;
+
     @Transient
     public boolean isLive() {
         return endedAt == null;

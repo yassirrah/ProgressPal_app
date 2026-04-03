@@ -4194,6 +4194,21 @@ form {
   fill: currentColor;
 }
 
+.live-hero-room-button-badge {
+  min-width: 1.08rem;
+  height: 1.08rem;
+  padding: 0 0.24rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ba7517;
+  color: #ffffff;
+  font-size: 0.64rem;
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+}
+
 .live-hero-room-button:hover {
   border-color: color-mix(in srgb, var(--live-streak-pill-text) 60%, var(--border));
   background: color-mix(in srgb, var(--live-streak-pill-bg) 30%, transparent);

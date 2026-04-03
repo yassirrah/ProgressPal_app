@@ -5,6 +5,8 @@ import {
   getActivityTypes,
   getIncomingSessionJoinRequests,
   getLiveSession,
+  getMyNotifications,
+  markAllNotificationsRead,
   getMySessions,
   getSessionRoomMessages,
   getSessionRoomState,
@@ -16,6 +18,10 @@ import {
   updateSessionGoal,
   updateSessionProgress,
 } from '../lib/api';
+
+const LIVE_SESSION_REFRESHED_EVENT = 'progresspal-live-session-refreshed';
+const LIVE_SESSION_LOCAL_EVENT = 'progresspal-live-session-local';
+const STALE_PAUSED_NOTICE_KEY = 'progresspal-stale-paused-session-id';
 
 const parseTimeTargetToMinutes = (raw) => {
   const value = String(raw || '').trim().toLowerCase();
@@ -232,6 +238,7 @@ const Home = () => {
   const [incomingJoinRequests, setIncomingJoinRequests] = useState([]);
   const [roomState, setRoomState] = useState(null);
   const [roomMessages, setRoomMessages] = useState([]);
+  const [hostRoomUnreadCount, setHostRoomUnreadCount] = useState(0);
   const [roomMessageDraft, setRoomMessageDraft] = useState('');
   const [sendingRoomMessage, setSendingRoomMessage] = useState(false);
   const [decidingJoinRequestId, setDecidingJoinRequestId] = useState('');
@@ -241,6 +248,18 @@ const Home = () => {
   const previousTimeGoalDoneBySessionRef = useRef(new Map());
   const timeGoalPromptShownSessionIdsRef = useRef(new Set());
   const timeGoalPauseInFlightSessionIdRef = useRef(null);
+
+  const consumeStalePausedNotice = useCallback((session) => {
+    if (!session?.id || !session?.paused) return;
+    try {
+      const pendingNoticeSessionId = window.sessionStorage.getItem(STALE_PAUSED_NOTICE_KEY);
+      if (String(pendingNoticeSessionId || '') !== String(session.id)) return;
+      window.sessionStorage.removeItem(STALE_PAUSED_NOTICE_KEY);
+      setSessionNotice('Session paused because ProgressPal stopped checking in for a while.');
+    } catch {
+      // Ignore storage issues and keep the session visible.
+    }
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
@@ -272,6 +291,38 @@ const Home = () => {
   }, []);
 
   useEffect(() => {
+    const handleManagedLiveSessionRefresh = (event) => {
+      const detail = event?.detail || {};
+      if (detail.userId && user?.id && String(detail.userId) !== String(user.id)) return;
+      const nextSession = detail.session || null;
+      setLiveSession((current) => {
+        const changed = (
+          String(current?.id || '') !== String(nextSession?.id || '')
+          || !!current?.paused !== !!nextSession?.paused
+          || String(current?.pausedAt || '') !== String(nextSession?.pausedAt || '')
+          || String(current?.endedAt || '') !== String(nextSession?.endedAt || '')
+          || Number(current?.pausedDurationSeconds ?? 0) !== Number(nextSession?.pausedDurationSeconds ?? 0)
+        );
+        return changed ? nextSession : current;
+      });
+    };
+
+    window.addEventListener(LIVE_SESSION_REFRESHED_EVENT, handleManagedLiveSessionRefresh);
+    return () => {
+      window.removeEventListener(LIVE_SESSION_REFRESHED_EVENT, handleManagedLiveSessionRefresh);
+    };
+  }, [consumeStalePausedNotice, user?.id]);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(LIVE_SESSION_LOCAL_EVENT, {
+      detail: {
+        session: liveSession || null,
+        userId: user?.id || null,
+      },
+    }));
+  }, [liveSession, user?.id]);
+
+  useEffect(() => {
     if (!liveSession?.startedAt) return;
     const intervalId = window.setInterval(() => {
       setNow(Date.now());
@@ -291,6 +342,7 @@ const Home = () => {
     setIncomingJoinRequests([]);
     setRoomState(null);
     setRoomMessages([]);
+    setHostRoomUnreadCount(0);
     setRoomMessageDraft('');
     setSendingRoomMessage(false);
     setDecidingJoinRequestId('');
@@ -298,6 +350,10 @@ const Home = () => {
     setSessionNotice('');
     setSessionError('');
   }, [liveSession?.id]);
+
+  useEffect(() => {
+    consumeStalePausedNotice(liveSession);
+  }, [consumeStalePausedNotice, liveSession]);
 
   useEffect(() => {
     if (!liveSession) {
@@ -815,6 +871,7 @@ const Home = () => {
     try {
       setSavingPauseState(true);
       setSessionError('');
+      setSessionNotice('');
       const updated = await resumeSession(user.id, sessionId);
       setLiveSession(updated);
       setToast({
@@ -833,6 +890,7 @@ const Home = () => {
     try {
       setSavingPauseState(true);
       setSessionError('');
+      setSessionNotice('');
       const updated = isSessionPaused
         ? await resumeSession(user.id, liveSession.id)
         : await pauseSession(user.id, liveSession.id);
@@ -862,6 +920,7 @@ const Home = () => {
     try {
       setSavingPauseState(true);
       setSessionError('');
+      setSessionNotice('');
       const updated = await resumeSession(user.id, liveSession.id);
       setLiveSession(updated);
       setGoalReachedPromptOpen(false);
@@ -878,6 +937,57 @@ const Home = () => {
     setGoalReachedPromptOpen(false);
     setStopPanelOpen(true);
   };
+
+  const loadHostRoomAlertState = useCallback(async (options = {}) => {
+    const { silent = false } = options;
+    if (!user?.id || !liveSession?.id) return;
+
+    try {
+      const pageSize = 50;
+      let page = 0;
+      let hasUnreadForCurrentSession = false;
+      let shouldContinue = true;
+
+      while (shouldContinue && !hasUnreadForCurrentSession) {
+        const response = await getMyNotifications(user.id, page, pageSize, {
+          scope: 'HOST_ROOM',
+        });
+        const notifications = Array.isArray(response?.content) ? response.content : [];
+
+        hasUnreadForCurrentSession = notifications.some((notification) => (
+          !notification?.readAt
+          && String(notification?.type || '').toUpperCase() === 'SESSION_ROOM_MESSAGE_RECEIVED'
+          && String(notification?.resourceId || '') === String(liveSession.id)
+        ));
+
+        if (hasUnreadForCurrentSession || notifications.length === 0) {
+          shouldContinue = false;
+          break;
+        }
+
+        const totalPages = Number(response?.totalPages);
+        const currentPage = Number.isFinite(Number(response?.number))
+          ? Number(response.number)
+          : page;
+
+        if (Number.isFinite(totalPages) && totalPages > 0) {
+          shouldContinue = currentPage + 1 < totalPages;
+        } else if (typeof response?.last === 'boolean') {
+          shouldContinue = !response.last;
+        } else {
+          shouldContinue = notifications.length === pageSize;
+        }
+
+        page += 1;
+      }
+
+      setHostRoomUnreadCount(hasUnreadForCurrentSession ? 1 : 0);
+    } catch (err) {
+      if (!silent || roomPanelOpen) {
+        setRoomPanelError(err.message || 'Failed to load room notifications');
+      }
+    }
+  }, [liveSession?.id, roomPanelOpen, user?.id]);
 
   const loadRoomPanelData = useCallback(async (options = {}) => {
     const { silent = false } = options;
@@ -898,13 +1008,15 @@ const Home = () => {
       setRoomState(room || null);
       setRoomMessages(normalizeRoomMessages(messagesPage));
     } catch (err) {
-      setRoomPanelError(err.message || 'Failed to load room panel');
+      if (!silent || roomPanelOpen) {
+        setRoomPanelError(err.message || 'Failed to load room panel');
+      }
     } finally {
       if (!silent) {
         setRoomPanelLoading(false);
       }
     }
-  }, [liveSession?.id, user?.id]);
+  }, [liveSession?.id, roomPanelOpen, user?.id]);
 
   const handleJoinRequestDecision = async (requestId, decision) => {
     if (!user?.id || !liveSession?.id || !requestId) return;
@@ -1086,6 +1198,8 @@ const Home = () => {
     if (Number.isNaN(date.getTime())) return '-';
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
+  const unreadRoomMessageSignal = hostRoomUnreadCount > 0 ? 1 : 0;
+  const roomAlertBadgeCount = pendingRequestCount + unreadRoomMessageSignal;
   const openRoomPanel = () => {
     if (!roomPanelOpen) {
       setRoomPanelTab(pendingRequestCount > 0 ? 'requests' : 'chat');
@@ -1102,13 +1216,21 @@ const Home = () => {
   }, [sessionCompleteModal]);
 
   useEffect(() => {
-    if (!roomPanelOpen || !liveSession?.id || !user?.id) return undefined;
-
+    if (!roomPanelOpen || !liveSession?.id || !user?.id) return;
     void loadRoomPanelData();
+    void loadHostRoomAlertState();
+  }, [liveSession?.id, loadHostRoomAlertState, loadRoomPanelData, roomPanelOpen, user?.id]);
+
+  useEffect(() => {
+    if (!liveSession?.id || !user?.id) return undefined;
+
+    void loadRoomPanelData({ silent: true });
+    void loadHostRoomAlertState({ silent: true });
 
     const poll = () => {
       if (document.visibilityState !== 'visible') return;
       void loadRoomPanelData({ silent: true });
+      void loadHostRoomAlertState({ silent: true });
     };
 
     const intervalId = window.setInterval(poll, 5000);
@@ -1119,7 +1241,7 @@ const Home = () => {
       window.clearInterval(intervalId);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [liveSession?.id, loadRoomPanelData, roomPanelOpen, user?.id]);
+  }, [liveSession?.id, loadHostRoomAlertState, loadRoomPanelData, user?.id]);
 
   useEffect(() => {
     if (!roomPanelOpen || roomPanelTab !== 'chat') return undefined;
@@ -1130,6 +1252,32 @@ const Home = () => {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [roomMessages, roomPanelOpen, roomPanelTab]);
+
+  useEffect(() => {
+    if (!roomPanelOpen || roomPanelTab !== 'chat' || !liveSession?.id || !user?.id) return undefined;
+
+    let cancelled = false;
+
+    const clearHostRoomNotifications = async () => {
+      try {
+        await markAllNotificationsRead(user.id, {
+          scope: 'HOST_ROOM',
+          resourceId: liveSession.id,
+        });
+        if (cancelled) return;
+        setHostRoomUnreadCount(0);
+      } catch (err) {
+        if (cancelled) return;
+        setRoomPanelError(err.message || 'Failed to clear room notifications');
+      }
+    };
+
+    void clearHostRoomNotifications();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [liveSession?.id, roomPanelOpen, roomPanelTab, user?.id]);
 
   useEffect(() => {
     const sessionId = liveSession?.id;
@@ -1290,13 +1438,18 @@ const Home = () => {
                         className={`live-hero-room-button${roomPanelOpen ? ' is-open' : ''}`}
                         onClick={openRoomPanel}
                       >
-                        <span className="live-hero-room-button-icon" aria-hidden="true">
-                          <svg viewBox="0 0 16 16" role="img" focusable="false">
-                            <path d="M5.2 8.3a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2Zm0-4.1a1.5 1.5 0 1 0 0 3.1 1.5 1.5 0 0 0 0-3.1Zm5.6 3.3a2.2 2.2 0 1 1 0-4.4 2.2 2.2 0 0 1 0 4.4Zm0-3.3a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2ZM1.3 13c0-2.1 2.1-3.3 3.9-3.3s3.9 1.2 3.9 3.3v.4H1.3V13Zm6.6-.7c-.3-1.1-1.6-1.5-2.7-1.5-1 0-2.4.4-2.7 1.5H8Zm.9 1.1c0-1.6 1.6-2.5 3-2.5s3 1 3 2.5v.1H8.8v-.1Zm4.7-.9c-.3-.7-1.2-.9-1.8-.9-.6 0-1.5.2-1.8.9h3.6Z" />
-                          </svg>
+                      <span className="live-hero-room-button-icon" aria-hidden="true">
+                        <svg viewBox="0 0 16 16" role="img" focusable="false">
+                          <path d="M5.2 8.3a2.6 2.6 0 1 1 0-5.2 2.6 2.6 0 0 1 0 5.2Zm0-4.1a1.5 1.5 0 1 0 0 3.1 1.5 1.5 0 0 0 0-3.1Zm5.6 3.3a2.2 2.2 0 1 1 0-4.4 2.2 2.2 0 0 1 0 4.4Zm0-3.3a1.1 1.1 0 1 0 0 2.2 1.1 1.1 0 0 0 0-2.2ZM1.3 13c0-2.1 2.1-3.3 3.9-3.3s3.9 1.2 3.9 3.3v.4H1.3V13Zm6.6-.7c-.3-1.1-1.6-1.5-2.7-1.5-1 0-2.4.4-2.7 1.5H8Zm.9 1.1c0-1.6 1.6-2.5 3-2.5s3 1 3 2.5v.1H8.8v-.1Zm4.7-.9c-.3-.7-1.2-.9-1.8-.9-.6 0-1.5.2-1.8.9h3.6Z" />
+                        </svg>
+                      </span>
+                      <span>Open Room</span>
+                      {roomAlertBadgeCount > 0 && (
+                        <span className="live-hero-room-button-badge" aria-label={`${roomAlertBadgeCount} room alert${roomAlertBadgeCount === 1 ? '' : 's'}`}>
+                          {roomAlertBadgeCount}
                         </span>
-                        <span>Open Room</span>
-                      </button>
+                      )}
+                    </button>
                     </div>
                   </div>
 
