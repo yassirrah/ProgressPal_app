@@ -247,6 +247,23 @@ export async function resumeSession(userId, sessionId) {
   }
 }
 
+export async function sendSessionHeartbeat(userId, sessionId) {
+  try {
+    await client.patch(
+      `/sessions/${sessionId}/heartbeat`,
+      null,
+      {
+        headers: authHeaders(userId),
+        validateStatus: (status) => status === 204,
+      },
+    );
+  } catch (error) {
+    const heartbeatError = new Error(toErrorMessage(error, 'Failed to send session heartbeat'));
+    heartbeatError.status = error?.response?.status;
+    throw heartbeatError;
+  }
+}
+
 export async function updateSessionGoal(userId, sessionId, payload) {
   try {
     const { data } = await client.patch(

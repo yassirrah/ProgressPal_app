@@ -19,6 +19,10 @@ import {
   updateSessionProgress,
 } from '../lib/api';
 
+const LIVE_SESSION_REFRESHED_EVENT = 'progresspal-live-session-refreshed';
+const LIVE_SESSION_LOCAL_EVENT = 'progresspal-live-session-local';
+const STALE_PAUSED_NOTICE_KEY = 'progresspal-stale-paused-session-id';
+
 const parseTimeTargetToMinutes = (raw) => {
   const value = String(raw || '').trim().toLowerCase();
   if (!value) return null;
@@ -245,6 +249,18 @@ const Home = () => {
   const timeGoalPromptShownSessionIdsRef = useRef(new Set());
   const timeGoalPauseInFlightSessionIdRef = useRef(null);
 
+  const consumeStalePausedNotice = useCallback((session) => {
+    if (!session?.id || !session?.paused) return;
+    try {
+      const pendingNoticeSessionId = window.sessionStorage.getItem(STALE_PAUSED_NOTICE_KEY);
+      if (String(pendingNoticeSessionId || '') !== String(session.id)) return;
+      window.sessionStorage.removeItem(STALE_PAUSED_NOTICE_KEY);
+      setSessionNotice('Session paused because ProgressPal stopped checking in for a while.');
+    } catch {
+      // Ignore storage issues and keep the session visible.
+    }
+  }, []);
+
   const loadData = async () => {
     setLoading(true);
     setDashboardError('');
@@ -275,6 +291,38 @@ const Home = () => {
   }, []);
 
   useEffect(() => {
+    const handleManagedLiveSessionRefresh = (event) => {
+      const detail = event?.detail || {};
+      if (detail.userId && user?.id && String(detail.userId) !== String(user.id)) return;
+      const nextSession = detail.session || null;
+      setLiveSession((current) => {
+        const changed = (
+          String(current?.id || '') !== String(nextSession?.id || '')
+          || !!current?.paused !== !!nextSession?.paused
+          || String(current?.pausedAt || '') !== String(nextSession?.pausedAt || '')
+          || String(current?.endedAt || '') !== String(nextSession?.endedAt || '')
+          || Number(current?.pausedDurationSeconds ?? 0) !== Number(nextSession?.pausedDurationSeconds ?? 0)
+        );
+        return changed ? nextSession : current;
+      });
+    };
+
+    window.addEventListener(LIVE_SESSION_REFRESHED_EVENT, handleManagedLiveSessionRefresh);
+    return () => {
+      window.removeEventListener(LIVE_SESSION_REFRESHED_EVENT, handleManagedLiveSessionRefresh);
+    };
+  }, [consumeStalePausedNotice, user?.id]);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(LIVE_SESSION_LOCAL_EVENT, {
+      detail: {
+        session: liveSession || null,
+        userId: user?.id || null,
+      },
+    }));
+  }, [liveSession, user?.id]);
+
+  useEffect(() => {
     if (!liveSession?.startedAt) return;
     const intervalId = window.setInterval(() => {
       setNow(Date.now());
@@ -302,6 +350,10 @@ const Home = () => {
     setSessionNotice('');
     setSessionError('');
   }, [liveSession?.id]);
+
+  useEffect(() => {
+    consumeStalePausedNotice(liveSession);
+  }, [consumeStalePausedNotice, liveSession]);
 
   useEffect(() => {
     if (!liveSession) {
@@ -819,6 +871,7 @@ const Home = () => {
     try {
       setSavingPauseState(true);
       setSessionError('');
+      setSessionNotice('');
       const updated = await resumeSession(user.id, sessionId);
       setLiveSession(updated);
       setToast({
@@ -837,6 +890,7 @@ const Home = () => {
     try {
       setSavingPauseState(true);
       setSessionError('');
+      setSessionNotice('');
       const updated = isSessionPaused
         ? await resumeSession(user.id, liveSession.id)
         : await pauseSession(user.id, liveSession.id);
@@ -866,6 +920,7 @@ const Home = () => {
     try {
       setSavingPauseState(true);
       setSessionError('');
+      setSessionNotice('');
       const updated = await resumeSession(user.id, liveSession.id);
       setLiveSession(updated);
       setGoalReachedPromptOpen(false);
