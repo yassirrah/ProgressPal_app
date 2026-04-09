@@ -10,7 +10,7 @@ const Signup = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [nativeSubmitting, setNativeSubmitting] = useState(false);
-  const [oidcLoading, setOidcLoading] = useState(false);
+  const [oidcLoadingTarget, setOidcLoadingTarget] = useState('');
   const [oidcError, setOidcError] = useState('');
   const navigate = useNavigate();
   const oidcReady = isKeycloakConfigured();
@@ -44,15 +44,29 @@ const Signup = () => {
     }
   };
 
-  const handleKeycloakSignup = async () => {
+  const startKeycloakFlow = async (options, fallbackMessage) => {
     setOidcError('');
-    setOidcLoading(true);
+    setOidcLoadingTarget(options.idpHint ? 'google' : 'email');
     try {
-      await beginKeycloakLogin('signup');
+      await beginKeycloakLogin(options);
     } catch (err) {
-      setOidcError(err.message || 'Could not start Google sign-up');
-      setOidcLoading(false);
+      setOidcError(err.message || fallbackMessage);
+      setOidcLoadingTarget('');
     }
+  };
+
+  const handleGoogleSignup = async () => {
+    await startKeycloakFlow(
+      { context: 'signup-google', idpHint: 'google' },
+      'Could not start Google sign-in',
+    );
+  };
+
+  const handleEmailSignup = async () => {
+    await startKeycloakFlow(
+      { context: 'signup-email' },
+      'Could not start Keycloak email sign-in',
+    );
   };
 
   return (
@@ -67,23 +81,33 @@ const Signup = () => {
           </header>
 
           <div className="auth-oidc-stack">
-            <button
-              type="button"
-              className="auth-primary-button auth-oidc-button"
-              onClick={() => { void handleKeycloakSignup(); }}
-              disabled={!oidcReady || nativeSubmitting || oidcLoading}
-            >
-              {oidcLoading ? 'Redirecting to Google...' : 'Continue with Google'}
-            </button>
+            <div className="auth-oidc-actions">
+              <button
+                type="button"
+                className="auth-primary-button auth-oidc-button"
+                onClick={() => { void handleGoogleSignup(); }}
+                disabled={!oidcReady || nativeSubmitting || !!oidcLoadingTarget}
+              >
+                {oidcLoadingTarget === 'google' ? 'Redirecting to Google...' : 'Continue with Google'}
+              </button>
+              <button
+                type="button"
+                className="auth-secondary-submit auth-oidc-button auth-oidc-email-button"
+                onClick={() => { void handleEmailSignup(); }}
+                disabled={!oidcReady || nativeSubmitting || !!oidcLoadingTarget}
+              >
+                {oidcLoadingTarget === 'email' ? 'Redirecting to Keycloak...' : 'Continue with Email'}
+              </button>
+            </div>
             <p className="auth-oidc-helper">
-              New Google accounts come through Keycloak first, then we hydrate your local ProgressPal profile.
+              Both Google and email/password now flow through Keycloak first, then ProgressPal hydrates your local profile after the callback returns.
             </p>
             {!oidcReady && <p className="auth-oidc-inline-state" role="status">{oidcConfigError}</p>}
             {oidcError && <p className="message-error auth-error">{oidcError}</p>}
           </div>
 
           <div className="auth-divider" aria-hidden="true">
-            <span>Or create an email account for now</span>
+            <span>Legacy fallback</span>
           </div>
 
           {error && <p className="message-error auth-error">{error}</p>}
@@ -126,9 +150,9 @@ const Signup = () => {
             <button
               type="submit"
               className="auth-secondary-submit"
-              disabled={nativeSubmitting || oidcLoading}
+              disabled={nativeSubmitting || !!oidcLoadingTarget}
             >
-              {nativeSubmitting ? 'Creating account...' : 'Create Account with Email'}
+              {nativeSubmitting ? 'Creating account...' : 'Use Legacy Email Signup'}
             </button>
           </form>
 

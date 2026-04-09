@@ -936,6 +936,11 @@ form {
   gap: 0.34rem;
 }
 
+.auth-oidc-actions {
+  display: grid;
+  gap: 0.5rem;
+}
+
 .auth-oidc-helper {
   margin: 0;
   color: rgba(255, 255, 255, 0.5);
@@ -1369,6 +1374,10 @@ form {
 
 .auth-oidc-button {
   justify-content: center;
+}
+
+.auth-oidc-email-button {
+  margin-top: 0;
 }
 
 .auth-secondary-submit {

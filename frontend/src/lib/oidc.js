@@ -1,5 +1,6 @@
 const OIDC_PENDING_KEY = 'progresspal_oidc_pending';
 const OIDC_SESSION_KEY = 'progresspal_oidc_session';
+const OIDC_CALLBACK_LOCK_KEY = 'progresspal_oidc_callback_lock';
 const CALLBACK_PATH = '/auth/callback';
 
 function safeParse(raw) {
@@ -55,6 +56,18 @@ function clearPendingAuth() {
   window.sessionStorage.removeItem(OIDC_PENDING_KEY);
 }
 
+function readCallbackLock() {
+  return safeParse(window.sessionStorage.getItem(OIDC_CALLBACK_LOCK_KEY));
+}
+
+function writeCallbackLock(payload) {
+  window.sessionStorage.setItem(OIDC_CALLBACK_LOCK_KEY, JSON.stringify(payload));
+}
+
+function clearCallbackLock() {
+  window.sessionStorage.removeItem(OIDC_CALLBACK_LOCK_KEY);
+}
+
 function authEndpoint(config) {
   return `${config.url}/realms/${encodeURIComponent(config.realm)}/protocol/openid-connect/auth`;
 }
@@ -78,7 +91,7 @@ export function getKeycloakConfig() {
 export function getKeycloakConfigError() {
   const config = getKeycloakConfig();
   if (!config.url || !config.realm || !config.clientId) {
-    return 'Google sign-in is not configured on this build yet. You can keep using email for now.';
+    return 'Keycloak sign-in is not configured on this build yet. You can keep using the legacy email flow for now.';
   }
   return '';
 }
@@ -87,7 +100,7 @@ export function isKeycloakConfigured() {
   return !getKeycloakConfigError();
 }
 
-export async function beginKeycloakLogin(context = 'login') {
+export async function beginKeycloakLogin(contextOrOptions = 'login') {
   const configError = getKeycloakConfigError();
   if (configError) {
     throw new Error(configError);
@@ -98,13 +111,20 @@ export async function beginKeycloakLogin(context = 'login') {
   }
 
   const config = getKeycloakConfig();
+  const options = typeof contextOrOptions === 'string'
+    ? { context: contextOrOptions }
+    : (contextOrOptions || {});
+  const context = options.context || 'login';
+  const idpHint = String(options.idpHint || '').trim();
   const state = randomString(24);
   const { verifier, challenge } = await createPkcePair();
 
+  clearCallbackLock();
   writePendingAuth({
     state,
     verifier,
     context,
+    idpHint: idpHint || null,
     createdAt: Date.now(),
   });
 
@@ -117,6 +137,9 @@ export async function beginKeycloakLogin(context = 'login') {
     code_challenge_method: 'S256',
     state,
   });
+  if (idpHint) {
+    params.set('kc_idp_hint', idpHint);
+  }
 
   window.location.assign(`${authEndpoint(config)}?${params.toString()}`);
 }
@@ -140,21 +163,44 @@ export async function completeKeycloakLogin(search) {
   const code = params.get('code');
   const returnedState = params.get('state');
   const pending = readPendingAuth();
+  const callbackLock = readCallbackLock();
 
   if (!code || !returnedState) {
     clearPendingAuth();
     throw new Error('Missing login callback parameters.');
   }
 
+  if (
+    callbackLock?.code
+    && callbackLock?.state
+    && callbackLock.code === code
+    && callbackLock.state === returnedState
+  ) {
+    clearPendingAuth();
+    throw new Error('This sign-in response was already used. Please try again.');
+  }
+
   if (!pending?.state || !pending?.verifier) {
     clearPendingAuth();
-    throw new Error('Your Google sign-in expired before it completed. Please try again.');
+    throw new Error('Your sign-in expired before it completed. Please try again.');
   }
 
   if (pending.state !== returnedState) {
     clearPendingAuth();
     throw new Error('Secure login verification failed. Please try again.');
   }
+
+  const exchangeLock = {
+    code,
+    state: returnedState,
+    context: pending.context || 'login',
+    idpHint: pending.idpHint || null,
+    createdAt: Date.now(),
+    status: 'exchanging',
+  };
+
+  clearPendingAuth();
+  writeCallbackLock(exchangeLock);
 
   const response = await fetch(tokenEndpoint(config), {
     method: 'POST',
@@ -172,11 +218,17 @@ export async function completeKeycloakLogin(search) {
 
   const payload = await response.json().catch(() => null);
   if (!response.ok || !payload?.access_token) {
-    clearPendingAuth();
-    throw new Error(payload?.error_description || payload?.error || 'Could not finish Google sign-in.');
+    writeCallbackLock({
+      ...exchangeLock,
+      status: 'failed',
+    });
+    throw new Error(payload?.error_description || payload?.error || 'Could not finish secure sign-in.');
   }
 
-  clearPendingAuth();
+  writeCallbackLock({
+    ...exchangeLock,
+    status: 'completed',
+  });
   return {
     accessToken: payload.access_token,
     idToken: payload.id_token || null,
@@ -198,6 +250,7 @@ export function getStoredKeycloakSession() {
 
 export function clearKeycloakSession() {
   clearPendingAuth();
+  clearCallbackLock();
   window.localStorage.removeItem(OIDC_SESSION_KEY);
 }
 
