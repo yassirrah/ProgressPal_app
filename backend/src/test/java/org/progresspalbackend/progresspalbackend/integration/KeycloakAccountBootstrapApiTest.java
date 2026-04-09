@@ -175,6 +175,22 @@ class KeycloakAccountBootstrapApiTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void meAccount_keycloakToken_fromUnexpectedIssuer_returns401() throws Exception {
+        mvc.perform(get("/api/me/account")
+                        .header("Authorization", "Bearer " + keycloakToken(
+                                issuerUri() + "/other",
+                                "kc-subject-5",
+                                "wrong-issuer@test.com",
+                                true,
+                                "wrong_issuer",
+                                null
+                        )))
+                .andExpect(status().isUnauthorized());
+
+        assertThat(userRepository.count()).isZero();
+    }
+
     private static RSAKey generateRsaJwk() {
         try {
             return new RSAKeyGenerator(2048)
@@ -219,9 +235,25 @@ class KeycloakAccountBootstrapApiTest {
                                  boolean emailVerified,
                                  String preferredUsername,
                                  String picture) throws Exception {
+        return keycloakToken(
+                issuerUri(),
+                subject,
+                email,
+                emailVerified,
+                preferredUsername,
+                picture
+        );
+    }
+
+    private String keycloakToken(String issuer,
+                                 String subject,
+                                 String email,
+                                 boolean emailVerified,
+                                 String preferredUsername,
+                                 String picture) throws Exception {
         Instant issuedAt = Instant.now();
         JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
-                .issuer(issuerUri())
+                .issuer(issuer)
                 .subject(subject)
                 .issueTime(Date.from(issuedAt))
                 .expirationTime(Date.from(issuedAt.plusSeconds(3600)))
