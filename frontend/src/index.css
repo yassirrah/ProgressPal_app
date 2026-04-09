@@ -959,6 +959,33 @@ form {
   line-height: 1.4;
 }
 
+.auth-legacy-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  flex-wrap: wrap;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.auth-legacy-toggle {
+  border: 0;
+  background: transparent;
+  color: #ef9f27;
+  padding: 0;
+  font-size: 12px;
+  font-weight: var(--font-weight-regular);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.auth-legacy-toggle:hover,
+.auth-legacy-toggle:focus-visible {
+  background: transparent;
+  color: #ef9f27;
+}
+
 .auth-divider {
   position: relative;
   display: flex;

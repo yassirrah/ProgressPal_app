@@ -116,6 +116,7 @@ export async function beginKeycloakLogin(contextOrOptions = 'login') {
     : (contextOrOptions || {});
   const context = options.context || 'login';
   const idpHint = String(options.idpHint || '').trim();
+  const prompt = String(options.prompt || '').trim();
   const state = randomString(24);
   const { verifier, challenge } = await createPkcePair();
 
@@ -125,6 +126,7 @@ export async function beginKeycloakLogin(contextOrOptions = 'login') {
     verifier,
     context,
     idpHint: idpHint || null,
+    prompt: prompt || null,
     createdAt: Date.now(),
   });
 
@@ -139,6 +141,9 @@ export async function beginKeycloakLogin(contextOrOptions = 'login') {
   });
   if (idpHint) {
     params.set('kc_idp_hint', idpHint);
+  }
+  if (prompt) {
+    params.set('prompt', prompt);
   }
 
   window.location.assign(`${authEndpoint(config)}?${params.toString()}`);
@@ -195,6 +200,7 @@ export async function completeKeycloakLogin(search) {
     state: returnedState,
     context: pending.context || 'login',
     idpHint: pending.idpHint || null,
+    prompt: pending.prompt || null,
     createdAt: Date.now(),
     status: 'exchanging',
   };
