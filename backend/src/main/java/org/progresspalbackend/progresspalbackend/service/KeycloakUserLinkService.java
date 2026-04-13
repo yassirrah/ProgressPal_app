@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -21,6 +22,8 @@ public class KeycloakUserLinkService {
     private static final int MAX_USERNAME_LENGTH = 50;
 
     private final UserRepository userRepository;
+    @Value("${app.security.keycloak.require-verified-email:true}")
+    private boolean requireVerifiedEmail;
 
     @Transactional
     public UUID resolveLocalUserId(Jwt jwt) {
@@ -37,7 +40,7 @@ public class KeycloakUserLinkService {
     }
 
     private User createOrLinkUser(Jwt jwt, String issuer, String subject) {
-        if (!isVerified(jwt.getClaim("email_verified"))) {
+        if (requireVerifiedEmail && !isVerified(jwt.getClaim("email_verified"))) {
             throw unauthorized();
         }
 

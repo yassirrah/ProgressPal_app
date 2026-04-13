@@ -2,7 +2,7 @@ spring:
   application:
     name: ProgressPalBackend
   config:
-    import: optional:file:./env/db.dev.env[.properties]
+    import: optional:file:./env/db.dev.env[.properties],optional:file:./env/app.dev.env[.properties]
 
   datasource:
     url: jdbc:postgresql://localhost:5432/progresspal
@@ -41,6 +41,7 @@ app:
     keycloak:
       issuer-uri: ${APP_SECURITY_KEYCLOAK_ISSUER_URI:}
       jwk-set-uri: ${APP_SECURITY_KEYCLOAK_JWK_SET_URI:}
+      require-verified-email: ${APP_SECURITY_KEYCLOAK_REQUIRE_VERIFIED_EMAIL:true}
   sessions:
     freshness:
       heartbeat-interval: 45s
