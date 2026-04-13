@@ -101,7 +101,7 @@ const Signup = () => {
               </button>
             </div>
             <p className="auth-oidc-helper">
-              Google signup goes through the Keycloak Google broker. Email signup opens the hosted Keycloak registration form before ProgressPal hydrates your local profile on return.
+              Google signup goes through the Keycloak Google broker. Email signup opens the hosted Keycloak registration form when self-registration is enabled for the realm, then ProgressPal hydrates your local profile on return.
             </p>
             {!oidcReady && <p className="auth-oidc-inline-state" role="status">{oidcConfigError}</p>}
             {oidcError && <p className="message-error auth-error">{oidcError}</p>}

@@ -143,6 +143,8 @@ export async function beginKeycloakLogin(contextOrOptions = 'login') {
     params.set('kc_idp_hint', idpHint);
   }
   if (prompt) {
+    // Keycloak supports initiating hosted self-registration from the standard
+    // OIDC auth endpoint with prompt=create when realm self-registration is enabled.
     params.set('prompt', prompt);
   }
 

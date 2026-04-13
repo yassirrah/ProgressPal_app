@@ -13,6 +13,29 @@ import AuthValueColumn from './AuthValueColumn';
 
 const callbackCompletionBySearch = new Map();
 
+function describeHydrationFailure(message) {
+  const rawMessage = String(message || '').trim();
+  const normalized = rawMessage.toLowerCase();
+
+  if (
+    normalized.includes('verified email')
+    || normalized.includes('email verified')
+    || normalized.includes('email is not verified')
+    || normalized.includes('verify your email')
+    || normalized.includes('verify email')
+  ) {
+    return {
+      title: 'Verify your email to finish setup',
+      message: 'Keycloak signed you in, but ProgressPal could not finish bootstrapping your account yet because first-time setup requires a verified email. Verify your email in Keycloak, then try again. If you are testing locally, make sure the backend development override is enabled before retrying.',
+    };
+  }
+
+  return {
+    title: 'Keycloak sign-in worked, but ProgressPal could not load your account',
+    message: rawMessage || 'We could not hydrate your local account. Please try again.',
+  };
+}
+
 const AuthCallback = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -63,9 +86,10 @@ const AuthCallback = () => {
       } catch (err) {
         if (cancelled) return;
         clearKeycloakSession();
+        const hydrationFailure = describeHydrationFailure(err.message);
         setStage('error');
-        setErrorTitle('Keycloak sign-in worked, but ProgressPal could not load your account');
-        setErrorMessage(err.message || 'We could not hydrate your local account. Please try again.');
+        setErrorTitle(hydrationFailure.title);
+        setErrorMessage(hydrationFailure.message);
       }
     };
 
