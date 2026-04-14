@@ -25,6 +25,17 @@ spring:
 
 server:
   port: 8080
+  tomcat:
+    basedir: ${SERVER_TOMCAT_BASEDIR:./tomcat}
+    accesslog:
+      enabled: ${SERVER_TOMCAT_ACCESSLOG_ENABLED:true}
+      directory: ${SERVER_TOMCAT_ACCESSLOG_DIRECTORY:logs}
+      prefix: ${SERVER_TOMCAT_ACCESSLOG_PREFIX:access}
+      suffix: ${SERVER_TOMCAT_ACCESSLOG_SUFFIX:.log}
+      file-date-format: ${SERVER_TOMCAT_ACCESSLOG_FILE_DATE_FORMAT:.yyyy-MM-dd}
+      rotate: true
+      buffered: true
+      pattern: '%t remote=%a forwarded="%{X-Forwarded-For}i" method=%m path=%U query="%q" status=%s bytes=%b duration=%D'
 
 logging:
   level:
