@@ -61,7 +61,7 @@ const Feed = () => {
         };
       }
       try {
-        const summary = await getSessionLikes(currentUser.id, item.id);
+        const summary = await getSessionLikes(currentUser.id, item.id, { initiator: 'Feed:likesFanout' });
         return {
           sessionId: item.id,
           likesCount: Number(summary?.likesCount || 0),
@@ -117,8 +117,8 @@ const Feed = () => {
         setError('');
       }
       const [feedResponse, mySessionsResponse] = await Promise.all([
-        getFeed(currentUser.id, 0, 20),
-        getMySessions(currentUser.id, { page: 0, size: 20, status: 'ALL' }),
+        getFeed(currentUser.id, 0, 20, { initiator: 'Feed:refreshFeed' }),
+        getMySessions(currentUser.id, { page: 0, size: 20, status: 'ALL' }, { initiator: 'Feed:refreshFeed' }),
       ]);
 
       const friendItems = feedResponse.content || [];
@@ -189,7 +189,7 @@ const Feed = () => {
       return;
     }
     try {
-      const outgoing = await getOutgoingSessionJoinRequests(currentUser.id, { liveOnly: true });
+      const outgoing = await getOutgoingSessionJoinRequests(currentUser.id, { liveOnly: true }, { initiator: 'Feed:outgoingJoinRequests' });
       const next = {};
       (Array.isArray(outgoing) ? outgoing : []).forEach((request) => {
         if (!request?.sessionId) return;

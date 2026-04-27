@@ -267,9 +267,9 @@ const Home = () => {
 
     try {
       const [types, live, mySessionsResponse] = await Promise.all([
-        user ? getActivityTypes(user.id, 'ALL') : Promise.resolve([]),
-        user ? getLiveSession(user.id) : Promise.resolve(null),
-        user ? getMySessions(user.id, { page: 0, size: 200, status: 'ALL' }).catch(() => ({ content: [] })) : Promise.resolve({ content: [] }),
+        user ? getActivityTypes(user.id, 'ALL', { initiator: 'Home:initialLoad' }) : Promise.resolve([]),
+        user ? getLiveSession(user.id, { initiator: 'Home:initialLoad' }) : Promise.resolve(null),
+        user ? getMySessions(user.id, { page: 0, size: 200, status: 'ALL' }, { initiator: 'Home:initialLoad' }).catch(() => ({ content: [] })) : Promise.resolve({ content: [] }),
       ]);
 
       setActivityTypes(types);
@@ -951,6 +951,7 @@ const Home = () => {
       while (shouldContinue && !hasUnreadForCurrentSession) {
         const response = await getMyNotifications(user.id, page, pageSize, {
           scope: 'HOST_ROOM',
+          initiator: 'Home:hostRoomAlertScan',
         });
         const notifications = Array.isArray(response?.content) ? response.content : [];
 
@@ -989,6 +990,32 @@ const Home = () => {
     }
   }, [liveSession?.id, roomPanelOpen, user?.id]);
 
+  const loadPendingJoinRequestCount = useCallback(async (options = {}) => {
+    const { silent = false } = options;
+    if (!user?.id || !liveSession?.id) return;
+
+    try {
+      const incoming = await getIncomingSessionJoinRequests(user.id, liveSession.id, {
+        initiator: 'Home:hostRoomAlertScan',
+      });
+      setIncomingJoinRequests(Array.isArray(incoming) ? incoming : []);
+    } catch (err) {
+      if (!silent || roomPanelOpen) {
+        setRoomPanelError(err.message || 'Failed to load incoming join requests');
+      }
+    }
+  }, [liveSession?.id, roomPanelOpen, user?.id]);
+
+  const loadRoomBadgeState = useCallback(async (options = {}) => {
+    const { silent = false } = options;
+    if (!user?.id || !liveSession?.id) return;
+
+    await Promise.all([
+      loadPendingJoinRequestCount({ silent }),
+      loadHostRoomAlertState({ silent }),
+    ]);
+  }, [liveSession?.id, loadHostRoomAlertState, loadPendingJoinRequestCount, user?.id]);
+
   const loadRoomPanelData = useCallback(async (options = {}) => {
     const { silent = false } = options;
     if (!user?.id || !liveSession?.id) return;
@@ -1000,9 +1027,9 @@ const Home = () => {
     try {
       setRoomPanelError('');
       const [incoming, room, messagesPage] = await Promise.all([
-        getIncomingSessionJoinRequests(user.id, liveSession.id),
-        getSessionRoomState(user.id, liveSession.id),
-        getSessionRoomMessages(user.id, liveSession.id, 0, 50),
+        getIncomingSessionJoinRequests(user.id, liveSession.id, { initiator: 'Home:roomPanelPoll' }),
+        getSessionRoomState(user.id, liveSession.id, { initiator: 'Home:roomPanelPoll' }),
+        getSessionRoomMessages(user.id, liveSession.id, 0, 50, { initiator: 'Home:roomPanelPoll' }),
       ]);
       setIncomingJoinRequests(Array.isArray(incoming) ? incoming : []);
       setRoomState(room || null);
@@ -1216,21 +1243,23 @@ const Home = () => {
   }, [sessionCompleteModal]);
 
   useEffect(() => {
-    if (!roomPanelOpen || !liveSession?.id || !user?.id) return;
-    void loadRoomPanelData();
-    void loadHostRoomAlertState();
-  }, [liveSession?.id, loadHostRoomAlertState, loadRoomPanelData, roomPanelOpen, user?.id]);
-
-  useEffect(() => {
     if (!liveSession?.id || !user?.id) return undefined;
 
-    void loadRoomPanelData({ silent: true });
-    void loadHostRoomAlertState({ silent: true });
+    if (roomPanelOpen) {
+      void loadRoomPanelData();
+      void loadHostRoomAlertState({ silent: true });
+    } else {
+      void loadRoomBadgeState({ silent: true });
+    }
 
     const poll = () => {
       if (document.visibilityState !== 'visible') return;
-      void loadRoomPanelData({ silent: true });
-      void loadHostRoomAlertState({ silent: true });
+      if (roomPanelOpen) {
+        void loadRoomPanelData({ silent: true });
+        void loadHostRoomAlertState({ silent: true });
+      } else {
+        void loadRoomBadgeState({ silent: true });
+      }
     };
 
     const intervalId = window.setInterval(poll, 5000);
@@ -1241,7 +1270,7 @@ const Home = () => {
       window.clearInterval(intervalId);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [liveSession?.id, loadHostRoomAlertState, loadRoomPanelData, user?.id]);
+  }, [liveSession?.id, loadHostRoomAlertState, loadPendingJoinRequestCount, loadRoomBadgeState, loadRoomPanelData, roomPanelOpen, user?.id]);
 
   useEffect(() => {
     if (!roomPanelOpen || roomPanelTab !== 'chat') return undefined;

@@ -84,8 +84,8 @@ const SessionRoom = () => {
 
     try {
       const [room, messagePage] = await Promise.all([
-        getSessionRoomState(user.id, sessionId),
-        getSessionRoomMessages(user.id, sessionId, 0, 80),
+        getSessionRoomState(user.id, sessionId, { initiator: 'SessionRoom:loadRoom' }),
+        getSessionRoomMessages(user.id, sessionId, 0, 80, { initiator: 'SessionRoom:loadRoom' }),
       ]);
       setRoomState(room || null);
       setMessages(normalizeRoomMessages(messagePage));
