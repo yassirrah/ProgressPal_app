@@ -68,7 +68,7 @@ function App() {
 
     try {
       const previous = managedLiveSessionRef.current;
-      const latest = await getLiveSession(user.id);
+      const latest = await getLiveSession(user.id, { initiator: 'App:liveSessionRefresh' });
 
       if (
         previous?.id
@@ -89,10 +89,10 @@ function App() {
       if (heartbeatAfterRefresh && latest?.id && !latest.paused && !latest.endedAt && !heartbeatInFlightRef.current) {
         heartbeatInFlightRef.current = true;
         try {
-          await sendSessionHeartbeat(user.id, latest.id);
+          await sendSessionHeartbeat(user.id, latest.id, { initiator: 'App:heartbeat' });
         } catch (err) {
           if (err?.status === 409) {
-            const normalized = await getLiveSession(user.id);
+            const normalized = await getLiveSession(user.id, { initiator: 'App:liveSessionRefresh' });
             setManagedSession(normalized, 'refresh');
           }
         } finally {
@@ -112,7 +112,7 @@ function App() {
 
     heartbeatInFlightRef.current = true;
     try {
-      await sendSessionHeartbeat(user.id, session.id);
+      await sendSessionHeartbeat(user.id, session.id, { initiator: 'App:heartbeat' });
     } catch (err) {
       if (err?.status === 409) {
         await refreshLiveSessionRef.current?.({ heartbeatAfterRefresh: false });
