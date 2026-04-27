@@ -122,7 +122,7 @@ const Navbar = () => {
       return;
     }
     try {
-      const summary = await getUnreadNotificationsCount(user.id);
+      const summary = await getUnreadNotificationsCount(user.id, { initiator: 'Navbar:unreadCount' });
       setUnreadCount(Number(summary?.unreadCount || 0));
     } catch {
       // Keep current badge value on transient failures.

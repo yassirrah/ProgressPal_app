@@ -3,10 +3,268 @@ import axios from 'axios';
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 const USER_STORAGE_KEY = 'progresspal_user';
 const AUTH_STORAGE_KEY = 'progresspal_auth';
+const DEV_REQUEST_TELEMETRY_ENABLED = import.meta.env.DEV;
 
 const client = axios.create({
   baseURL: API_BASE_URL,
 });
+
+const requestTelemetryStore = {
+  entries: [],
+  startedAt: null,
+};
+
+function encodeSize(value) {
+  try {
+    return new TextEncoder().encode(String(value || '')).length;
+  } catch {
+    return String(value || '').length;
+  }
+}
+
+function estimateBytes(value) {
+  if (value == null) return 0;
+  if (typeof value === 'string') return encodeSize(value);
+  if (typeof value === 'number' || typeof value === 'boolean') return encodeSize(String(value));
+  if (ArrayBuffer.isView(value)) return value.byteLength;
+  if (value instanceof ArrayBuffer) return value.byteLength;
+  try {
+    return encodeSize(JSON.stringify(value));
+  } catch {
+    return encodeSize(String(value));
+  }
+}
+
+function toPlainHeaders(headers) {
+  if (!headers) return null;
+  if (typeof headers.toJSON === 'function') return headers.toJSON();
+  return headers;
+}
+
+function absolutizeUrl(url) {
+  if (!url) return API_BASE_URL;
+  try {
+    return new URL(url, API_BASE_URL).toString();
+  } catch {
+    return String(url);
+  }
+}
+
+function normalizeRoute(url) {
+  let pathname = '';
+  try {
+    pathname = new URL(absolutizeUrl(url)).pathname || '';
+  } catch {
+    pathname = String(url || '');
+  }
+
+  const withoutBase = pathname.replace(/^\/api(?=\/|$)/, '') || '/';
+  return withoutBase
+    .split('/')
+    .map((segment) => {
+      if (!segment) return segment;
+      if (/^\d+$/.test(segment)) return ':id';
+      if (/^[0-9a-f]{8,}$/i.test(segment)) return ':id';
+      if (/^[A-Za-z0-9_-]{16,}$/.test(segment)) return ':id';
+      return segment;
+    })
+    .join('/') || '/';
+}
+
+function estimateRequestBytes(config) {
+  return estimateBytes({
+    method: config?.method,
+    url: absolutizeUrl(config?.url),
+    params: config?.params || null,
+    headers: toPlainHeaders(config?.headers),
+    data: config?.data ?? null,
+  });
+}
+
+function estimateResponseBytes(response) {
+  const contentLength = Number(response?.headers?.['content-length']);
+  if (Number.isFinite(contentLength) && contentLength >= 0) {
+    return contentLength;
+  }
+  return estimateBytes(response?.data);
+}
+
+function currentPathname() {
+  return typeof window !== 'undefined' ? window.location.pathname : '';
+}
+
+function currentVisibilityState() {
+  return typeof document !== 'undefined' ? document.visibilityState : 'unknown';
+}
+
+function createGroupedStats(entries, groupKey) {
+  const grouped = new Map();
+  entries.forEach((entry) => {
+    const key = groupKey(entry);
+    const current = grouped.get(key) || {
+      key,
+      requests: 0,
+      bytes: 0,
+      requestBytes: 0,
+      responseBytes: 0,
+      avgDurationMs: 0,
+      totalDurationMs: 0,
+    };
+    current.requests += 1;
+    current.bytes += entry.requestBytes + entry.responseBytes;
+    current.requestBytes += entry.requestBytes;
+    current.responseBytes += entry.responseBytes;
+    current.totalDurationMs += entry.durationMs;
+    grouped.set(key, current);
+  });
+
+  const firstTs = entries[0]?.timestamp ?? Date.now();
+  const lastTs = entries[entries.length - 1]?.timestamp ?? firstTs;
+  const durationMinutes = Math.max((lastTs - firstTs) / 60000, 1 / 60);
+
+  return Array.from(grouped.values())
+    .map((row) => ({
+      ...row,
+      avgDurationMs: row.requests > 0 ? row.totalDurationMs / row.requests : 0,
+      bytesPerMinute: row.bytes / durationMinutes,
+      requestsPerMinute: row.requests / durationMinutes,
+    }))
+    .sort((left, right) => (
+      right.bytes - left.bytes
+      || right.requests - left.requests
+      || left.key.localeCompare(right.key)
+    ));
+}
+
+function createTelemetrySnapshot() {
+  const entries = [...requestTelemetryStore.entries].sort((left, right) => left.timestamp - right.timestamp);
+  const totalBytes = entries.reduce((sum, entry) => sum + entry.requestBytes + entry.responseBytes, 0);
+  const totalRequests = entries.length;
+  const firstTs = entries[0]?.timestamp ?? Date.now();
+  const lastTs = entries[entries.length - 1]?.timestamp ?? firstTs;
+  const durationMinutes = Math.max((lastTs - firstTs) / 60000, 1 / 60);
+
+  return {
+    startedAt: requestTelemetryStore.startedAt,
+    generatedAt: Date.now(),
+    totalRequests,
+    totalBytes,
+    requestsPerMinute: totalRequests / durationMinutes,
+    bytesPerMinute: totalBytes / durationMinutes,
+    entries,
+    byLabel: createGroupedStats(entries, (entry) => entry.initiator || 'unlabeled'),
+    byRoute: createGroupedStats(entries, (entry) => entry.route || 'unknown'),
+  };
+}
+
+function resetRequestTelemetry() {
+  requestTelemetryStore.entries = [];
+  requestTelemetryStore.startedAt = null;
+}
+
+function printRequestTelemetrySummary() {
+  const snapshot = createTelemetrySnapshot();
+  const headline = {
+    totalRequests: snapshot.totalRequests,
+    totalBytes: snapshot.totalBytes,
+    requestsPerMinute: Number(snapshot.requestsPerMinute.toFixed(2)),
+    bytesPerMinute: Number(snapshot.bytesPerMinute.toFixed(2)),
+  };
+
+  console.log('[ProgressPal net audit] summary', headline);
+  console.table(snapshot.byLabel.map((row) => ({
+    label: row.key,
+    requests: row.requests,
+    bytes: row.bytes,
+    bytesPerMinute: Number(row.bytesPerMinute.toFixed(2)),
+    requestsPerMinute: Number(row.requestsPerMinute.toFixed(2)),
+    avgDurationMs: Number(row.avgDurationMs.toFixed(2)),
+  })));
+  console.table(snapshot.byRoute.map((row) => ({
+    route: row.key,
+    requests: row.requests,
+    bytes: row.bytes,
+    bytesPerMinute: Number(row.bytesPerMinute.toFixed(2)),
+    requestsPerMinute: Number(row.requestsPerMinute.toFixed(2)),
+    avgDurationMs: Number(row.avgDurationMs.toFixed(2)),
+  })));
+
+  return snapshot;
+}
+
+function recordRequestTelemetry(config, responseOrError, statusOverride = null) {
+  if (!DEV_REQUEST_TELEMETRY_ENABLED || !config) return;
+
+  const meta = config.progresspalAuditMeta || {};
+  const status = statusOverride ?? responseOrError?.status ?? responseOrError?.response?.status ?? 0;
+  const durationMs = Math.max(0, Math.round(performance.now() - Number(meta.startedPerf || performance.now())));
+  const response = responseOrError?.data !== undefined || responseOrError?.headers
+    ? responseOrError
+    : responseOrError?.response;
+
+  if (!requestTelemetryStore.startedAt) {
+    requestTelemetryStore.startedAt = Date.now();
+  }
+
+  requestTelemetryStore.entries.push({
+    timestamp: meta.timestamp || Date.now(),
+    method: String(config.method || 'GET').toUpperCase(),
+    route: meta.route || normalizeRoute(config.url),
+    status,
+    durationMs,
+    initiator: meta.initiator || 'unlabeled',
+    pathname: meta.pathname || currentPathname(),
+    visibilityState: meta.visibilityState || currentVisibilityState(),
+    requestBytes: meta.requestBytes ?? estimateRequestBytes(config),
+    responseBytes: estimateResponseBytes(response),
+  });
+}
+
+function attachDevRequestTelemetry() {
+  if (!DEV_REQUEST_TELEMETRY_ENABLED || typeof window === 'undefined') return;
+  window.__progresspalNetStats = {
+    reset: resetRequestTelemetry,
+    snapshot: createTelemetrySnapshot,
+    printSummary: printRequestTelemetrySummary,
+  };
+
+  client.interceptors.request.use((config) => {
+    const requestConfig = config;
+    requestConfig.progresspalAuditMeta = {
+      timestamp: Date.now(),
+      startedPerf: performance.now(),
+      route: normalizeRoute(requestConfig.url),
+      initiator: requestConfig.progresspalInitiator || 'unlabeled',
+      pathname: currentPathname(),
+      visibilityState: currentVisibilityState(),
+      requestBytes: estimateRequestBytes(requestConfig),
+    };
+    return requestConfig;
+  });
+
+  client.interceptors.response.use(
+    (response) => {
+      recordRequestTelemetry(response.config, response);
+      return response;
+    },
+    (error) => {
+      if (error?.config) {
+        recordRequestTelemetry(error.config, error, error?.response?.status ?? 0);
+      }
+      return Promise.reject(error);
+    },
+  );
+}
+
+function withAuditConfig(config = {}, options = {}) {
+  if (!options?.initiator) return config;
+  return {
+    ...config,
+    progresspalInitiator: options.initiator,
+  };
+}
+
+attachDevRequestTelemetry();
 
 function toErrorMessage(error, fallback) {
   return error?.response?.data?.message || fallback;
@@ -123,9 +381,9 @@ export async function loginUserByEmail(email, password) {
   return auth.user;
 }
 
-export async function getFeed(userId, page = 0, size = 10) {
+export async function getFeed(userId, page = 0, size = 10, options = {}) {
   try {
-    const { data } = await client.get('/feed', {
+    const { data } = await client.get('/feed', withAuditConfig({
       headers: {
         ...authHeaders(userId),
         'Cache-Control': 'no-cache',
@@ -136,19 +394,19 @@ export async function getFeed(userId, page = 0, size = 10) {
         size,
         _t: Date.now(),
       },
-    });
+    }, options));
     return data;
   } catch (error) {
     throw new Error(toErrorMessage(error, 'Failed to load feed'));
   }
 }
 
-export async function getActivityTypes(userId, scope = 'ALL') {
+export async function getActivityTypes(userId, scope = 'ALL', options = {}) {
   try {
-    const { data } = await client.get('/activity-types', {
+    const { data } = await client.get('/activity-types', withAuditConfig({
       headers: authHeaders(userId),
       params: { scope },
-    });
+    }, options));
     return data;
   } catch (error) {
     throw new Error(toErrorMessage(error, 'Failed to load activity types'));
@@ -185,12 +443,12 @@ export async function deleteActivityType(userId, id) {
   }
 }
 
-export async function getLiveSession(userId) {
+export async function getLiveSession(userId, options = {}) {
   try {
-    const response = await client.get('/sessions/live', {
+    const response = await client.get('/sessions/live', withAuditConfig({
       headers: authHeaders(userId),
       validateStatus: (status) => status === 200 || status === 204,
-    });
+    }, options));
     return response.status === 204 ? null : response.data;
   } catch (error) {
     throw new Error(toErrorMessage(error, 'Failed to load live session'));
@@ -247,15 +505,15 @@ export async function resumeSession(userId, sessionId) {
   }
 }
 
-export async function sendSessionHeartbeat(userId, sessionId) {
+export async function sendSessionHeartbeat(userId, sessionId, options = {}) {
   try {
     await client.patch(
       `/sessions/${sessionId}/heartbeat`,
       null,
-      {
+      withAuditConfig({
         headers: authHeaders(userId),
         validateStatus: (status) => status === 204,
-      },
+      }, options),
     );
   } catch (error) {
     const heartbeatError = new Error(toErrorMessage(error, 'Failed to send session heartbeat'));
@@ -303,7 +561,7 @@ export async function submitSessionJoinRequest(userId, sessionId) {
   }
 }
 
-export async function getOutgoingSessionJoinRequests(userId, filters = {}) {
+export async function getOutgoingSessionJoinRequests(userId, filters = {}, options = {}) {
   try {
     const params = {};
     if (filters.status) params.status = filters.status;
@@ -314,21 +572,21 @@ export async function getOutgoingSessionJoinRequests(userId, filters = {}) {
       params.liveOnly = true;
     }
 
-    const { data } = await client.get('/me/join-requests/outgoing', {
+    const { data } = await client.get('/me/join-requests/outgoing', withAuditConfig({
       headers: authHeaders(userId),
       params,
-    });
+    }, options));
     return data;
   } catch (error) {
     throw new Error(toErrorMessage(error, 'Failed to load outgoing join requests'));
   }
 }
 
-export async function getIncomingSessionJoinRequests(userId, sessionId) {
+export async function getIncomingSessionJoinRequests(userId, sessionId, options = {}) {
   try {
-    const { data } = await client.get(`/sessions/${sessionId}/join-requests/incoming`, {
+    const { data } = await client.get(`/sessions/${sessionId}/join-requests/incoming`, withAuditConfig({
       headers: authHeaders(userId),
-    });
+    }, options));
     return data;
   } catch (error) {
     throw new Error(toErrorMessage(error, 'Failed to load incoming join requests'));
@@ -348,23 +606,23 @@ export async function decideSessionJoinRequest(userId, sessionId, requestId, dec
   }
 }
 
-export async function getSessionRoomState(userId, sessionId) {
+export async function getSessionRoomState(userId, sessionId, options = {}) {
   try {
-    const { data } = await client.get(`/sessions/${sessionId}/room`, {
+    const { data } = await client.get(`/sessions/${sessionId}/room`, withAuditConfig({
       headers: authHeaders(userId),
-    });
+    }, options));
     return data;
   } catch (error) {
     throw new Error(toErrorMessage(error, 'Failed to load room state'));
   }
 }
 
-export async function getSessionRoomMessages(userId, sessionId, page = 0, size = 50) {
+export async function getSessionRoomMessages(userId, sessionId, page = 0, size = 50, options = {}) {
   try {
-    const { data } = await client.get(`/sessions/${sessionId}/room/messages`, {
+    const { data } = await client.get(`/sessions/${sessionId}/room/messages`, withAuditConfig({
       headers: authHeaders(userId),
       params: { page, size },
-    });
+    }, options));
     return data;
   } catch (error) {
     throw new Error(toErrorMessage(error, 'Failed to load room messages'));
@@ -384,7 +642,7 @@ export async function postSessionRoomMessage(userId, sessionId, content) {
   }
 }
 
-export async function getMySessions(userId, filters = {}) {
+export async function getMySessions(userId, filters = {}, options = {}) {
   try {
     const params = {};
     const allowedKeys = ['page', 'size', 'from', 'to', 'activityTypeId', 'visibility', 'status'];
@@ -395,10 +653,10 @@ export async function getMySessions(userId, filters = {}) {
       params[key] = value;
     });
 
-    const { data } = await client.get('/me/sessions', {
+    const { data } = await client.get('/me/sessions', withAuditConfig({
       headers: authHeaders(userId),
       params,
-    });
+    }, options));
     return data;
   } catch (error) {
     throw new Error(toErrorMessage(error, 'Failed to load your sessions'));
@@ -606,10 +864,10 @@ function buildNotificationScopeParams(baseParams = {}, options = {}) {
 
 export async function getMyNotifications(userId, page = 0, size = 12, options = {}) {
   try {
-    const { data } = await client.get('/me/notifications', {
+    const { data } = await client.get('/me/notifications', withAuditConfig({
       headers: authHeaders(userId),
       params: buildNotificationScopeParams({ page, size }, options),
-    });
+    }, options));
     return data;
   } catch (error) {
     throw new Error(toErrorMessage(error, 'Failed to load notifications'));
@@ -618,10 +876,10 @@ export async function getMyNotifications(userId, page = 0, size = 12, options = 
 
 export async function getUnreadNotificationsCount(userId, options = {}) {
   try {
-    const { data } = await client.get('/me/notifications/unread-count', {
+    const { data } = await client.get('/me/notifications/unread-count', withAuditConfig({
       headers: authHeaders(userId),
       params: buildNotificationScopeParams({}, options),
-    });
+    }, options));
     return data;
   } catch (error) {
     throw new Error(toErrorMessage(error, 'Failed to load unread notifications'));
@@ -662,11 +920,11 @@ export async function clearMyNotifications(userId) {
   }
 }
 
-export async function getSessionLikes(userId, sessionId) {
+export async function getSessionLikes(userId, sessionId, options = {}) {
   try {
-    const { data } = await client.get(`/sessions/${sessionId}/likes`, {
+    const { data } = await client.get(`/sessions/${sessionId}/likes`, withAuditConfig({
       headers: authHeaders(userId),
-    });
+    }, options));
     return data;
   } catch (error) {
     throw new Error(toErrorMessage(error, 'Failed to load likes'));
