@@ -191,6 +191,32 @@ class KeycloakAccountBootstrapApiTest {
         assertThat(userRepository.count()).isZero();
     }
 
+    @Test
+    void meAccount_keycloakToken_whenEmailAlreadyLinkedToDifferentIdentity_returns409() throws Exception {
+        User existing = new User();
+        existing.setUsername("linked_user");
+        existing.setEmail("linked@test.com");
+        existing.setPassword(null);
+        existing.setCreatedAt(Instant.now());
+        existing.setAuthProvider("KEYCLOAK");
+        existing.setAuthIssuer(issuerUri());
+        existing.setAuthSubject("kc-subject-existing");
+        userRepository.save(existing);
+
+        mvc.perform(get("/api/me/account")
+                        .header("Authorization", "Bearer " + keycloakToken(
+                                "kc-subject-new",
+                                "linked@test.com",
+                                true,
+                                "linked_user_new",
+                                null
+                        )))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Email is already linked to another identity"));
+
+        assertThat(userRepository.count()).isEqualTo(1);
+    }
+
     private static RSAKey generateRsaJwk() {
         try {
             return new RSAKeyGenerator(2048)
