@@ -1,206 +1,160 @@
-# Keycloak + Google OIDC Auth Contract
+# Keycloak Authentication Implementation Review Contract
 
 ## Title and Scope
 
-This contract supersedes previous contract content and becomes the contract of record for authentication migration.
+This contract supersedes previous contract content and becomes the contract of record for reviewing the current Keycloak authentication implementation in ProgressPal.
 
 Scope:
 
-- Introduce Keycloak as the OIDC provider for ProgressPal.
-- Enable Google login/signup through Keycloak.
-- Keep existing native email/password auth temporarily during migration.
-- Preserve the local ProgressPal `users` table as the canonical domain identity.
+- Review the existing Keycloak login, signup, callback, logout, token validation, and local account bootstrap implementation.
+- Verify that Google and email/password entry points are routed through Keycloak as intended.
+- Verify that the backend safely accepts Keycloak bearer tokens while preserving local ProgressPal users as the domain identity.
+- Identify correctness, security, configuration-drift, and test-coverage gaps.
 
-Out of scope for v1:
+Out of scope:
 
-- Production Keycloak deployment strategy
-- SSO across multiple apps
-- Password reset through Keycloak
-- Removal of native auth endpoints in the same release
+- Implementing new auth behavior during the review
+- Removing legacy native auth endpoints in this review
+- Production Keycloak hosting/deployment design
+- Password migration from native ProgressPal accounts into Keycloak
 
-## Core Rules
+## Current Intended Architecture
 
-- Frontend authentication uses Keycloak Authorization Code Flow with PKCE.
-- Google login/signup is provided through a Keycloak identity provider, not direct frontend-to-Google integration.
-- Backend protected APIs accept Keycloak bearer tokens directly.
-- Existing native auth remains temporarily available:
-  - `POST /api/auth/login`
-  - `POST /api/users`
-- Local ProgressPal user remains the source of truth for all business data, relations, and foreign keys.
-- Keycloak identity is linked to a local user by unique `(authIssuer, authSubject)`.
-- On first Keycloak-authenticated request:
-  - if `(authIssuer, authSubject)` already exists, use that linked local user
-  - else if token has verified email and a matching local user exists by case-insensitive email, link that local user
-  - else if token has verified email and no local user exists, create a new local user
-  - else deny access
-- Email must be present and verified for first-time Keycloak access.
-- Username bootstrap precedence:
-  - `preferred_username`
-  - email local-part
-  - generated fallback
-- Username creation must remain unique; collisions are resolved by suffixing.
-- Keycloak-managed accounts do not require a local password.
-- In-app password changes are disabled for Keycloak-linked accounts.
-- Existing app authorization rules remain unchanged after local user resolution.
+- Frontend uses Keycloak Authorization Code Flow with PKCE.
+- Frontend Keycloak config comes from:
+  - `VITE_KEYCLOAK_URL`
+  - `VITE_KEYCLOAK_REALM`
+  - `VITE_KEYCLOAK_CLIENT_ID`
+- Keycloak frontend client is a public SPA client and must not require or send a client secret.
+- Google login/signup uses Keycloak identity-provider brokering with `kc_idp_hint=google`.
+- Email login opens Keycloak hosted login.
+- Email signup opens Keycloak hosted registration using the current `prompt=create` approach.
+- Successful OIDC callback hydrates the local ProgressPal account through `GET /api/me/account`.
+- Backend keeps local `users` as the source of truth for app ownership, friendships, sessions, feed data, notifications, and profile data.
+- Backend supports a migration period where native ProgressPal JWTs and Keycloak JWTs can both be accepted.
 
-## Public Interfaces
+## Frontend Review Contract
 
-### Existing APIs kept during migration
+Review these areas:
 
-- `POST /api/auth/login`
-- `POST /api/users`
+- `frontend/src/lib/oidc.js`
+- `frontend/src/components/Login.jsx`
+- `frontend/src/components/Signup.jsx`
+- `frontend/src/components/AuthCallback.jsx`
+- `frontend/src/components/Navbar.jsx`
+- auth storage behavior in `frontend/src/lib/api.js`
 
-Behavior:
+Expected behavior:
 
-- These remain functional for native auth during migration.
-- No request or response shape changes are introduced in v1.
+- Login page primary actions are Keycloak Google and Keycloak email login.
+- Signup page primary actions are Keycloak Google and Keycloak email registration.
+- Legacy native login/signup UI may exist only as an explicit fallback, not the primary path.
+- PKCE uses S256 and a browser-generated verifier/challenge.
+- Callback validates returned `state` against pending auth state.
+- Callback exchanges each authorization code at most once, including under React Strict Mode remounts, callback refresh, and retry paths.
+- Token exchange sends `client_id`, `code`, `redirect_uri`, and `code_verifier`, but no client secret.
+- Callback stores the Keycloak access token as the active API bearer token only after successful `/api/me/account` hydration.
+- Logout clears local auth state and redirects through Keycloak logout when a Keycloak session exists.
+- Retry buttons start a fresh Keycloak transaction.
 
-### Existing protected APIs
+## Backend Review Contract
 
-- All existing protected endpoints continue to require bearer authentication.
-- For Keycloak-authenticated requests, backend resolves the local ProgressPal user from token claims before applying business rules.
+Review these areas:
 
-### Account bootstrap behavior
+- `backend/src/main/java/org/progresspalbackend/progresspalbackend/config/SecurityConfig.java`
+- `backend/src/main/java/org/progresspalbackend/progresspalbackend/config/HybridJwtDecoder.java`
+- `backend/src/main/java/org/progresspalbackend/progresspalbackend/service/KeycloakUserLinkService.java`
+- `backend/src/main/resources/application.yml`
+- `backend/src/main/resources/db/migration/V14__keycloak_auth_link.sql`
+- Keycloak-related backend tests
 
-- `GET /api/me/account` is the frontend bootstrap endpoint after successful Keycloak login.
-- Frontend must call `GET /api/me/account` after OIDC login to hydrate the local ProgressPal user profile.
+Expected behavior:
 
-## Token and Claim Resolution
+- Native local JWTs continue to validate during migration.
+- Keycloak JWTs are selected by exact issuer match and validated through the configured Keycloak issuer/JWKS.
+- Keycloak issuer config comes from `APP_SECURITY_KEYCLOAK_ISSUER_URI`.
+- Optional JWKS override comes from `APP_SECURITY_KEYCLOAK_JWK_SET_URI`.
+- Backend resolves Keycloak JWTs to a local ProgressPal user before normal app authorization logic runs.
+- Existing linked users resolve by `(authIssuer, authSubject)`.
+- First-time Keycloak users link by verified email when an unlinked local user exists.
+- First-time Keycloak users create a new local user when no local user exists and bootstrap policy is satisfied.
+- Email linked to a different Keycloak identity returns conflict, not silent relink.
+- `users.password` is nullable for Keycloak-only users.
+- `users(auth_issuer, auth_subject)` is unique when both values are present.
+- Password changes are disabled for Keycloak-linked accounts.
 
-### Accepted token sources
+## Realm and Local Infrastructure Contract
 
-- Native ProgressPal JWT during migration
-- Keycloak JWT access token
+Review these areas:
 
-### Local JWT behavior
+- `backend/keycloak/import/progresspal-realm.json`
+- `backend/docker-compose.yml`
+- `backend/env/*.env.example`
+- local setup docs, if present
 
-- Existing native JWT behavior remains unchanged during migration.
-- Native JWT `sub` may continue to represent the local ProgressPal user ID.
+Expected local realm baseline:
 
-### Keycloak JWT behavior
+- realm: `progresspal`
+- self-registration enabled for email/password signup
+- login with email enabled
+- checked-in frontend client id: `progresspal-frontend`
+- frontend client is public
+- standard authorization-code flow enabled
+- implicit flow disabled
+- direct access grants disabled
+- PKCE S256 configured
+- local redirect URIs include the Vite dev origins
+- Google identity provider is present as alias `google`
+- Google provider may use placeholders in git, but required manual setup must be documented if it is disabled or incomplete by default.
 
-Required claims for first-time access:
+Important drift risk:
 
-- `iss`
-- `sub`
-- `email`
-- `email_verified`
+- Docker persists Keycloak state in the `keycloak-pgdata` volume.
+- Realm import does not necessarily overwrite manual Admin Console edits after first boot.
+- Review must distinguish checked-in realm config from the currently running Keycloak realm.
 
-Preferred claims for profile bootstrap:
+## Email Verification Contract
 
-- `preferred_username`
-- `name`
-- `given_name`
-- `family_name`
-- `picture`
-
-Resolution rules:
-
-- `iss` maps to `authIssuer`
-- `sub` maps to `authSubject`
-- `email` is used only for first-link or first-create decisions
-- `picture` may initialize `profileImage` for newly created local users only
-
-## Persistence Changes
-
-### Users table additions
-
-Add nullable columns to `users`:
-
-- `auth_provider`
-- `auth_subject`
-- `auth_issuer`
-
-Add constraint:
-
-- unique `(auth_issuer, auth_subject)`
-
-### Password changes
-
-- `users.password` becomes nullable to support Keycloak-only accounts.
-
-### Linking semantics
-
-- Native-only users may have null auth-link columns.
-- Keycloak-linked users must have non-null `auth_issuer` and `auth_subject`.
-- A Keycloak identity cannot link to more than one local user.
-
-## Frontend Behavior Obligations
-
-### Login page
-
-- Keep current login page route.
-- Add primary CTA for Google/Keycloak login.
-- Keep legacy email/password form as secondary during migration.
-
-### Signup page
-
-- Keep current signup page route.
-- Add primary CTA for Google/Keycloak signup through the same Keycloak login flow.
-- Keep legacy signup form as secondary during migration.
-
-### Session bootstrap
-
-After successful Keycloak login:
-
-- frontend stores the Keycloak access token
-- frontend calls `GET /api/me/account`
-- frontend persists local user profile plus token in the existing auth storage shape
-
-### Logout
-
-- Native session logout clears local auth state.
-- Keycloak session logout clears local auth state and triggers Keycloak end-session flow.
-
-## Infrastructure Contract
-
-### Docker Compose
-
-Add optional auth profile services in `backend/docker-compose.yml`:
-
-- `keycloak-db`
-- `keycloak`
-
-Rules:
-
-- Keycloak remains optional in local development via Compose profile `auth`
-- Keycloak uses its own database storage, separate from the app database
-- Keycloak startup imports a local dev realm from versioned files
-
-### Realm import
-
-Add a versioned import folder:
-
-- `backend/keycloak/import/`
-
-Realm requirements:
-
-- realm name: `progresspal`
-- SPA client for frontend
-- roles:
-  - `user`
-  - `admin`
-- local redirect URIs for frontend development
-- Google identity provider configuration placeholders or documented setup points
-
-### Environment variables
-
-Frontend env:
-
-- `VITE_KEYCLOAK_URL`
-- `VITE_KEYCLOAK_REALM`
-- `VITE_KEYCLOAK_CLIENT_ID`
-
-Backend env/config:
-
-- Keycloak issuer URI / JWK validation configuration
-- Existing native JWT secret remains during migration
-
-## Compatibility
-
-- Existing session, feed, friends, notifications, comments, likes, join-request, and room APIs remain unchanged in request/response shape.
-- Existing authorization behavior remains unchanged after local user resolution.
-- Existing native auth remains temporary and backward compatible during migration.
-- Header-based local dev auth may remain only as a local-development fallback until explicitly removed.
+- Default product policy requires verified email for first-time Keycloak bootstrap.
+- Local development may temporarily disable that rule only through `APP_SECURITY_KEYCLOAK_REQUIRE_VERIFIED_EMAIL=false`.
+- If the checked-in local realm has `verifyEmail=false`, review must verify that this is intentional for local development and does not silently contradict the backend default.
+- Unverified email behavior must be covered by tests for both default rejection and explicit local override acceptance.
 
 ## Acceptance and Validation Matrix
+
+Reviewer must verify:
+
+- Google login redirects with `kc_idp_hint=google`.
+- Email login opens Keycloak hosted login.
+- Email signup attempts hosted registration and does not rely on native signup as the primary path.
+- Callback uses PKCE and never sends a browser-side client secret.
+- Callback is idempotent against duplicate exchange caused by Strict Mode, remount, refresh, or repeated callback execution.
+- Successful Keycloak callback hydrates `/api/me/account` and stores the returned local user plus access token.
+- Failed hydration clears local Keycloak auth state and shows a useful error.
+- Logout clears local auth and uses Keycloak logout when possible.
+- Backend accepts valid Keycloak tokens from the configured issuer.
+- Backend rejects Keycloak tokens from an unexpected issuer.
+- Backend links existing local users by verified email.
+- Backend creates new local users for first-time verified Keycloak users.
+- Backend rejects unverified email by default.
+- Backend accepts unverified email only when the explicit local override is enabled.
+- Backend returns conflict when email is already linked to a different Keycloak identity.
+- Checked-in realm import supports registration and public PKCE client expectations.
+- Tests cover the critical backend bootstrap/linking paths and realm import contract.
+
+## Known Review Hotspots
+
+- `prompt=create` is only a Keycloak routing hint; review whether the checked-in realm and/or setup docs make hosted registration reliable.
+- The Google IdP exists in the realm import but may be disabled with placeholder credentials; review whether this is documented and expected.
+- The frontend still exposes legacy fallback UI; review whether it is clearly secondary and not presented as the primary product path.
+- The hybrid decoder falls back to local JWT validation when issuer extraction does not match Keycloak; review whether this is acceptable for the migration period.
+- Header-based dev auth, if still present, must remain explicitly local/dev-only.
+- Stored Keycloak tokens currently appear to be access tokens without refresh-token handling; review session expiry UX and security implications.
+
+## Assumptions and Defaults
+
+- This is a review contract, not a new implementation plan.
+- No API request/response shape changes are intended by the review.
+- Existing native auth remains temporarily available for migration compatibility.
+- Local users remain the canonical ProgressPal domain model even when authentication is delegated to Keycloak.
+- The reviewer should report findings first, ordered by severity, with file and line references.
