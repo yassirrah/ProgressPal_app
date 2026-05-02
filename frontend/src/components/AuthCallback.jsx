@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { hydrateAccountFromToken, setStoredUser } from '../lib/api';
+import { clearStoredUser, hydrateAccountFromToken, setStoredUser } from '../lib/api';
 import {
   beginKeycloakLogin,
   clearKeycloakSession,
@@ -69,6 +69,7 @@ const AuthCallback = () => {
       } catch (err) {
         if (cancelled) return;
         clearKeycloakSession();
+        clearStoredUser();
         setStage('error');
         setErrorTitle('We could not finish your sign-in');
         setErrorMessage(err.message || 'Secure sign-in did not complete. Please try again.');
@@ -86,6 +87,7 @@ const AuthCallback = () => {
       } catch (err) {
         if (cancelled) return;
         clearKeycloakSession();
+        clearStoredUser();
         const hydrationFailure = describeHydrationFailure(err.message);
         setStage('error');
         setErrorTitle(hydrationFailure.title);
