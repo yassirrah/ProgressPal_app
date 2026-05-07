@@ -273,7 +273,7 @@ const Friends = () => {
     if (seed % 2 === 0) {
       return {
         meta: 'Studying • 45 min session',
-        actionLabel: 'Join',
+        actionLabel: 'Join session',
         onAction: () => navigate('/feed'),
       };
     }
@@ -345,46 +345,55 @@ const Friends = () => {
 
   return (
     <div className="friends-page">
-      <section className="friends-top">
-        <section className="friends-hero">
+      <header className="friends-page-header">
+        <div className="friends-header-top">
           <div>
             <h1 className="friends-title-main">Friends</h1>
             <p className="friends-subtitle">Build a focused circle, discover people, and keep momentum together.</p>
           </div>
-          <div className="friends-hero-stats" aria-label="Friendship overview">
-            <span className="friends-hero-stat">{friends.length} friend{friends.length === 1 ? '' : 's'}</span>
-            <span className="friends-hero-stat">{incomingRequests.length} request{incomingRequests.length === 1 ? '' : 's'}</span>
-            <span className="friends-hero-stat">{visibleFriendSuggestions.length} suggestion{visibleFriendSuggestions.length === 1 ? '' : 's'}</span>
-          </div>
-        </section>
-        <div className="friends-toolbar">
-          <button
-            type="button"
-            className={`compact-button friends-toolbar-button ${showAddPanel ? 'secondary-button active' : ''}`}
-            onClick={() => setShowAddPanel((prev) => !prev)}
-          >
-            Add Friend
-          </button>
-          <div className="friends-toolbar-count-wrap">
+          <div className="friends-toolbar">
             <button
               type="button"
-              className={`compact-button friends-toolbar-button ${showRequestsPanel ? 'secondary-button active' : ''}`}
+              className={`compact-button friends-toolbar-button friends-outline-action${showAddPanel ? ' active' : ''}`}
+              onClick={() => setShowAddPanel((prev) => !prev)}
+            >
+              Add friend
+            </button>
+            <button
+              type="button"
+              className={`compact-button friends-toolbar-button friends-outline-action${showRequestsPanel ? ' active' : ''}`}
               onClick={() => setShowRequestsPanel((prev) => !prev)}
             >
               Requests
+              {incomingRequests.length > 0 && (
+                <span className="friends-toolbar-count-pill" aria-label={`${incomingRequests.length} pending requests`}>
+                  {incomingRequests.length}
+                </span>
+              )}
             </button>
-            {incomingRequests.length > 0 && (
-              <span className="friends-toolbar-count-pill" aria-label={`${incomingRequests.length} pending requests`}>
-                {incomingRequests.length}
-              </span>
-            )}
           </div>
         </div>
-      </section>
+        <div className="friends-stat-row" role="list" aria-label="Friendship overview">
+          <span className="friends-stat-pill friends-stat-pill--active" role="listitem">
+            <strong>{friends.length}</strong>
+            friend{friends.length === 1 ? '' : 's'}
+          </span>
+          <span className="friends-stat-separator" aria-hidden="true" />
+          <span className="friends-stat-pill" role="listitem">
+            <strong>{incomingRequests.length}</strong>
+            request{incomingRequests.length === 1 ? '' : 's'}
+          </span>
+          <span className="friends-stat-separator" aria-hidden="true" />
+          <span className="friends-stat-pill" role="listitem">
+            <strong>{visibleFriendSuggestions.length}</strong>
+            suggestion{visibleFriendSuggestions.length === 1 ? '' : 's'}
+          </span>
+        </div>
+      </header>
       <div className="friends-divider" />
       {error && <p className="message-error">{error}</p>}
       {message && <p className="message-muted">{message}</p>}
-      {loading && <p>Loading...</p>}
+      {loading && <p className="friends-state">Loading friends...</p>}
 
       {showAddPanel && (
         <section className="friends-section-card friends-section-card--accent">
@@ -445,9 +454,9 @@ const Friends = () => {
               <button
                 type="submit"
                 disabled={sending || !friendLookup.trim()}
-                className={sendSuccessPulse ? 'button-success-pulse' : ''}
+                className={`friends-primary-action${sendSuccessPulse ? ' button-success-pulse' : ''}`}
               >
-                {sending ? 'Sending...' : sendSuccessPulse ? '✓ Request Sent' : 'Send Request'}
+                {sending ? 'Sending...' : sendSuccessPulse ? 'Request sent' : 'Send request'}
               </button>
             </div>
           </form>
@@ -484,7 +493,7 @@ const Friends = () => {
                   <div className="friend-row-actions">
                     <button
                       type="button"
-                      className="compact-button"
+                      className="compact-button friends-primary-action"
                       disabled={
                         acceptingRequesterId === request.requesterId
                         || rejectingRequesterId === request.requesterId
@@ -495,7 +504,7 @@ const Friends = () => {
                     </button>
                     <button
                       type="button"
-                      className="compact-button secondary-button"
+                      className="compact-button friends-secondary-action"
                       disabled={
                         acceptingRequesterId === request.requesterId
                         || rejectingRequesterId === request.requesterId
@@ -512,11 +521,11 @@ const Friends = () => {
         </section>
       )}
 
-      <section className="friends-section-card">
+      <section className="friends-section-card friends-section-card--plain" aria-labelledby="friends-discover-title">
         <div className="friends-section-head">
           <div>
             <p className="friends-section-kicker">DISCOVER</p>
-            <h2 className="friends-title">Suggested for You</h2>
+            <h2 id="friends-discover-title" className="friends-title">Suggested for You</h2>
             <p className="friends-section-subtitle">People likely to fit your productivity and focus network.</p>
           </div>
         </div>
@@ -561,7 +570,7 @@ const Friends = () => {
                     <div className="friend-row-actions friend-row-actions--suggested">
                       <button
                         type="button"
-                        className="compact-button"
+                        className="compact-button friends-primary-action"
                         disabled={sendingSuggestionId === candidate.userId}
                         onClick={() => handleSendSuggestionRequest(candidate)}
                       >
@@ -585,11 +594,11 @@ const Friends = () => {
         )}
       </section>
 
-      <section className="friends-section-card">
+      <section className="friends-section-card friends-section-card--plain" aria-labelledby="friends-circle-title">
         <div className="friends-section-head">
           <div>
             <p className="friends-section-kicker">CIRCLE</p>
-            <h2 className="friends-title">Your Friends</h2>
+            <h2 id="friends-circle-title" className="friends-title">Your Friends</h2>
             <p className="friends-section-subtitle">Your active network for shared focus and accountability.</p>
           </div>
         </div>
@@ -600,6 +609,7 @@ const Friends = () => {
             {friends.map((friend) => {
               const username = friend.friendusername || 'Unknown user';
               const preview = friendPreviewFor(friend.FriendId);
+              const canJoinSession = preview.actionLabel === 'Join session';
               const connectedAt = friend.createdAt
                 ? `Connected ${formatRelativeFromNow(friend.createdAt)}`
                 : 'Connected recently';
@@ -620,21 +630,27 @@ const Friends = () => {
                     </div>
                     <div>
                       <p className="friend-name">{username}</p>
+                      <div className="friend-activity">
+                        <span
+                          className={`friend-activity-dot${canJoinSession ? '' : ' idle'}`}
+                          aria-hidden="true"
+                        />
+                        <span>{preview.meta}</span>
+                      </div>
                       <p className="friend-meta">{connectedAt}</p>
-                      <p className="friend-meta friend-meta-secondary">{preview.meta}</p>
                     </div>
                   </button>
                   <div className="friend-row-actions">
                     <button
                       type="button"
-                      className="compact-button"
+                      className={`compact-button ${canJoinSession ? 'friends-primary-action' : 'friends-secondary-action'}`}
                       onClick={preview.onAction}
                     >
                       {preview.actionLabel}
                     </button>
                     <button
                       type="button"
-                      className="compact-button danger-soft-button"
+                      className="compact-button friends-danger-action"
                       disabled={deletingFriendId === friend.FriendId}
                       onClick={() => handleDeleteFriend(friend.FriendId)}
                     >
