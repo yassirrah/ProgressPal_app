@@ -1,9 +1,13 @@
 import axios from 'axios';
+import { clearKeycloakSession } from './oidc';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 const USER_STORAGE_KEY = 'progresspal_user';
 const AUTH_STORAGE_KEY = 'progresspal_auth';
 const DEV_REQUEST_TELEMETRY_ENABLED = import.meta.env.DEV;
+const AUTH_ROUTE_PATHS = new Set(['/login', '/signup', '/auth/callback']);
+
+let unauthorizedRedirectInFlight = false;
 
 const client = axios.create({
   baseURL: API_BASE_URL,
@@ -265,6 +269,32 @@ function withAuditConfig(config = {}, options = {}) {
 }
 
 attachDevRequestTelemetry();
+
+function shouldRedirectUnauthorized() {
+  if (typeof window === 'undefined') return false;
+  return !AUTH_ROUTE_PATHS.has(window.location.pathname);
+}
+
+function attachUnauthorizedRedirect() {
+  client.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      if (
+        error?.response?.status === 401
+        && shouldRedirectUnauthorized()
+        && !unauthorizedRedirectInFlight
+      ) {
+        unauthorizedRedirectInFlight = true;
+        clearKeycloakSession();
+        clearStoredUser();
+        window.location.replace('/login');
+      }
+      return Promise.reject(error);
+    },
+  );
+}
+
+attachUnauthorizedRedirect();
 
 function toErrorMessage(error, fallback) {
   return error?.response?.data?.message || fallback;
