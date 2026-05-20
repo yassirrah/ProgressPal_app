@@ -204,6 +204,7 @@ const Home = () => {
 
   const [stopPanelOpen, setStopPanelOpen] = useState(false);
   const [goalPanelOpen, setGoalPanelOpen] = useState(false);
+  const [sessionToolsOpen, setSessionToolsOpen] = useState(false);
   const [savingGoal, setSavingGoal] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
   const [savingPauseState, setSavingPauseState] = useState(false);
@@ -334,6 +335,7 @@ const Home = () => {
     setStopMetricValue('');
     setStopPanelOpen(false);
     setGoalPanelOpen(false);
+    setSessionToolsOpen(false);
     setGoalReachedPromptOpen(false);
     setRoomPanelOpen(false);
     setRoomPanelLoading(false);
@@ -1211,6 +1213,10 @@ const Home = () => {
   const liveTrackingLabel = liveMetricKind === 'NONE' ? 'Time only' : `${liveMetricLabel} tracking`;
   const liveFocusLabel = isSessionPaused ? 'Focus paused' : 'In flow';
   const hasLiveQuickNote = liveQuickNote.trim().length > 0;
+  const sessionToolsGoalPreview = hasLiveGoal
+    ? `Goal: ${liveGoalPercentLabel === '-' ? 'active' : `${liveGoalPercentLabel} complete`}`
+    : 'Goal: No goal set';
+  const sessionToolsNotesPreview = hasLiveQuickNote ? 'Notes: added' : 'Notes: empty';
   const roomParticipants = Array.isArray(roomState?.participants) ? roomState.participants : [];
   const roomHost = roomState?.host || null;
   const pendingRequestCount = incomingJoinRequests.length;
@@ -1367,19 +1373,7 @@ const Home = () => {
 
   return (
     <div className={`home-stack${liveSession ? ' focus-mode' : ''}${liveSession && roomPanelOpen ? ' room-panel-open' : ''}${sessionCompleteModal ? ' session-complete-open' : ''}`}>
-      {liveSession ? (
-        <div className="live-page-heading">
-          <span className="live-page-kicker">
-            <span className="live-page-kicker-icon" aria-hidden="true">
-              <svg viewBox="0 0 16 16" role="img" focusable="false">
-                <path d="M8.7 1.3 3.9 8h3l-.7 6.7L12.1 8H9.2l-.5-6.7Z" />
-              </svg>
-            </span>
-            <span>Activity</span>
-          </span>
-          <h1 className="page-title">{liveSessionType?.name || 'Live session'}</h1>
-        </div>
-      ) : (
+      {!liveSession && (
         <h1 className="page-title">Home</h1>
       )}
       {!liveSession && (
@@ -1395,6 +1389,17 @@ const Home = () => {
             <section className={`home-card live-session-card ${liveCardAccentClass}`}>
               {sessionError && <p className="message-error">{sessionError}</p>}
               {sessionNotice && <p className="message-muted live-inline-feedback">{sessionNotice}</p>}
+              <div className="live-session-card-header">
+                <span className="live-session-card-kicker">
+                  <span className="live-page-kicker-icon" aria-hidden="true">
+                    <svg viewBox="0 0 16 16" role="img" focusable="false">
+                      <path d="M8.7 1.3 3.9 8h3l-.7 6.7L12.1 8H9.2l-.5-6.7Z" />
+                    </svg>
+                  </span>
+                  <span>Activity</span>
+                </span>
+                <h1 className="live-session-card-title">{liveSessionType?.name || 'Live session'}</h1>
+              </div>
               <div className="live-hero-layout">
                 <div className="live-session-stage">
                   <aside className="live-session-facts" aria-label="Session details">
@@ -1629,25 +1634,48 @@ const Home = () => {
           )}
 
           {liveSession && (
-            <section className="home-card session-tools-card">
-              <div className="home-section-head">
-                <p className="session-tools-section-label">Session tools</p>
-              </div>
-              <div className="session-tools-grid">
-                <article className={`session-tools-panel session-tools-panel--overview${!hasLiveGoal ? ' session-tools-panel--overview-empty' : ''}`}>
-                  <div className="session-tools-head">
-                    <h3>Goal status</h3>
-                    {!goalPanelOpen && (
-                      <button
-                        type="button"
-                        className="compact-button live-goal-tools-cta"
-                        onClick={() => setGoalPanelOpen(true)}
-                        aria-label={hasLiveGoal ? 'Edit goal' : 'Set goal'}
-                      >
-                        {hasLiveGoal ? 'Edit Goal' : 'Set Goal'}
-                      </button>
-                    )}
-                  </div>
+            <section className={`home-card session-tools-card${sessionToolsOpen ? ' is-open' : ' is-collapsed'}`}>
+              <button
+                type="button"
+                className="session-tools-toggle"
+                onClick={() => setSessionToolsOpen((isOpen) => !isOpen)}
+                aria-expanded={sessionToolsOpen}
+                aria-controls="home-session-tools-content"
+              >
+                <span className="session-tools-toggle-copy">
+                  <span className="session-tools-section-label">Session tools</span>
+                  <span className="session-tools-preview">
+                    {sessionToolsGoalPreview} · {sessionToolsNotesPreview}
+                  </span>
+                </span>
+                <span className="session-tools-chevron" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" focusable="false">
+                    <path d="M4.2 6.2 8 10l3.8-3.8 1.1 1.1L8 12.2 3.1 7.3l1.1-1.1Z" />
+                  </svg>
+                </span>
+              </button>
+              <div
+                id="home-session-tools-content"
+                className={`session-tools-collapsible${sessionToolsOpen ? ' is-open' : ''}`}
+                aria-hidden={!sessionToolsOpen}
+                inert={sessionToolsOpen ? undefined : ''}
+              >
+                <div className="session-tools-collapsible-inner">
+                  <div className="session-tools-grid">
+                    <article className={`session-tools-panel session-tools-panel--overview${!hasLiveGoal ? ' session-tools-panel--overview-empty' : ''}`}>
+                      <div className="session-tools-head">
+                        <h3>Goal status</h3>
+                        {!goalPanelOpen && (
+                          <button
+                            type="button"
+                            className="compact-button live-goal-tools-cta"
+                            onClick={() => setGoalPanelOpen(true)}
+                            aria-label={hasLiveGoal ? 'Edit goal' : 'Set goal'}
+                          >
+                            {hasLiveGoal ? 'Edit Goal' : 'Set Goal'}
+                          </button>
+                        )}
+                      </div>
                   {hasLiveGoal ? (
                     <>
                       <div className="session-tools-stats">
@@ -1760,20 +1788,20 @@ const Home = () => {
                       )}
                     </div>
                   )}
-                </article>
+                    </article>
 
-                <article className="session-tools-panel session-tools-panel--notes">
-                  <div className="session-tools-head">
-                    <h3>Quick notes</h3>
-                    <button
-                      type="button"
-                      className={`home-link-button session-tools-clear-button${hasLiveQuickNote ? ' active' : ''}`}
-                      onClick={() => setLiveQuickNote('')}
-                      disabled={!hasLiveQuickNote}
-                    >
-                      Clear
-                    </button>
-                  </div>
+                    <article className="session-tools-panel session-tools-panel--notes">
+                      <div className="session-tools-head">
+                        <h3>Quick notes</h3>
+                        <button
+                          type="button"
+                          className={`home-link-button session-tools-clear-button${hasLiveQuickNote ? ' active' : ''}`}
+                          onClick={() => setLiveQuickNote('')}
+                          disabled={!hasLiveQuickNote}
+                        >
+                          Clear
+                        </button>
+                      </div>
                   <p className="session-tools-note-helper">
                     Capture your intention, blockers, or next step while you stay in flow.
                   </p>
@@ -1789,8 +1817,33 @@ const Home = () => {
                     <p className={`session-tools-note-save${quickNoteSaveState === 'saving' ? ' saving' : ''}`}>
                       {quickNoteSaveState === 'saving' ? 'Auto-saving...' : 'Saved'}
                     </p>
+                      </div>
+                    </article>
+
+                    <article className="session-tools-panel session-tools-panel--room">
+                      <div className="session-tools-room-copy">
+                        <div className="session-tools-head">
+                          <h3>Room</h3>
+                          {roomAlertBadgeCount > 0 && (
+                            <span className="session-tools-room-badge">
+                              {roomAlertBadgeCount}
+                            </span>
+                          )}
+                        </div>
+                        <p className="session-tools-note-helper">
+                          Review join requests, participants, and room chat without leaving your session.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className={`secondary-button compact-button session-tools-room-button${roomPanelOpen ? ' is-open' : ''}`}
+                        onClick={openRoomPanel}
+                      >
+                        Open Room
+                      </button>
+                    </article>
                   </div>
-                </article>
+                </div>
               </div>
             </section>
           )}
