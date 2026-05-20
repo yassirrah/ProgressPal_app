@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   createSessionComment,
   getActivityTypes,
   getFeed,
   getFriendSuggestions,
+  getLiveSession,
   getOutgoingSessionJoinRequests,
   getMySessions,
   getSessionComments,
@@ -12,6 +13,8 @@ import {
   submitSessionJoinRequest,
   getStoredUser,
   likeSession,
+  pauseSession,
+  resumeSession,
   sendFriendRequest,
   unlikeSession,
 } from '../lib/api';
@@ -19,11 +22,27 @@ import {
 const isSessionPaused = (item) => Boolean(item?.paused ?? (item?.pausedAt && !item?.endedAt));
 const isSessionOngoing = (item) => Boolean(item?.ongoing ?? (!item?.endedAt && !isSessionPaused(item)));
 const isPrivateVisibility = (item) => String(item?.visibility || '').toUpperCase() === 'PRIVATE';
+const normalizeLiveSession = (session) => (session?.id && !session.endedAt ? session : null);
 const SUGGEST_AVATAR_TONES = ['teal', 'purple', 'amber'];
+const LIVE_SESSION_REFRESHED_EVENT = 'progresspal-live-session-refreshed';
+const LIVE_SESSION_LOCAL_EVENT = 'progresspal-live-session-local';
+const FLOATING_TIMER_EDGE_GAP = 12;
+
+const clampFloatingTimerPosition = (x, y, width, height) => {
+  if (typeof window === 'undefined') return { x, y };
+  const maxX = Math.max(FLOATING_TIMER_EDGE_GAP, window.innerWidth - width - FLOATING_TIMER_EDGE_GAP);
+  const maxY = Math.max(FLOATING_TIMER_EDGE_GAP, window.innerHeight - height - FLOATING_TIMER_EDGE_GAP);
+  return {
+    x: Math.min(Math.max(FLOATING_TIMER_EDGE_GAP, x), maxX),
+    y: Math.min(Math.max(FLOATING_TIMER_EDGE_GAP, y), maxY),
+  };
+};
 
 const Feed = () => {
   const navigate = useNavigate();
   const currentUser = useMemo(() => getStoredUser(), []);
+  const floatingTimerDragRef = useRef(null);
+  const suppressFloatingTimerClickRef = useRef(false);
   const [feedItems, setFeedItems] = useState([]);
   const [mySessions, setMySessions] = useState([]);
   const [activityTypesById, setActivityTypesById] = useState({});
@@ -33,6 +52,12 @@ const Feed = () => {
   const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
   const [now, setNow] = useState(Date.now());
+  const [feedLiveSession, setFeedLiveSession] = useState(null);
+  const [floatingTimerCollapsed, setFloatingTimerCollapsed] = useState(false);
+  const [savingFloatingTimerState, setSavingFloatingTimerState] = useState(false);
+  const [floatingTimerError, setFloatingTimerError] = useState('');
+  const [floatingTimerPosition, setFloatingTimerPosition] = useState(null);
+  const [floatingTimerDragging, setFloatingTimerDragging] = useState(false);
   const [likesBySession, setLikesBySession] = useState({});
   const [likePendingBySession, setLikePendingBySession] = useState({});
   const [commentsBySession, setCommentsBySession] = useState({});
@@ -144,6 +169,61 @@ const Feed = () => {
   useEffect(() => {
     refreshFeed({ showLoading: true });
   }, [refreshFeed]);
+
+  useEffect(() => {
+    if (!currentUser?.id) {
+      setFeedLiveSession(null);
+      setFloatingTimerError('');
+      return undefined;
+    }
+
+    let cancelled = false;
+    const loadFloatingTimerSession = async () => {
+      try {
+        const liveSession = await getLiveSession(currentUser.id, { initiator: 'Feed:floatingLiveTimer' });
+        if (cancelled) return;
+        setFeedLiveSession(normalizeLiveSession(liveSession));
+        setFloatingTimerError('');
+      } catch (err) {
+        if (cancelled) return;
+        setFeedLiveSession(null);
+        setFloatingTimerError(err.message || 'Failed to load live session timer');
+      }
+    };
+
+    void loadFloatingTimerSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return undefined;
+
+    const handleLiveSessionRefresh = (event) => {
+      const detail = event?.detail || {};
+      if (detail.userId && String(detail.userId) !== String(currentUser.id)) return;
+      setFeedLiveSession(normalizeLiveSession(detail.session));
+      setFloatingTimerError('');
+    };
+
+    window.addEventListener(LIVE_SESSION_REFRESHED_EVENT, handleLiveSessionRefresh);
+
+    return () => {
+      window.removeEventListener(LIVE_SESSION_REFRESHED_EVENT, handleLiveSessionRefresh);
+    };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    setFloatingTimerCollapsed(false);
+    setFloatingTimerError('');
+    setSavingFloatingTimerState(false);
+    setFloatingTimerPosition(null);
+    setFloatingTimerDragging(false);
+    floatingTimerDragRef.current = null;
+    suppressFloatingTimerClickRef.current = false;
+  }, [feedLiveSession?.id]);
 
   useEffect(() => {
     const loadActivityTypes = async () => {
@@ -261,7 +341,8 @@ const Feed = () => {
   }, [currentUser, feedItems, refreshFeed]);
 
   useEffect(() => {
-    const hasLiveSessions = feedItems.some((item) => isSessionOngoing(item));
+    const hasLiveSessions = feedItems.some((item) => isSessionOngoing(item))
+      || Boolean(feedLiveSession?.id);
     if (!hasLiveSessions) return;
 
     const intervalId = window.setInterval(() => {
@@ -269,7 +350,7 @@ const Feed = () => {
     }, 1000);
 
     return () => window.clearInterval(intervalId);
-  }, [feedItems]);
+  }, [feedItems, feedLiveSession?.id]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -301,6 +382,16 @@ const Feed = () => {
     if (hours > 0) return `${hours}h ${minutes}m`;
     if (minutes > 0) return `${minutes}m ${remainingSeconds}s`;
     return `${remainingSeconds}s`;
+  };
+
+  const formatDurationClock = (totalSeconds) => {
+    const seconds = Math.max(0, Math.floor(totalSeconds || 0));
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+    return [hours, minutes, remainingSeconds]
+      .map((value) => String(value).padStart(2, '0'))
+      .join(':');
   };
 
   const formatRelativeFromNow = (value) => {
@@ -443,6 +534,88 @@ const Feed = () => {
       onAction: options.onAction || null,
       durationMs: options.durationMs || 3200,
     });
+  };
+
+  const handleFloatingTimerPointerDown = (event) => {
+    if (event.button !== undefined && event.button !== 0) return;
+    const timerNode = event.currentTarget.closest('.feed-floating-live-card, .feed-floating-live-pill')
+      || event.currentTarget;
+    const rect = timerNode.getBoundingClientRect();
+    floatingTimerDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: rect.left,
+      originY: rect.top,
+      width: rect.width,
+      height: rect.height,
+      moved: false,
+    };
+    setFloatingTimerDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  };
+
+  const handleFloatingTimerPointerMove = (event) => {
+    const drag = floatingTimerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (Math.abs(deltaX) + Math.abs(deltaY) > 3) {
+      drag.moved = true;
+    }
+
+    setFloatingTimerPosition(clampFloatingTimerPosition(
+      drag.originX + deltaX,
+      drag.originY + deltaY,
+      drag.width,
+      drag.height,
+    ));
+  };
+
+  const handleFloatingTimerPointerEnd = (event) => {
+    const drag = floatingTimerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    suppressFloatingTimerClickRef.current = Boolean(drag.moved);
+    floatingTimerDragRef.current = null;
+    setFloatingTimerDragging(false);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  };
+
+  const handleFloatingTimerPillClick = () => {
+    if (suppressFloatingTimerClickRef.current) {
+      suppressFloatingTimerClickRef.current = false;
+      return;
+    }
+    setFloatingTimerCollapsed(false);
+  };
+
+  const handleToggleFloatingTimerState = async () => {
+    if (!currentUser?.id || !feedLiveSession?.id || savingFloatingTimerState) return;
+
+    try {
+      setSavingFloatingTimerState(true);
+      setFloatingTimerError('');
+      const updatedSession = isSessionPaused(feedLiveSession)
+        ? await resumeSession(currentUser.id, feedLiveSession.id)
+        : await pauseSession(currentUser.id, feedLiveSession.id);
+
+      const nextSession = normalizeLiveSession(updatedSession);
+      setFeedLiveSession(nextSession);
+      window.dispatchEvent(new CustomEvent(LIVE_SESSION_LOCAL_EVENT, {
+        detail: {
+          session: nextSession,
+          userId: currentUser.id,
+        },
+      }));
+      void refreshFeed();
+    } catch (err) {
+      setFloatingTimerError(err.message || 'Failed to update live session');
+    } finally {
+      setSavingFloatingTimerState(false);
+    }
   };
 
   const handleToggleLike = async (item) => {
@@ -695,6 +868,28 @@ const Feed = () => {
   }, [getDurationSeconds, mySessions, now]);
 
   const identityBio = (currentUser?.bio || '').trim();
+  const shouldShowFloatingTimer = Boolean(feedLiveSession?.id);
+  const floatingTimerActivityType = shouldShowFloatingTimer
+    ? activityTypesById[feedLiveSession.activityTypeId]
+    : null;
+  const floatingTimerActivityName = floatingTimerActivityType?.name
+    || feedLiveSession?.activityTypeName
+    || 'Live session';
+  const floatingTimerElapsed = shouldShowFloatingTimer
+    ? formatDurationClock(getDurationSeconds(feedLiveSession))
+    : '00:00:00';
+  const floatingTimerPaused = isSessionPaused(feedLiveSession);
+  const floatingTimerStatusLabel = floatingTimerPaused ? 'Paused' : 'Live';
+  const floatingTimerPlacementClass = [
+    floatingTimerPosition ? 'is-moved' : '',
+    floatingTimerDragging ? 'is-dragging' : '',
+  ].filter(Boolean).join(' ');
+  const floatingTimerStyle = floatingTimerPosition
+    ? {
+      '--feed-floating-live-left': `${floatingTimerPosition.x}px`,
+      '--feed-floating-live-top': `${floatingTimerPosition.y}px`,
+    }
+    : undefined;
 
   return (
     <div className="feed-layout">
@@ -1169,6 +1364,87 @@ const Feed = () => {
           )}
         </article>
       </aside>
+
+      {shouldShowFloatingTimer && (
+        floatingTimerCollapsed ? (
+          <button
+            type="button"
+            className={`feed-floating-live-pill ${floatingTimerPlacementClass}${floatingTimerPaused ? ' is-paused' : ''}`}
+            style={floatingTimerStyle}
+            onPointerDown={handleFloatingTimerPointerDown}
+            onPointerMove={handleFloatingTimerPointerMove}
+            onPointerUp={handleFloatingTimerPointerEnd}
+            onPointerCancel={handleFloatingTimerPointerEnd}
+            onClick={handleFloatingTimerPillClick}
+            aria-label={`${floatingTimerActivityName} ${floatingTimerStatusLabel.toLowerCase()} session, ${floatingTimerElapsed}. Expand live session timer`}
+          >
+            <span className="feed-floating-live-dot" aria-hidden="true" />
+            <span className="feed-floating-live-pill-text">
+              <strong>{floatingTimerActivityName}</strong>
+              <span>{floatingTimerStatusLabel} · {floatingTimerElapsed}</span>
+            </span>
+          </button>
+        ) : (
+          <aside
+            className={`feed-floating-live-card ${floatingTimerPlacementClass}${floatingTimerPaused ? ' is-paused' : ''}`}
+            style={floatingTimerStyle}
+            aria-label="Current live session timer"
+          >
+            <div className="feed-floating-live-head">
+              <div className="feed-floating-live-status">
+                <span className="feed-floating-live-dot" aria-hidden="true" />
+                <span>{floatingTimerStatusLabel}</span>
+              </div>
+              <div className="feed-floating-live-head-actions">
+                <button
+                  type="button"
+                  className="feed-floating-live-drag-handle"
+                  onPointerDown={handleFloatingTimerPointerDown}
+                  onPointerMove={handleFloatingTimerPointerMove}
+                  onPointerUp={handleFloatingTimerPointerEnd}
+                  onPointerCancel={handleFloatingTimerPointerEnd}
+                  aria-label="Move live session timer"
+                  title="Drag timer"
+                >
+                  <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true">
+                    <path d="M5 4.2a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm6 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM5 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm6 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm-6 4.8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm6 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="feed-floating-live-collapse"
+                  onClick={() => setFloatingTimerCollapsed(true)}
+                  aria-label="Collapse live session timer"
+                >
+                  <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true">
+                    <path d="M4.2 6.2 8 10l3.8-3.8 1.1 1.1L8 12.2 3.1 7.3l1.1-1.1Z" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="feed-floating-live-body">
+              <p className="feed-floating-live-label">Current session</p>
+              <h2 className="feed-floating-live-title">{floatingTimerActivityName}</h2>
+              <p className="feed-floating-live-time" aria-live="polite">{floatingTimerElapsed}</p>
+            </div>
+            {floatingTimerError && (
+              <p className="feed-floating-live-error" role="status">
+                {floatingTimerError}
+              </p>
+            )}
+            <button
+              type="button"
+              className="feed-floating-live-action"
+              onClick={handleToggleFloatingTimerState}
+              disabled={savingFloatingTimerState}
+            >
+              {savingFloatingTimerState
+                ? 'Saving...'
+                : (floatingTimerPaused ? 'Resume Session' : 'Pause Session')}
+            </button>
+          </aside>
+        )
+      )}
 
       {toast && (
         <div className="app-toast" role="status" aria-live="polite">

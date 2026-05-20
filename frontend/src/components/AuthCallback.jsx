@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { hydrateAccountFromToken, setStoredUser } from '../lib/api';
+import { clearStoredUser, hydrateAccountFromToken, setStoredUser } from '../lib/api';
 import {
   beginKeycloakLogin,
   clearKeycloakSession,
@@ -10,6 +10,31 @@ import {
   persistKeycloakSession,
 } from '../lib/oidc';
 import AuthValueColumn from './AuthValueColumn';
+
+const callbackCompletionBySearch = new Map();
+
+function describeHydrationFailure(message) {
+  const rawMessage = String(message || '').trim();
+  const normalized = rawMessage.toLowerCase();
+
+  if (
+    normalized.includes('verified email')
+    || normalized.includes('email verified')
+    || normalized.includes('email is not verified')
+    || normalized.includes('verify your email')
+    || normalized.includes('verify email')
+  ) {
+    return {
+      title: 'Verify your email to finish setup',
+      message: 'Keycloak signed you in, but ProgressPal could not finish bootstrapping your account yet because first-time setup requires a verified email. Verify your email in Keycloak, then try again. If you are testing locally, make sure the backend development override is enabled before retrying.',
+    };
+  }
+
+  return {
+    title: 'Keycloak sign-in worked, but ProgressPal could not load your account',
+    message: rawMessage || 'We could not hydrate your local account. Please try again.',
+  };
+}
 
 const AuthCallback = () => {
   const location = useLocation();
@@ -23,7 +48,7 @@ const AuthCallback = () => {
   useEffect(() => {
     if (!oidcReady) {
       setStage('error');
-      setErrorTitle('Google sign-in is unavailable');
+      setErrorTitle('Keycloak sign-in is unavailable');
       setErrorMessage(oidcConfigError);
       return undefined;
     }
@@ -35,13 +60,19 @@ const AuthCallback = () => {
 
       try {
         setStage('exchanging');
-        tokenBundle = await completeKeycloakLogin(location.search);
+        let callbackCompletion = callbackCompletionBySearch.get(location.search);
+        if (!callbackCompletion) {
+          callbackCompletion = completeKeycloakLogin(location.search);
+          callbackCompletionBySearch.set(location.search, callbackCompletion);
+        }
+        tokenBundle = await callbackCompletion;
       } catch (err) {
         if (cancelled) return;
         clearKeycloakSession();
+        clearStoredUser();
         setStage('error');
-        setErrorTitle('We could not finish your Keycloak login');
-        setErrorMessage(err.message || 'Google sign-in did not complete. Please try again.');
+        setErrorTitle('We could not finish your sign-in');
+        setErrorMessage(err.message || 'Secure sign-in did not complete. Please try again.');
         return;
       }
 
@@ -56,9 +87,11 @@ const AuthCallback = () => {
       } catch (err) {
         if (cancelled) return;
         clearKeycloakSession();
+        clearStoredUser();
+        const hydrationFailure = describeHydrationFailure(err.message);
         setStage('error');
-        setErrorTitle('Google sign-in worked, but ProgressPal could not load your account');
-        setErrorMessage(err.message || 'We could not hydrate your local account. Please try again.');
+        setErrorTitle(hydrationFailure.title);
+        setErrorMessage(hydrationFailure.message);
       }
     };
 
@@ -68,17 +101,31 @@ const AuthCallback = () => {
     };
   }, [location.search, navigate, oidcConfigError, oidcReady]);
 
-  const handleRetry = async () => {
+  const startRetry = async (options, fallbackMessage) => {
     try {
       setErrorTitle('');
       setErrorMessage('');
       setStage('exchanging');
-      await beginKeycloakLogin('callback-retry');
+      await beginKeycloakLogin(options);
     } catch (err) {
       setStage('error');
-      setErrorTitle('Google sign-in is unavailable');
-      setErrorMessage(err.message || 'We could not start Google sign-in.');
+      setErrorTitle('Keycloak sign-in is unavailable');
+      setErrorMessage(err.message || fallbackMessage);
     }
+  };
+
+  const handleGoogleRetry = async () => {
+    await startRetry(
+      { context: 'callback-retry-google', idpHint: 'google' },
+      'We could not start Google sign-in.',
+    );
+  };
+
+  const handleEmailRetry = async () => {
+    await startRetry(
+      { context: 'callback-retry-email' },
+      'We could not start Keycloak email sign-in.',
+    );
   };
 
   return (
@@ -94,7 +141,7 @@ const AuthCallback = () => {
             <p className="auth-subtitle">
               {stage === 'hydrating'
                 ? 'We are linking your Keycloak session to your local ProgressPal profile.'
-                : 'Hold tight while we complete your secure Google sign-in.'}
+                : 'Hold tight while we complete your secure Keycloak sign-in.'}
             </p>
           </header>
 
@@ -104,13 +151,22 @@ const AuthCallback = () => {
               <p>{errorMessage}</p>
               <div className="auth-callback-actions">
                 {oidcReady && (
-                  <button
-                    type="button"
-                    className="auth-primary-button auth-callback-button"
-                    onClick={() => { void handleRetry(); }}
-                  >
-                    Try Google again
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="auth-primary-button auth-callback-button"
+                      onClick={() => { void handleGoogleRetry(); }}
+                    >
+                      Continue with Google
+                    </button>
+                    <button
+                      type="button"
+                      className="auth-secondary-submit auth-callback-button"
+                      onClick={() => { void handleEmailRetry(); }}
+                    >
+                      Continue with Email
+                    </button>
+                  </>
                 )}
                 <Link to="/login" className="auth-secondary-link auth-callback-link">
                   Back to login

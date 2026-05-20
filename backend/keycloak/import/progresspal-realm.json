@@ -2,6 +2,10 @@
   "realm": "progresspal",
   "enabled": true,
   "displayName": "ProgressPal",
+  "registrationAllowed": true,
+  "loginWithEmailAllowed": true,
+  "verifyEmail": false,
+  "duplicateEmailsAllowed": false,
   "roles": {
     "realm": [
       {

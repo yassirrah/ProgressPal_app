@@ -18,6 +18,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -100,12 +101,12 @@ public class SecurityConfig {
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(this::convertJwtAuthentication))
                         .authenticationEntryPoint((request, response, ex) ->
-                                writeError(response, request, HttpStatus.UNAUTHORIZED, "Unauthorized"))
+                                writeAuthenticationError(response, request, ex))
                         .accessDeniedHandler((request, response, ex) ->
                                 writeError(response, request, HttpStatus.FORBIDDEN, "Forbidden")))
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, authEx) ->
-                                writeError(response, request, HttpStatus.UNAUTHORIZED, "Unauthorized"))
+                                writeAuthenticationError(response, request, authEx))
                         .accessDeniedHandler((request, response, deniedEx) ->
                                 writeError(response, request, HttpStatus.FORBIDDEN, "Forbidden")));
 
@@ -154,7 +155,11 @@ public class SecurityConfig {
                 if (HttpStatus.UNAUTHORIZED.equals(ex.getStatusCode())) {
                     throw new InvalidBearerTokenException(ex.getReason(), ex);
                 }
-                throw ex;
+                throw new HttpStatusAuthenticationException(
+                        HttpStatus.valueOf(ex.getStatusCode().value()),
+                        ex.getReason() != null ? ex.getReason() : ex.getStatusCode().toString(),
+                        ex
+                );
             }
         }
         return new JwtAuthenticationToken(effectiveJwt, AuthorityUtils.NO_AUTHORITIES);
@@ -194,5 +199,15 @@ public class SecurityConfig {
         );
 
         objectMapper.writeValue(response.getWriter(), body);
+    }
+
+    private void writeAuthenticationError(HttpServletResponse response,
+                                          HttpServletRequest request,
+                                          AuthenticationException ex) throws java.io.IOException {
+        if (ex instanceof HttpStatusAuthenticationException statusException) {
+            writeError(response, request, statusException.getStatus(), statusException.getMessage());
+            return;
+        }
+        writeError(response, request, HttpStatus.UNAUTHORIZED, "Unauthorized");
     }
 }

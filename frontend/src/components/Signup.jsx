@@ -9,8 +9,9 @@ const Signup = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [showLegacyFallback, setShowLegacyFallback] = useState(false);
   const [nativeSubmitting, setNativeSubmitting] = useState(false);
-  const [oidcLoading, setOidcLoading] = useState(false);
+  const [oidcLoadingTarget, setOidcLoadingTarget] = useState('');
   const [oidcError, setOidcError] = useState('');
   const navigate = useNavigate();
   const oidcReady = isKeycloakConfigured();
@@ -44,15 +45,29 @@ const Signup = () => {
     }
   };
 
-  const handleKeycloakSignup = async () => {
+  const startKeycloakFlow = async (options, fallbackMessage) => {
     setOidcError('');
-    setOidcLoading(true);
+    setOidcLoadingTarget(options.idpHint ? 'google' : 'email');
     try {
-      await beginKeycloakLogin('signup');
+      await beginKeycloakLogin(options);
     } catch (err) {
-      setOidcError(err.message || 'Could not start Google sign-up');
-      setOidcLoading(false);
+      setOidcError(err.message || fallbackMessage);
+      setOidcLoadingTarget('');
     }
+  };
+
+  const handleGoogleSignup = async () => {
+    await startKeycloakFlow(
+      { context: 'signup-google', idpHint: 'google' },
+      'Could not start Google sign-in',
+    );
+  };
+
+  const handleEmailSignup = async () => {
+    await startKeycloakFlow(
+      { context: 'signup-email', prompt: 'create' },
+      'Could not start Keycloak email registration',
+    );
   };
 
   return (
@@ -67,70 +82,96 @@ const Signup = () => {
           </header>
 
           <div className="auth-oidc-stack">
-            <button
-              type="button"
-              className="auth-primary-button auth-oidc-button"
-              onClick={() => { void handleKeycloakSignup(); }}
-              disabled={!oidcReady || nativeSubmitting || oidcLoading}
-            >
-              {oidcLoading ? 'Redirecting to Google...' : 'Continue with Google'}
-            </button>
+            <div className="auth-oidc-actions">
+              <button
+                type="button"
+                className="auth-primary-button auth-oidc-button"
+                onClick={() => { void handleGoogleSignup(); }}
+                disabled={!oidcReady || nativeSubmitting || !!oidcLoadingTarget}
+              >
+                {oidcLoadingTarget === 'google' ? 'Redirecting to Google...' : 'Continue with Google'}
+              </button>
+              <button
+                type="button"
+                className="auth-secondary-submit auth-oidc-button auth-oidc-email-button"
+                onClick={() => { void handleEmailSignup(); }}
+                disabled={!oidcReady || nativeSubmitting || !!oidcLoadingTarget}
+              >
+                {oidcLoadingTarget === 'email' ? 'Redirecting to registration...' : 'Continue with Email'}
+              </button>
+            </div>
             <p className="auth-oidc-helper">
-              New Google accounts come through Keycloak first, then we hydrate your local ProgressPal profile.
+              Google signup goes through the Keycloak Google broker. Email signup opens the hosted Keycloak registration form when self-registration is enabled for the realm, then ProgressPal hydrates your local profile on return.
             </p>
             {!oidcReady && <p className="auth-oidc-inline-state" role="status">{oidcConfigError}</p>}
             {oidcError && <p className="message-error auth-error">{oidcError}</p>}
           </div>
 
-          <div className="auth-divider" aria-hidden="true">
-            <span>Or create an email account for now</span>
+          <div className="auth-legacy-toggle-row">
+            <span>Need the old email/password flow?</span>
+            <button
+              type="button"
+              className="auth-legacy-toggle"
+              aria-expanded={showLegacyFallback}
+              onClick={() => setShowLegacyFallback((current) => !current)}
+            >
+              {showLegacyFallback ? 'Hide legacy fallback' : 'Use legacy fallback'}
+            </button>
           </div>
 
-          {error && <p className="message-error auth-error">{error}</p>}
+          {showLegacyFallback && (
+            <>
+              <div className="auth-divider" aria-hidden="true">
+                <span>Legacy fallback</span>
+              </div>
 
-          <form className="auth-form auth-form--login auth-form--signup" onSubmit={handleSubmit}>
-            <div>
-              <label htmlFor="signup-username">Username</label>
-              <input
-                id="signup-username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
-                placeholder="how friends will find you"
-                required
-              />
-            </div>
-            <div>
-              <label htmlFor="signup-email">Email</label>
-              <input
-                id="signup-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-                required
-              />
-            </div>
-            <div>
-              <label htmlFor="signup-password">Password</label>
-              <input
-                id="signup-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="new-password"
-                required
-              />
-            </div>
-            <button
-              type="submit"
-              className="auth-secondary-submit"
-              disabled={nativeSubmitting || oidcLoading}
-            >
-              {nativeSubmitting ? 'Creating account...' : 'Create Account with Email'}
-            </button>
-          </form>
+              {error && <p className="message-error auth-error">{error}</p>}
+
+              <form className="auth-form auth-form--login auth-form--signup" onSubmit={handleSubmit}>
+                <div>
+                  <label htmlFor="signup-username">Username</label>
+                  <input
+                    id="signup-username"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    autoComplete="username"
+                    placeholder="how friends will find you"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="signup-email">Email</label>
+                  <input
+                    id="signup-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="email"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="signup-password">Password</label>
+                  <input
+                    id="signup-password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="new-password"
+                    required
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="auth-secondary-submit"
+                  disabled={nativeSubmitting || !!oidcLoadingTarget}
+                >
+                  {nativeSubmitting ? 'Creating account...' : 'Use Legacy Email Signup'}
+                </button>
+              </form>
+            </>
+          )}
 
           <p className="auth-secondary-row">
             Already have an account?

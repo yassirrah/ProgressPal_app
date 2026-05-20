@@ -206,6 +206,13 @@ const MySessions = () => {
     return `${raw.charAt(0)}${raw.slice(1).toLowerCase()}`;
   };
 
+  const visibilityTone = (value) => {
+    const normalized = String(value || '').toUpperCase();
+    if (normalized === 'PUBLIC') return 'public';
+    if (normalized === 'FRIENDS') return 'friends';
+    return 'private';
+  };
+
   const formatSessionDuration = (session) => {
     if (Number.isFinite(Number(session?.durationSeconds))) {
       return formatDuration(Number(session.durationSeconds));
@@ -246,6 +253,13 @@ const MySessions = () => {
     [activityTypes],
   );
   const topActivity = summary.topActivityTypesByTime?.[0] || null;
+  const averageDurationSeconds = summary.totalSessions
+    ? Math.floor((Number(summary.totalDurationSeconds) || 0) / Number(summary.totalSessions))
+    : 0;
+  const activeDaysProgress = Math.min(100, Math.max(0, ((Number(summary.activeDays) || 0) / 30) * 100));
+  const filterRangeLabel = filters.from || filters.to
+    ? `${filters.from || 'Any start'} to ${filters.to || 'today'}`
+    : 'All-time snapshot';
 
   useEffect(() => {
     if (!trendsFilters.activityTypeId) return;
@@ -268,111 +282,105 @@ const MySessions = () => {
   }
 
   return (
-    <div className="home-stack">
-      <section className="home-card my-sessions-header-card my-sessions-toolbar-card">
-        <div className="my-sessions-header">
-          <div>
-            <h1 style={{ marginBottom: '0.15rem' }}>My Sessions</h1>
-            <p className="message-muted" style={{ margin: 0 }}>
-              History first. Use the date range below to update stats and insights.
-            </p>
-          </div>
-          <div className="my-sessions-header-actions">
-            <Link to="/" className="my-sessions-cta">
-              Start Session
-            </Link>
-          </div>
+    <div className="my-sessions-page">
+      <header className="my-sessions-page-header">
+        <div>
+          <h1 className="my-sessions-page-title">My Sessions</h1>
+          <p className="my-sessions-page-subtitle">{filterRangeLabel}</p>
         </div>
+        <Link to="/" className="my-sessions-cta">
+          Start Session
+        </Link>
+      </header>
 
-        <div className="my-sessions-toolbar">
-          <div className="my-sessions-date-grid">
-            <div>
-              <label>From</label>
-              <input type="date" value={filters.from} onChange={(e) => handleFilterChange('from', e.target.value)} />
-            </div>
-            <div>
-              <label>To</label>
-              <input type="date" value={filters.to} onChange={(e) => handleFilterChange('to', e.target.value)} />
-            </div>
-          </div>
-          <div className="my-sessions-date-actions">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => {
-                handleFilterChange('from', '');
-                handleFilterChange('to', '');
-              }}
-            >
-              Clear Dates
-            </button>
-          </div>
+      <section className="my-sessions-filter-bar" aria-label="Date range filter">
+        <span className="my-sessions-filter-label">Date range</span>
+        <div className="my-sessions-date-group">
+          <label htmlFor="my-sessions-from">From</label>
+          <input
+            id="my-sessions-from"
+            type="date"
+            value={filters.from}
+            onChange={(e) => handleFilterChange('from', e.target.value)}
+          />
+          <span className="my-sessions-date-separator" aria-hidden="true">to</span>
+          <label htmlFor="my-sessions-to">To</label>
+          <input
+            id="my-sessions-to"
+            type="date"
+            value={filters.to}
+            onChange={(e) => handleFilterChange('to', e.target.value)}
+          />
         </div>
+        <button
+          type="button"
+          className="my-sessions-filter-clear"
+          onClick={() => {
+            handleFilterChange('from', '');
+            handleFilterChange('to', '');
+          }}
+        >
+          Clear dates
+        </button>
       </section>
 
-      <section className="home-card my-sessions-stats-card">
-        <div className="home-section-head">
-          <div>
-            <h2>Quick Stats</h2>
-            <p className="message-muted" style={{ margin: 0 }}>
-              Snapshot for {filters.from || 'all time'} to {filters.to || 'today'}.
-            </p>
-          </div>
-        </div>
+      <section className="my-sessions-section" aria-label="Quick stats">
         {summaryError && <p className="message-error">{summaryError}</p>}
         {summaryLoading ? (
-          <p>Loading summary...</p>
+          <p className="my-sessions-state">Loading summary...</p>
         ) : (
-          <div className="summary-grid my-sessions-summary-grid">
-            <article className="summary-stat-card">
-              <p className="summary-stat-label">Total Sessions</p>
-              <p className="summary-stat-value">{summary.totalSessions ?? 0}</p>
+          <div className="my-sessions-stats-grid">
+            <article className="my-sessions-stat-card">
+              <p className="my-sessions-stat-label">Total sessions</p>
+              <p className="my-sessions-stat-value">{summary.totalSessions ?? 0}</p>
+              <p className="my-sessions-stat-sub">Logged in this range</p>
             </article>
-            <article className="summary-stat-card">
-              <p className="summary-stat-label">Total Duration</p>
-              <p className="summary-stat-value">{formatDuration(summary.totalDurationSeconds)}</p>
+            <article className="my-sessions-stat-card">
+              <p className="my-sessions-stat-label">Total duration</p>
+              <p className="my-sessions-stat-value my-sessions-stat-value--compact">{formatDuration(summary.totalDurationSeconds)}</p>
+              <p className="my-sessions-stat-sub">Avg {formatDuration(averageDurationSeconds)} / session</p>
             </article>
-            <article className="summary-stat-card">
-              <p className="summary-stat-label">Active Days</p>
-              <p className="summary-stat-value">{summary.activeDays ?? 0}</p>
+            <article className="my-sessions-stat-card">
+              <p className="my-sessions-stat-label">Active days</p>
+              <p className="my-sessions-stat-value">{summary.activeDays ?? 0}</p>
+              <p className="my-sessions-stat-sub muted">of the selected period</p>
+              <div className="my-sessions-progress-track" aria-hidden="true">
+                <span className="my-sessions-progress-fill amber" style={{ width: `${Math.max(4, activeDaysProgress)}%` }} />
+              </div>
             </article>
-            <article className="summary-stat-card">
-              <p className="summary-stat-label">Top Activity</p>
-              <p className="summary-stat-value summary-stat-value--small">
-                {topActivity?.activityTypeName || '—'}
+            <article className="my-sessions-stat-card">
+              <p className="my-sessions-stat-label">Top activity</p>
+              <p className="my-sessions-stat-value my-sessions-stat-value--activity">
+                {topActivity?.activityTypeName || '-'}
               </p>
-              <p className="message-muted" style={{ margin: '0.2rem 0 0' }}>
+              <p className="my-sessions-stat-sub muted">
                 {topActivity ? formatDuration(topActivity.totalDurationSeconds) : 'No data'}
               </p>
+              <div className="my-sessions-progress-track" aria-hidden="true">
+                <span className="my-sessions-progress-fill teal" style={{ width: topActivity ? '100%' : '4%' }} />
+              </div>
             </article>
           </div>
         )}
       </section>
 
-      <section className="home-card my-sessions-history-card">
-        <div className="home-section-head">
+      <section className="my-sessions-section my-sessions-history-section" aria-label="Session history">
+        <div className="my-sessions-section-head">
           <div>
-            <h2>Session History</h2>
-            <p className="message-muted" style={{ margin: 0 }}>
-              Browse your sessions at a glance. Filters are optional.
+            <h2>Session history</h2>
+            <p>
+              {pageData.totalElements ?? 0} sessions · page {(pageData.number ?? 0) + 1} of {Math.max(pageData.totalPages || 1, 1)}
             </p>
           </div>
-        </div>
-        <div className="my-sessions-history-toolbar">
-          <p className="my-sessions-history-meta">
-            {pageData.totalElements ?? 0} session(s)
-            {' '}
-            •
-            {' '}
-            page {(pageData.number ?? 0) + 1} of {Math.max(pageData.totalPages || 1, 1)}
-          </p>
-          <button
-            type="button"
-            className={`secondary-button my-sessions-history-filter-toggle${historyFiltersOpen ? ' open' : ''}`}
-            onClick={() => setHistoryFiltersOpen((prev) => !prev)}
-          >
-            {historyFiltersOpen ? 'Hide Filters' : 'Advanced Filters'}
-          </button>
+          <div className="my-sessions-history-controls">
+            <button
+              type="button"
+              className={`my-sessions-filter-toggle${historyFiltersOpen ? ' open' : ''}`}
+              onClick={() => setHistoryFiltersOpen((prev) => !prev)}
+            >
+              {historyFiltersOpen ? 'Hide filters' : 'Filters'}
+            </button>
+          </div>
         </div>
 
         {activityTypesError && <p className="message-error">{activityTypesError}</p>}
@@ -380,7 +388,7 @@ const MySessions = () => {
 
         {historyFiltersOpen && (
           <div className="my-sessions-history-filters">
-            <div className="home-filter-grid my-sessions-history-filter-grid" style={{ marginTop: 0 }}>
+            <div className="home-filter-grid my-sessions-history-filter-grid">
               <div>
                 <label>Status</label>
                 <select value={filters.status} onChange={(e) => handleFilterChange('status', e.target.value)}>
@@ -422,8 +430,8 @@ const MySessions = () => {
               </div>
             </div>
 
-            <div className="home-row my-sessions-history-filter-actions" style={{ marginTop: '0.25rem' }}>
-              <button type="button" className="secondary-button" onClick={resetFilters}>
+            <div className="my-sessions-history-filter-actions">
+              <button type="button" className="my-sessions-filter-clear" onClick={resetFilters}>
                 Reset Filters
               </button>
             </div>
@@ -431,7 +439,7 @@ const MySessions = () => {
         )}
 
         {loading ? (
-          <p>Loading your sessions...</p>
+          <p className="my-sessions-state">Loading your sessions...</p>
         ) : pageData.content?.length ? (
           <>
             <div className="my-sessions-list">
@@ -439,34 +447,40 @@ const MySessions = () => {
                 const type = activityTypes.find((entry) => entry.id === session.activityTypeId);
                 const metricText = formatMetric(session);
                 const isLive = !session.endedAt;
+                const statusLabel = isLive ? 'Live' : 'Completed';
+                const timelineLabel = isLive
+                  ? `Started ${formatInstant(session.startedAt)} · ongoing`
+                  : `${formatInstant(session.startedAt)} to ${formatInstant(session.endedAt)}`;
 
                 return (
                   <article key={session.id} className="my-session-item my-session-history-item">
                     <div className="my-session-card-top">
                       <div className="my-session-card-title">
                         <p className="my-session-activity-name">{type?.name || 'Activity'}</p>
-                        <p className="my-session-subtitle">
-                          {session.title || session.description || 'No note for this session'}
-                        </p>
+                        <p className="my-session-timeline">{timelineLabel}</p>
                       </div>
-                      <span className={`feed-status-badge ${isLive ? 'live' : 'ended'}`}>
-                        {isLive ? 'Live' : 'Ended'}
+                      <span className={`my-session-status-badge ${isLive ? 'live' : 'completed'}`}>
+                        {isLive && <span className="my-session-live-dot" aria-hidden="true" />}
+                        {statusLabel}
                       </span>
                     </div>
 
-                    <p className="my-session-timeline">
-                      <span>Started {formatInstant(session.startedAt)}</span>
-                      <span>Ended {session.endedAt ? formatInstant(session.endedAt) : 'Live now'}</span>
-                    </p>
+                    {(session.title || session.description) && (
+                      <p className="my-session-subtitle">
+                        {session.title || session.description}
+                      </p>
+                    )}
 
                     <div className="my-session-facts">
                       <div className="my-session-fact">
                         <span>Duration</span>
-                        <strong>{formatSessionDuration(session)}</strong>
+                        <strong className={isLive ? 'live' : 'done'}>{formatSessionDuration(session)}</strong>
                       </div>
                       <div className="my-session-fact">
                         <span>Visibility</span>
-                        <strong>{formatVisibilityLabel(session.visibility)}</strong>
+                        <strong className={`my-session-visibility my-session-visibility--${visibilityTone(session.visibility)}`}>
+                          {formatVisibilityLabel(session.visibility)}
+                        </strong>
                       </div>
                       {metricText && (
                         <div className="my-session-fact">
@@ -480,14 +494,14 @@ const MySessions = () => {
               })}
             </div>
 
-            <div className="home-section-head my-sessions-pagination-row" style={{ marginTop: '0.75rem', marginBottom: 0 }}>
-              <p className="message-muted my-sessions-pagination-meta" style={{ margin: 0 }}>
+            <div className="my-sessions-pagination-row">
+              <p className="my-sessions-pagination-meta">
                 Showing {(pageData.number ?? 0) + 1} / {Math.max(pageData.totalPages || 1, 1)}
               </p>
-              <div className="home-row" style={{ marginTop: 0 }}>
+              <div className="my-sessions-pagination-actions">
                 <button
                   type="button"
-                  className="secondary-button"
+                  className="my-sessions-page-button"
                   disabled={(pageData.number ?? 0) <= 0}
                   onClick={() => handleFilterChange('page', Math.max(0, (pageData.number ?? 0) - 1))}
                 >
@@ -495,7 +509,7 @@ const MySessions = () => {
                 </button>
                 <button
                   type="button"
-                  className="secondary-button"
+                  className="my-sessions-page-button"
                   disabled={(pageData.number ?? 0) + 1 >= (pageData.totalPages || 0)}
                   onClick={() => handleFilterChange('page', (pageData.number ?? 0) + 1)}
                 >
@@ -505,21 +519,21 @@ const MySessions = () => {
             </div>
           </>
         ) : (
-          <p className="message-muted">No sessions match the current filters.</p>
+          <p className="my-sessions-empty">No sessions match the current filters.</p>
         )}
       </section>
 
-      <section className="home-card">
-        <div className="home-section-head">
+      <section className="my-sessions-section my-sessions-insights-section">
+        <div className="my-sessions-section-head">
           <div>
             <h2>Insights</h2>
-            <p className="message-muted" style={{ margin: 0 }}>
+            <p>
               Trends and breakdowns are hidden by default to keep history focused.
             </p>
           </div>
           <button
             type="button"
-            className="secondary-button"
+            className="my-sessions-filter-toggle"
             onClick={() => setInsightsOpen((prev) => !prev)}
           >
             {insightsOpen ? 'Hide Trends' : 'View Trends'}
@@ -527,22 +541,22 @@ const MySessions = () => {
         </div>
 
         {!insightsOpen ? (
-          <p className="message-muted" style={{ margin: 0 }}>
+          <p className="my-sessions-state">
             Open Insights to view trends and activity-type analytics for the selected date range.
           </p>
         ) : (
           <div className="insights-stack">
             <section className="insights-panel">
-              <div className="home-section-head">
+              <div className="my-sessions-panel-head">
                 <div>
                   <h3>Trends</h3>
-                  <p className="message-muted" style={{ margin: 0 }}>
+                  <p className="message-muted my-sessions-tight-copy">
                     Time series by {trendsFilters.bucket.toLowerCase()} for the selected date range.
                   </p>
                 </div>
               </div>
 
-              <div className="home-filter-grid" style={{ marginTop: 0 }}>
+              <div className="home-filter-grid my-sessions-trend-controls">
                 <div>
                   <label>Bucket</label>
                   <select
@@ -570,7 +584,7 @@ const MySessions = () => {
               {trendsError && <p className="message-error">{trendsError}</p>}
 
               {trendsLoading ? (
-                <p>Loading trends...</p>
+                <p className="my-sessions-state">Loading trends...</p>
               ) : (
                 <div className="trends-layout">
                   <div className="trends-panel">
@@ -591,7 +605,7 @@ const MySessions = () => {
                         ))}
                       </div>
                     ) : (
-                      <p className="message-muted" style={{ margin: 0 }}>No duration trend data for this range.</p>
+                      <p className="message-muted my-sessions-tight-copy">No duration trend data for this range.</p>
                     )}
                   </div>
 
@@ -620,12 +634,12 @@ const MySessions = () => {
                           ))}
                         </div>
                       ) : (
-                        <p className="message-muted" style={{ margin: 0 }}>
+                        <p className="message-muted my-sessions-tight-copy">
                           No metric trend data available for the selected activity type.
                         </p>
                       )
                     ) : (
-                      <p className="message-muted" style={{ margin: 0 }}>
+                      <p className="message-muted my-sessions-tight-copy">
                         Select a metric-enabled activity type to view metric trends.
                       </p>
                     )}
@@ -635,19 +649,19 @@ const MySessions = () => {
             </section>
 
             <section className="insights-panel">
-              <div className="home-section-head">
+              <div className="my-sessions-panel-head">
                 <div>
                   <h3>By Activity Type</h3>
-                  <p className="message-muted" style={{ margin: 0 }}>
+                  <p className="message-muted my-sessions-tight-copy">
                     Aggregated totals for the selected date range.
                   </p>
                 </div>
               </div>
               {breakdownError && <p className="message-error">{breakdownError}</p>}
               {breakdownLoading ? (
-                <p>Loading activity breakdown...</p>
+                <p className="my-sessions-state">Loading activity breakdown...</p>
               ) : activityBreakdown.length ? (
-                <div className="summary-top-list" style={{ marginTop: 0, borderTop: 0, paddingTop: 0 }}>
+                <div className="summary-top-list my-sessions-breakdown-list">
                   {activityBreakdown.map((row) => {
                     const metricTotal = formatMetricTotal(row);
                     return (
