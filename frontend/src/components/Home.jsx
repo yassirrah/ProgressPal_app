@@ -5,7 +5,6 @@ import {
   getActivityTypes,
   getIncomingSessionJoinRequests,
   getLiveSession,
-  getMyNotifications,
   markAllNotificationsRead,
   getMySessions,
   getSessionRoomMessages,
@@ -239,7 +238,6 @@ const Home = () => {
   const [incomingJoinRequests, setIncomingJoinRequests] = useState([]);
   const [roomState, setRoomState] = useState(null);
   const [roomMessages, setRoomMessages] = useState([]);
-  const [hostRoomUnreadCount, setHostRoomUnreadCount] = useState(0);
   const [roomMessageDraft, setRoomMessageDraft] = useState('');
   const [sendingRoomMessage, setSendingRoomMessage] = useState(false);
   const [decidingJoinRequestId, setDecidingJoinRequestId] = useState('');
@@ -344,7 +342,6 @@ const Home = () => {
     setIncomingJoinRequests([]);
     setRoomState(null);
     setRoomMessages([]);
-    setHostRoomUnreadCount(0);
     setRoomMessageDraft('');
     setSendingRoomMessage(false);
     setDecidingJoinRequestId('');
@@ -940,65 +937,13 @@ const Home = () => {
     setStopPanelOpen(true);
   };
 
-  const loadHostRoomAlertState = useCallback(async (options = {}) => {
-    const { silent = false } = options;
-    if (!user?.id || !liveSession?.id) return;
-
-    try {
-      const pageSize = 50;
-      let page = 0;
-      let hasUnreadForCurrentSession = false;
-      let shouldContinue = true;
-
-      while (shouldContinue && !hasUnreadForCurrentSession) {
-        const response = await getMyNotifications(user.id, page, pageSize, {
-          scope: 'HOST_ROOM',
-          initiator: 'Home:hostRoomAlertScan',
-        });
-        const notifications = Array.isArray(response?.content) ? response.content : [];
-
-        hasUnreadForCurrentSession = notifications.some((notification) => (
-          !notification?.readAt
-          && String(notification?.type || '').toUpperCase() === 'SESSION_ROOM_MESSAGE_RECEIVED'
-          && String(notification?.resourceId || '') === String(liveSession.id)
-        ));
-
-        if (hasUnreadForCurrentSession || notifications.length === 0) {
-          shouldContinue = false;
-          break;
-        }
-
-        const totalPages = Number(response?.totalPages);
-        const currentPage = Number.isFinite(Number(response?.number))
-          ? Number(response.number)
-          : page;
-
-        if (Number.isFinite(totalPages) && totalPages > 0) {
-          shouldContinue = currentPage + 1 < totalPages;
-        } else if (typeof response?.last === 'boolean') {
-          shouldContinue = !response.last;
-        } else {
-          shouldContinue = notifications.length === pageSize;
-        }
-
-        page += 1;
-      }
-
-      setHostRoomUnreadCount(hasUnreadForCurrentSession ? 1 : 0);
-    } catch (err) {
-      if (!silent || roomPanelOpen) {
-        setRoomPanelError(err.message || 'Failed to load room notifications');
-      }
-    }
-  }, [liveSession?.id, roomPanelOpen, user?.id]);
-
   const loadPendingJoinRequestCount = useCallback(async (options = {}) => {
     const { silent = false } = options;
     if (!user?.id || !liveSession?.id) return;
 
     try {
       const incoming = await getIncomingSessionJoinRequests(user.id, liveSession.id, {
-        initiator: 'Home:hostRoomAlertScan',
+        initiator: 'Home:joinRequestPoll',
       });
       setIncomingJoinRequests(Array.isArray(incoming) ? incoming : []);
     } catch (err) {
@@ -1012,11 +957,8 @@ const Home = () => {
     const { silent = false } = options;
     if (!user?.id || !liveSession?.id) return;
 
-    await Promise.all([
-      loadPendingJoinRequestCount({ silent }),
-      loadHostRoomAlertState({ silent }),
-    ]);
-  }, [liveSession?.id, loadHostRoomAlertState, loadPendingJoinRequestCount, user?.id]);
+    await loadPendingJoinRequestCount({ silent });
+  }, [liveSession?.id, loadPendingJoinRequestCount, user?.id]);
 
   const loadRoomPanelData = useCallback(async (options = {}) => {
     const { silent = false } = options;
@@ -1231,8 +1173,7 @@ const Home = () => {
     if (Number.isNaN(date.getTime())) return '-';
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
-  const unreadRoomMessageSignal = hostRoomUnreadCount > 0 ? 1 : 0;
-  const roomAlertBadgeCount = pendingRequestCount + unreadRoomMessageSignal;
+  const roomAlertBadgeCount = pendingRequestCount;
   const openRoomPanel = () => {
     if (!roomPanelOpen) {
       setRoomPanelTab(pendingRequestCount > 0 ? 'requests' : 'chat');
@@ -1253,7 +1194,6 @@ const Home = () => {
 
     if (roomPanelOpen) {
       void loadRoomPanelData();
-      void loadHostRoomAlertState({ silent: true });
     } else {
       void loadRoomBadgeState({ silent: true });
     }
@@ -1262,7 +1202,6 @@ const Home = () => {
       if (document.visibilityState !== 'visible') return;
       if (roomPanelOpen) {
         void loadRoomPanelData({ silent: true });
-        void loadHostRoomAlertState({ silent: true });
       } else {
         void loadRoomBadgeState({ silent: true });
       }
@@ -1276,7 +1215,7 @@ const Home = () => {
       window.clearInterval(intervalId);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [liveSession?.id, loadHostRoomAlertState, loadPendingJoinRequestCount, loadRoomBadgeState, loadRoomPanelData, roomPanelOpen, user?.id]);
+  }, [liveSession?.id, loadRoomBadgeState, loadRoomPanelData, roomPanelOpen, user?.id]);
 
   useEffect(() => {
     if (!roomPanelOpen || roomPanelTab !== 'chat') return undefined;
@@ -1300,7 +1239,6 @@ const Home = () => {
           resourceId: liveSession.id,
         });
         if (cancelled) return;
-        setHostRoomUnreadCount(0);
       } catch (err) {
         if (cancelled) return;
         setRoomPanelError(err.message || 'Failed to clear room notifications');
