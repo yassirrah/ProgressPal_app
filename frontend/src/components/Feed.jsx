@@ -38,6 +38,32 @@ const clampFloatingTimerPosition = (x, y, width, height) => {
   };
 };
 
+const getReplyFormKey = (sessionId, commentId) => `${sessionId}:${commentId}`;
+
+const groupCommentsWithReplies = (comments) => {
+  const ordered = [...(comments || [])]
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  const repliesByParentId = new Map();
+  const topLevelComments = [];
+
+  ordered.forEach((comment) => {
+    if (comment?.parentCommentId == null) {
+      topLevelComments.push(comment);
+      return;
+    }
+
+    const parentId = String(comment.parentCommentId);
+    const replies = repliesByParentId.get(parentId) || [];
+    replies.push(comment);
+    repliesByParentId.set(parentId, replies);
+  });
+
+  return topLevelComments.map((comment) => ({
+    ...comment,
+    replies: repliesByParentId.get(String(comment.id)) || [],
+  }));
+};
+
 const Feed = () => {
   const navigate = useNavigate();
   const currentUser = useMemo(() => getStoredUser(), []);
@@ -66,6 +92,11 @@ const Feed = () => {
   const [commentLoadingBySession, setCommentLoadingBySession] = useState({});
   const [commentSubmittingBySession, setCommentSubmittingBySession] = useState({});
   const [commentErrorBySession, setCommentErrorBySession] = useState({});
+  const [commentCollapsedBySession, setCommentCollapsedBySession] = useState({});
+  const [replyFormOpenByComment, setReplyFormOpenByComment] = useState({});
+  const [replyDraftByComment, setReplyDraftByComment] = useState({});
+  const [replySubmittingByComment, setReplySubmittingByComment] = useState({});
+  const [replyErrorByComment, setReplyErrorByComment] = useState({});
   const [suggestedFriends, setSuggestedFriends] = useState([]);
   const [sendingSuggestionId, setSendingSuggestionId] = useState('');
   const [outgoingJoinRequestsBySession, setOutgoingJoinRequestsBySession] = useState({});
@@ -673,6 +704,26 @@ const Feed = () => {
   }, [commentLoadingBySession, currentUser]);
 
   const handleToggleCommentComposer = (sessionId) => {
+    const loadedComments = commentsBySession[sessionId];
+    if (Array.isArray(loadedComments) && loadedComments.length > 0) {
+      const shouldExpand = Boolean(commentCollapsedBySession[sessionId]);
+      setCommentCollapsedBySession((prev) => ({
+        ...prev,
+        [sessionId]: !prev[sessionId],
+      }));
+      if (shouldExpand) {
+        setCommentComposerOpenBySession((prev) => ({
+          ...prev,
+          [sessionId]: true,
+        }));
+      }
+      return;
+    }
+
+    setCommentCollapsedBySession((prev) => ({
+      ...prev,
+      [sessionId]: false,
+    }));
     setCommentComposerOpenBySession((prev) => ({
       ...prev,
       [sessionId]: !prev[sessionId],
@@ -693,7 +744,7 @@ const Feed = () => {
     setCommentSubmittingBySession((prev) => ({ ...prev, [sessionId]: true }));
     setCommentErrorBySession((prev) => ({ ...prev, [sessionId]: '' }));
     try {
-      const created = await createSessionComment(currentUser.id, sessionId, content);
+      const created = await createSessionComment(currentUser.id, sessionId, { content });
       setCommentsBySession((prev) => ({
         ...prev,
         [sessionId]: [...(prev[sessionId] || []), created],
@@ -706,6 +757,62 @@ const Feed = () => {
       }));
     } finally {
       setCommentSubmittingBySession((prev) => ({ ...prev, [sessionId]: false }));
+    }
+  };
+
+  const handleToggleCommentsCollapsed = (sessionId) => {
+    setCommentCollapsedBySession((prev) => ({
+      ...prev,
+      [sessionId]: !prev[sessionId],
+    }));
+  };
+
+  const handleOpenReplyForm = (sessionId, commentId) => {
+    const replyKey = getReplyFormKey(sessionId, commentId);
+    setReplyFormOpenByComment((prev) => ({ ...prev, [replyKey]: true }));
+    setReplyErrorByComment((prev) => ({ ...prev, [replyKey]: '' }));
+  };
+
+  const handleCancelReply = (sessionId, commentId) => {
+    const replyKey = getReplyFormKey(sessionId, commentId);
+    if (replySubmittingByComment[replyKey]) return;
+
+    setReplyFormOpenByComment((prev) => ({ ...prev, [replyKey]: false }));
+    setReplyDraftByComment((prev) => ({ ...prev, [replyKey]: '' }));
+    setReplyErrorByComment((prev) => ({ ...prev, [replyKey]: '' }));
+  };
+
+  const handlePostReply = async (sessionId, parentCommentId, event) => {
+    event.preventDefault();
+    if (!currentUser?.id || !sessionId || parentCommentId == null) return;
+
+    const replyKey = getReplyFormKey(sessionId, parentCommentId);
+    if (replySubmittingByComment[replyKey]) return;
+
+    const draft = replyDraftByComment[replyKey] || '';
+    const content = draft.trim();
+    if (!content) return;
+
+    setReplySubmittingByComment((prev) => ({ ...prev, [replyKey]: true }));
+    setReplyErrorByComment((prev) => ({ ...prev, [replyKey]: '' }));
+    try {
+      const created = await createSessionComment(currentUser.id, sessionId, {
+        content,
+        parentCommentId,
+      });
+      setCommentsBySession((prev) => ({
+        ...prev,
+        [sessionId]: [...(prev[sessionId] || []), created],
+      }));
+      setReplyDraftByComment((prev) => ({ ...prev, [replyKey]: '' }));
+      setReplyFormOpenByComment((prev) => ({ ...prev, [replyKey]: false }));
+    } catch (err) {
+      setReplyErrorByComment((prev) => ({
+        ...prev,
+        [replyKey]: err.message || 'Failed to post reply',
+      }));
+    } finally {
+      setReplySubmittingByComment((prev) => ({ ...prev, [replyKey]: false }));
     }
   };
 
@@ -1014,9 +1121,18 @@ const Feed = () => {
             {visibleFeedItems.map((item) => {
             const likeState = likesBySession[item.id] || { likesCount: 0, likedByMe: false };
             const isCommentComposerOpen = Boolean(commentComposerOpenBySession[item.id]);
-            const orderedComments = [...(commentsBySession[item.id] || [])]
-              .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-            const commentsCount = orderedComments.length;
+            const sessionComments = commentsBySession[item.id] || [];
+            const commentThreads = groupCommentsWithReplies(sessionComments);
+            const commentsCount = sessionComments.length;
+            const commentCountLabel = `${commentsCount} comment${commentsCount === 1 ? '' : 's'}`;
+            const commentDraft = commentDraftBySession[item.id] || '';
+            const isCommentSubmitting = Boolean(commentSubmittingBySession[item.id]);
+            const hasCommentDraft = commentDraft.trim().length > 0;
+            const canToggleComments = commentsCount > 0;
+            const isCommentsCollapsed = canToggleComments && Boolean(commentCollapsedBySession[item.id]);
+            const commentButtonLabel = canToggleComments
+              ? (isCommentsCollapsed ? 'Expand comments' : 'Collapse comments')
+              : (isCommentComposerOpen ? 'Hide comment form' : 'Add comment');
             const isLiveCard = isSessionOngoing(item) || isSessionPaused(item);
             const isPrivateSession = isPrivateVisibility(item);
             const joinStatus = getJoinRequestStatus(item.id);
@@ -1036,7 +1152,7 @@ const Feed = () => {
               isCommentComposerOpen
               || Boolean(commentLoadingBySession[item.id])
               || Boolean(commentErrorBySession[item.id])
-              || orderedComments.length > 0
+              || commentsCount > 0
             );
             return (
             <article
@@ -1214,10 +1330,10 @@ const Feed = () => {
                       </button>
                       <button
                         type="button"
-                        className={`feed-action-icon-button feed-comment-button ${isCommentComposerOpen ? 'active' : ''}`}
+                        className={`feed-action-icon-button feed-comment-button ${shouldShowCommentsPanel && !isCommentsCollapsed ? 'active' : ''}`}
                         onClick={() => handleToggleCommentComposer(item.id)}
-                        aria-label={isCommentComposerOpen ? 'Hide comment form' : 'Add comment'}
-                        title="Comment"
+                        aria-label={commentButtonLabel}
+                        title={commentButtonLabel}
                       >
                         <span className="feed-action-icon" aria-hidden="true">
                           <svg viewBox="0 0 24 24" focusable="false">
@@ -1239,67 +1355,198 @@ const Feed = () => {
 
               {shouldShowCommentsPanel && (
                 <section className="feed-comments-panel" aria-label="Comments">
-                  {isCommentComposerOpen && (
-                    <form className="feed-comment-form" onSubmit={(event) => handlePostComment(item.id, event)}>
-                      <input
-                        type="text"
-                        className="feed-comment-input"
-                        value={commentDraftBySession[item.id] || ''}
-                        onChange={(event) => setCommentDraftBySession((prev) => ({
-                          ...prev,
-                          [item.id]: event.target.value.slice(0, 1000),
-                        }))}
-                        placeholder="Write a comment..."
-                      />
-                      <button
-                        type="submit"
-                        className="secondary-button compact-button feed-comment-submit"
-                        disabled={commentSubmittingBySession[item.id] || !(commentDraftBySession[item.id] || '').trim()}
-                      >
-                        {commentSubmittingBySession[item.id] ? 'Posting...' : 'Post'}
-                      </button>
-                    </form>
-                  )}
-
-                  {commentErrorBySession[item.id] && (
-                    <p className="message-error">{commentErrorBySession[item.id]}</p>
-                  )}
-
-                  {commentLoadingBySession[item.id] && (
-                    <p className="message-muted">Loading comments...</p>
-                  )}
-
-                  {!commentLoadingBySession[item.id] && orderedComments.length > 0 && (
-                    <div className="feed-comments-list">
-                      {orderedComments.map((comment) => (
-                        <article key={comment.id} className="feed-comment-item">
-                          <div className="feed-comment-meta">
-                            <div className="feed-comment-author">
-                              {comment.authorProfileImage ? (
-                                <img
-                                  src={comment.authorProfileImage}
-                                  alt=""
-                                  className="feed-comment-avatar-image"
-                                  aria-hidden="true"
-                                />
-                              ) : (
-                                <span className="feed-comment-avatar" aria-hidden="true">
-                                  {getInitial(comment.authorUsername)}
-                                </span>
-                              )}
-                              <strong>{comment.authorUsername || 'User'}</strong>
-                            </div>
-                            <span>{formatRelativeFromNow(comment.createdAt)}</span>
-                          </div>
-                          <p className="feed-comment-content">{comment.content}</p>
-                        </article>
-                      ))}
+                  {canToggleComments ? (
+                    <button
+                      type="button"
+                      className={`feed-comments-header feed-comments-header-button${isCommentsCollapsed ? ' is-collapsed' : ''}`}
+                      onClick={() => handleToggleCommentsCollapsed(item.id)}
+                      aria-expanded={!isCommentsCollapsed}
+                    >
+                      <span className="feed-comments-header-label">
+                        <span>{commentCountLabel}</span>
+                        <span className="feed-comments-chevron" aria-hidden="true">▾</span>
+                      </span>
+                      <span aria-hidden="true" />
+                    </button>
+                  ) : (
+                    <div className="feed-comments-header">
+                      <span>{commentCountLabel}</span>
+                      <span aria-hidden="true" />
                     </div>
                   )}
 
-                  {!commentLoadingBySession[item.id] && isCommentComposerOpen && orderedComments.length === 0 && (
-                    <p className="message-muted" style={{ margin: 0 }}>No comments yet.</p>
-                  )}
+                  <div className={`feed-comments-collapsible${isCommentsCollapsed ? ' is-collapsed' : ''}`}>
+                    <div className="feed-comments-collapsible-inner">
+                      {isCommentComposerOpen && (
+                        <form className="feed-comment-form" onSubmit={(event) => handlePostComment(item.id, event)}>
+                          <div className="feed-comment-input-shell">
+                            <input
+                              type="text"
+                              className="feed-comment-input"
+                              value={commentDraft}
+                              onChange={(event) => setCommentDraftBySession((prev) => ({
+                                ...prev,
+                                [item.id]: event.target.value.slice(0, 1000),
+                              }))}
+                              placeholder="Add a comment..."
+                              disabled={isCommentSubmitting}
+                            />
+                            <button
+                              type="submit"
+                              className={`feed-comment-send-button${hasCommentDraft ? ' has-draft' : ''}`}
+                              disabled={isCommentSubmitting || !hasCommentDraft}
+                              aria-label={isCommentSubmitting ? 'Posting comment' : 'Post comment'}
+                            >
+                              {isCommentSubmitting ? (
+                                <span className="feed-comment-send-status" aria-hidden="true">...</span>
+                              ) : (
+                                <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                                  <path d="M4 11.2 20 4l-7.2 16-1.8-6.7L4 11.2Zm7.4 1.4 1 3.7 3.9-8.6-8.6 3.9 3.7 1Zm0 0 4.9-4.9" />
+                                </svg>
+                              )}
+                            </button>
+                          </div>
+                        </form>
+                      )}
+
+                      {commentErrorBySession[item.id] && (
+                        <p className="message-error">{commentErrorBySession[item.id]}</p>
+                      )}
+
+                      {commentLoadingBySession[item.id] && (
+                        <p className="message-muted">Loading comments...</p>
+                      )}
+
+                      {!commentLoadingBySession[item.id] && commentsCount > 0 && (
+                        <div className="feed-comments-list">
+                          {commentThreads.map((comment) => {
+                        const replyKey = getReplyFormKey(item.id, comment.id);
+                        const isReplyFormOpen = Boolean(replyFormOpenByComment[replyKey]);
+                        const replyDraft = replyDraftByComment[replyKey] || '';
+                        const isReplySubmitting = Boolean(replySubmittingByComment[replyKey]);
+                        const replyError = replyErrorByComment[replyKey] || '';
+
+                        return (
+                          <article key={comment.id} className="feed-comment-thread">
+                            <div className={`feed-comment-item feed-comment-item--parent${comment.replies.length > 0 ? ' has-replies' : ''}`}>
+                              <div className="feed-comment-meta">
+                                <div className="feed-comment-author">
+                                  {comment.authorProfileImage ? (
+                                    <img
+                                      src={comment.authorProfileImage}
+                                      alt=""
+                                      className="feed-comment-avatar-image"
+                                      aria-hidden="true"
+                                    />
+                                  ) : (
+                                    <span className="feed-comment-avatar" aria-hidden="true">
+                                      {getInitial(comment.authorUsername)}
+                                    </span>
+                                  )}
+                                  <strong>{comment.authorUsername || 'User'}</strong>
+                                </div>
+                                <span>{formatRelativeFromNow(comment.createdAt)}</span>
+                              </div>
+                              <p className="feed-comment-content">{comment.content}</p>
+                              <div className="feed-comment-actions">
+                                <button
+                                  type="button"
+                                  className="feed-comment-reply-button"
+                                  onClick={() => handleOpenReplyForm(item.id, comment.id)}
+                                  disabled={isReplySubmitting}
+                                >
+                                  <span className="feed-reply-arrow" aria-hidden="true">
+                                    <svg viewBox="0 0 16 16" focusable="false">
+                                      <path d="M5 3v3.4c0 1.7 1.3 3 3 3h4M9.5 7 12 9.4l-2.5 2.4" />
+                                    </svg>
+                                  </span>
+                                  <span>Reply</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            {isReplyFormOpen && (
+                              <form
+                                className="feed-comment-form feed-comment-reply-form"
+                                onSubmit={(event) => handlePostReply(item.id, comment.id, event)}
+                              >
+                                <div className="feed-comment-input-shell">
+                                  <input
+                                    type="text"
+                                    className="feed-comment-input"
+                                    value={replyDraft}
+                                    onChange={(event) => setReplyDraftByComment((prev) => ({
+                                      ...prev,
+                                      [replyKey]: event.target.value.slice(0, 1000),
+                                    }))}
+                                    placeholder={`Reply to ${comment.authorUsername || 'comment'}...`}
+                                    disabled={isReplySubmitting}
+                                  />
+                                  <button
+                                    type="submit"
+                                    className={`feed-comment-send-button${replyDraft.trim() ? ' has-draft' : ''}`}
+                                    disabled={isReplySubmitting || !replyDraft.trim()}
+                                    aria-label={isReplySubmitting ? 'Posting reply' : 'Post reply'}
+                                  >
+                                    {isReplySubmitting ? (
+                                      <span className="feed-comment-send-status" aria-hidden="true">...</span>
+                                    ) : (
+                                      <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                                        <path d="M4 11.2 20 4l-7.2 16-1.8-6.7L4 11.2Zm7.4 1.4 1 3.7 3.9-8.6-8.6 3.9 3.7 1Zm0 0 4.9-4.9" />
+                                      </svg>
+                                    )}
+                                  </button>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-button feed-comment-cancel"
+                                  onClick={() => handleCancelReply(item.id, comment.id)}
+                                  disabled={isReplySubmitting}
+                                >
+                                  Cancel
+                                </button>
+                                {replyError && <p className="message-error feed-reply-error">{replyError}</p>}
+                              </form>
+                            )}
+
+                            {comment.replies.length > 0 && (
+                              <div className="feed-comment-replies">
+                                {comment.replies.map((reply) => (
+                                  <article key={reply.id} className="feed-comment-item feed-comment-item--reply">
+                                    <div className="feed-comment-meta">
+                                      <div className="feed-comment-author">
+                                        {reply.authorProfileImage ? (
+                                          <img
+                                            src={reply.authorProfileImage}
+                                            alt=""
+                                            className="feed-comment-avatar-image"
+                                            aria-hidden="true"
+                                          />
+                                        ) : (
+                                          <span className="feed-comment-avatar" aria-hidden="true">
+                                            {getInitial(reply.authorUsername)}
+                                          </span>
+                                        )}
+                                        <strong>{reply.authorUsername || 'User'}</strong>
+                                      </div>
+                                      <span>{formatRelativeFromNow(reply.createdAt)}</span>
+                                    </div>
+                                    <p className="feed-comment-content">{reply.content}</p>
+                                  </article>
+                                ))}
+                              </div>
+                            )}
+                          </article>
+                        );
+                          })}
+                        </div>
+                      )}
+
+                      {!commentLoadingBySession[item.id] && isCommentComposerOpen && commentsCount === 0 && (
+                        <p className="message-muted" style={{ margin: 0 }}>No comments yet.</p>
+                      )}
+                    </div>
+                  </div>
                 </section>
               )}
             </article>

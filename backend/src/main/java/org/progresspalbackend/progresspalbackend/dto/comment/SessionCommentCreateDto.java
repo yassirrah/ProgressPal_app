@@ -1,4 +1,7 @@
 package org.progresspalbackend.progresspalbackend.dto.comment;
 
-public record SessionCommentCreateDto(String content) {
+import java.util.UUID;
+
+public record SessionCommentCreateDto(String content,
+                                      UUID parentCommentId) {
 }
