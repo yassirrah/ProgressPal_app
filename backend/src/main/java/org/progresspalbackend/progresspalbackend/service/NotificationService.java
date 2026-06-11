@@ -65,6 +65,17 @@ public class NotificationService {
         );
     }
 
+    public void notifySessionCommentReply(User recipient, User actor, UUID commentId) {
+        create(
+                recipient,
+                actor,
+                NotificationType.SESSION_COMMENT,
+                NotificationResourceType.COMMENT,
+                commentId,
+                actor.getUsername() + " replied to your comment."
+        );
+    }
+
     public void notifySessionLike(User recipient, User actor, UUID reactionId) {
         create(
                 recipient,

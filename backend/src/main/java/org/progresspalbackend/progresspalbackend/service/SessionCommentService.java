@@ -37,6 +37,7 @@ public class SessionCommentService {
                 .toList();
     }
 
+    @Transactional
     public SessionCommentDto create(UUID actorUserId, UUID sessionId, SessionCommentCreateDto dto) {
         if (dto == null || dto.content() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "content is required");
@@ -54,16 +55,22 @@ public class SessionCommentService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
         Session session = sessionAccessService.requireVisibleSession(actorUserId, sessionId);
+        SessionComment parentComment = resolveParentComment(sessionId, dto.parentCommentId());
 
         SessionComment comment = new SessionComment();
         comment.setSession(session);
         comment.setAuthor(actor);
+        comment.setParentComment(parentComment);
         comment.setContent(content);
         comment.setCreatedAt(Instant.now());
 
         SessionComment saved = sessionCommentRepository.save(comment);
 
-        notificationService.notifySessionComment(session.getUser(), actor, saved.getId());
+        if (parentComment == null) {
+            notificationService.notifySessionComment(session.getUser(), actor, saved.getId());
+        } else {
+            notificationService.notifySessionCommentReply(parentComment.getAuthor(), actor, saved.getId());
+        }
 
         return toDto(saved, actorUserId);
     }
@@ -83,11 +90,32 @@ public class SessionCommentService {
         sessionCommentRepository.delete(comment);
     }
 
+    private SessionComment resolveParentComment(UUID sessionId, UUID parentCommentId) {
+        if (parentCommentId == null) {
+            return null;
+        }
+
+        SessionComment parentComment = sessionCommentRepository.findById(parentCommentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Parent comment not found"));
+
+        if (!parentComment.getSession().getId().equals(sessionId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Parent comment belongs to another session");
+        }
+
+        if (parentComment.getParentComment() != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot reply to a reply");
+        }
+
+        return parentComment;
+    }
+
     private SessionCommentDto toDto(SessionComment comment, UUID actorUserId) {
         User author = comment.getAuthor();
+        SessionComment parentComment = comment.getParentComment();
         return new SessionCommentDto(
                 comment.getId(),
                 comment.getSession().getId(),
+                parentComment != null ? parentComment.getId() : null,
                 author.getId(),
                 author.getUsername(),
                 author.getProfileImage(),

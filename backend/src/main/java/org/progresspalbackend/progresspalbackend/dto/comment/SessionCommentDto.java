@@ -5,6 +5,7 @@ import java.util.UUID;
 
 public record SessionCommentDto(UUID id,
                                 UUID sessionId,
+                                UUID parentCommentId,
                                 UUID authorId,
                                 String authorUsername,
                                 String authorProfileImage,
