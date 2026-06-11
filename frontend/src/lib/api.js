@@ -994,11 +994,18 @@ export async function getSessionComments(userId, sessionId) {
   }
 }
 
-export async function createSessionComment(userId, sessionId, content) {
+export async function createSessionComment(userId, sessionId, comment) {
+  const payload = typeof comment === 'string'
+    ? { content: comment }
+    : {
+      content: comment?.content,
+      ...(comment?.parentCommentId != null ? { parentCommentId: comment.parentCommentId } : {}),
+    };
+
   try {
     const { data } = await client.post(
       `/sessions/${sessionId}/comments`,
-      { content },
+      payload,
       { headers: authHeaders(userId) },
     );
     return data;
