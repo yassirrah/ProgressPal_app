@@ -1000,6 +1000,7 @@ export async function createSessionComment(userId, sessionId, comment) {
     : {
       content: comment?.content,
       ...(comment?.parentCommentId != null ? { parentCommentId: comment.parentCommentId } : {}),
+      ...(comment?.replyToCommentId != null ? { replyToCommentId: comment.replyToCommentId } : {}),
     };
 
   try {
