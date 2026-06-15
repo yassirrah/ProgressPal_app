@@ -23,7 +23,8 @@ import java.util.UUID;
         indexes = {
                 @Index(name = "ix_session_comment_session_created", columnList = "session_id, created_at DESC"),
                 @Index(name = "ix_session_comment_author_created", columnList = "author_id, created_at DESC"),
-                @Index(name = "ix_session_comment_parent_created", columnList = "parent_comment_id, created_at")
+                @Index(name = "ix_session_comment_parent_created", columnList = "parent_comment_id, created_at"),
+                @Index(name = "ix_session_comment_reply_to_created", columnList = "reply_to_comment_id, created_at")
         }
 )
 @Getter
@@ -46,6 +47,10 @@ public class SessionComment {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_comment_id")
     private SessionComment parentComment;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reply_to_comment_id")
+    private SessionComment replyToComment;
 
     @Column(nullable = false, columnDefinition = "text")
     private String content;

@@ -7793,7 +7793,7 @@ form {
 
 .feed-comment-avatar-image {
   object-fit: cover;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(14, 165, 168, 0.18);
   display: block;
 }
 
@@ -7869,6 +7869,33 @@ form {
   cursor: not-allowed;
 }
 
+.feed-view-replies-button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: #3B4E63;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: var(--font-weight-medium);
+  justify-self: start;
+  margin-left: 2.1rem;
+  padding: 0.16rem 0.42rem;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.feed-view-replies-button:hover,
+.feed-view-replies-button:focus-visible {
+  background: color-mix(in srgb, var(--accent-strong) 8%, transparent);
+  color: var(--accent-strong);
+  transform: translateX(2px);
+}
+
 .feed-comment-replies {
   border-left: 2px solid var(--feed-thread-line);
   display: grid;
@@ -7876,6 +7903,11 @@ form {
   margin-left: 1.1rem;
   padding-left: 1rem;
   position: relative;
+}
+
+.feed-comment-reply-thread {
+  display: grid;
+  gap: 0.2rem;
 }
 
 .feed-comment-item--reply {
@@ -7897,7 +7929,7 @@ form {
   z-index: 0;
 }
 
-.feed-comment-item--reply:last-child::after {
+.feed-comment-reply-thread:last-child > .feed-comment-item--reply::after {
   background: var(--feed-comments-panel-bg);
   bottom: -0.28rem;
   content: "";
@@ -7919,17 +7951,61 @@ form {
 }
 
 .feed-comment-reply-form {
-  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.38rem;
+  grid-template-columns: 22px minmax(0, 1fr) 26px;
   margin-left: 2.1rem;
 }
 
-.feed-comment-cancel {
-  border-radius: 999px;
-  padding: 0.44rem 0.7rem;
+.feed-comment-reply-form .feed-comment-input-shell {
+  grid-template-columns: minmax(0, 1fr) 30px;
+  padding: 0.16rem 0.18rem 0.16rem 0.62rem;
+}
+
+.feed-comment-reply-compose-avatar {
+  height: 22px;
+  width: 22px;
+}
+
+.feed-comment-avatar.feed-comment-reply-compose-avatar {
+  font-size: 0.62rem;
+}
+
+.feed-reply-cancel-button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  color: #6A7F98;
+  display: grid;
+  height: 26px;
+  justify-content: center;
+  min-width: 0;
+  padding: 0;
+  transition:
+    color 160ms ease,
+    background 160ms ease;
+  width: 26px;
+}
+
+.feed-reply-cancel-button svg {
+  display: block;
+  fill: none;
+  height: 14px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
+  width: 14px;
+}
+
+.feed-reply-cancel-button:hover:not(:disabled),
+.feed-reply-cancel-button:focus-visible:not(:disabled) {
+  background: color-mix(in srgb, #6A7F98 18%, transparent);
+  color: #fff;
 }
 
 .feed-reply-error {
-  grid-column: 1 / -1;
+  grid-column: 2 / -1;
   margin: 0;
 }
 

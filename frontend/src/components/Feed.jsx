@@ -27,6 +27,7 @@ const SUGGEST_AVATAR_TONES = ['teal', 'purple', 'amber'];
 const LIVE_SESSION_REFRESHED_EVENT = 'progresspal-live-session-refreshed';
 const LIVE_SESSION_LOCAL_EVENT = 'progresspal-live-session-local';
 const FLOATING_TIMER_EDGE_GAP = 12;
+const DEFAULT_EXPANDED_REPLY_LIMIT = 5;
 
 const clampFloatingTimerPosition = (x, y, width, height) => {
   if (typeof window === 'undefined') return { x, y };
@@ -39,10 +40,51 @@ const clampFloatingTimerPosition = (x, y, width, height) => {
 };
 
 const getReplyFormKey = (sessionId, commentId) => `${sessionId}:${commentId}`;
+const getReplyThreadKey = (sessionId, commentId) => `${sessionId}:${commentId}`;
+
+const isReplyComment = (comment) => comment?.parentCommentId != null;
+
+const getMentionText = (username) => {
+  const normalized = String(username || '').trim().replace(/^@+/, '').split(/\s+/)[0];
+  return normalized ? `@${normalized}` : '';
+};
+
+const startsWithMention = (text, mention) => {
+  const trimmed = String(text || '').trimStart();
+  return trimmed === mention || trimmed.startsWith(`${mention} `) || trimmed.startsWith(`${mention}\n`);
+};
+
+const ensureLeadingMention = (text, username, { keepTrailingSpace = false } = {}) => {
+  const mention = getMentionText(username);
+  const current = String(text || '');
+  const trimmedStart = current.trimStart();
+
+  if (!mention) return keepTrailingSpace ? current : current.trim();
+  if (startsWithMention(trimmedStart, mention)) return keepTrailingSpace ? current : trimmedStart.trim();
+  if (!trimmedStart) return keepTrailingSpace ? `${mention} ` : mention;
+  return `${mention} ${keepTrailingSpace ? trimmedStart : trimmedStart.trim()}`;
+};
+
+const getReplySubmitContent = (draft, targetComment) => (
+  isReplyComment(targetComment)
+    ? ensureLeadingMention(draft, targetComment.authorUsername)
+    : String(draft || '').trim()
+);
+
+const hasReplyDraftContent = (draft, targetComment) => {
+  const trimmed = String(draft || '').trim();
+  if (!trimmed) return false;
+  if (!isReplyComment(targetComment)) return true;
+
+  const mention = getMentionText(targetComment.authorUsername);
+  if (!mention || !startsWithMention(trimmed, mention)) return true;
+  return trimmed.slice(mention.length).trim().length > 0;
+};
 
 const groupCommentsWithReplies = (comments) => {
   const ordered = [...(comments || [])]
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  const commentsById = new Map(ordered.map((comment) => [String(comment.id), comment]));
   const repliesByParentId = new Map();
   const topLevelComments = [];
 
@@ -53,8 +95,14 @@ const groupCommentsWithReplies = (comments) => {
     }
 
     const parentId = String(comment.parentCommentId);
+    const replyTargetId = comment.replyToCommentId ?? comment.parentCommentId;
+    const replyTarget = replyTargetId != null ? commentsById.get(String(replyTargetId)) : null;
     const replies = repliesByParentId.get(parentId) || [];
-    replies.push(comment);
+    replies.push({
+      ...comment,
+      replyToAuthorUsername: comment.replyToAuthorUsername || replyTarget?.authorUsername || null,
+      replyToAuthorId: comment.replyToAuthorId ?? replyTarget?.authorId ?? null,
+    });
     repliesByParentId.set(parentId, replies);
   });
 
@@ -97,6 +145,8 @@ const Feed = () => {
   const [replyDraftByComment, setReplyDraftByComment] = useState({});
   const [replySubmittingByComment, setReplySubmittingByComment] = useState({});
   const [replyErrorByComment, setReplyErrorByComment] = useState({});
+  const [expandedReplyThreads, setExpandedReplyThreads] = useState({});
+  const [failedCommentAvatarSrcs, setFailedCommentAvatarSrcs] = useState({});
   const [suggestedFriends, setSuggestedFriends] = useState([]);
   const [sendingSuggestionId, setSendingSuggestionId] = useState('');
   const [outgoingJoinRequestsBySession, setOutgoingJoinRequestsBySession] = useState({});
@@ -445,6 +495,36 @@ const Feed = () => {
 
   const getInitial = (text) => (text || '?').trim().charAt(0).toUpperCase() || '?';
 
+  const renderCommentAvatar = (comment, className = '') => {
+    const profileImage = comment?.authorProfileImage || comment?.profileImage || '';
+    const avatarKey = String(profileImage || '');
+    const showImage = Boolean(profileImage) && !failedCommentAvatarSrcs[avatarKey];
+    const fullClassName = className
+      ? `feed-comment-avatar ${className}`
+      : 'feed-comment-avatar';
+    const imageClassName = className
+      ? `feed-comment-avatar-image ${className}`
+      : 'feed-comment-avatar-image';
+
+    if (showImage) {
+      return (
+        <img
+          src={profileImage}
+          alt=""
+          className={imageClassName}
+          aria-hidden="true"
+          onError={() => setFailedCommentAvatarSrcs((prev) => ({ ...prev, [avatarKey]: true }))}
+        />
+      );
+    }
+
+    return (
+      <span className={fullClassName} aria-hidden="true">
+        {getInitial(comment?.authorUsername || comment?.username)}
+      </span>
+    );
+  };
+
   const getSuggestionAvatarTone = (candidate) => {
     const seed = String(candidate?.userId || candidate?.username || '');
     if (!seed) return SUGGEST_AVATAR_TONES[0];
@@ -767,9 +847,16 @@ const Feed = () => {
     }));
   };
 
-  const handleOpenReplyForm = (sessionId, commentId) => {
-    const replyKey = getReplyFormKey(sessionId, commentId);
+  const handleOpenReplyForm = (sessionId, targetComment) => {
+    if (!targetComment?.id) return;
+    const replyKey = getReplyFormKey(sessionId, targetComment.id);
     setReplyFormOpenByComment((prev) => ({ ...prev, [replyKey]: true }));
+    if (isReplyComment(targetComment)) {
+      setReplyDraftByComment((prev) => ({
+        ...prev,
+        [replyKey]: ensureLeadingMention(prev[replyKey], targetComment.authorUsername, { keepTrailingSpace: true }),
+      }));
+    }
     setReplyErrorByComment((prev) => ({ ...prev, [replyKey]: '' }));
   };
 
@@ -782,16 +869,18 @@ const Feed = () => {
     setReplyErrorByComment((prev) => ({ ...prev, [replyKey]: '' }));
   };
 
-  const handlePostReply = async (sessionId, parentCommentId, event) => {
+  const handlePostReply = async (sessionId, targetComment, event) => {
     event.preventDefault();
-    if (!currentUser?.id || !sessionId || parentCommentId == null) return;
+    if (!currentUser?.id || !sessionId || !targetComment?.id) return;
 
-    const replyKey = getReplyFormKey(sessionId, parentCommentId);
+    const replyKey = getReplyFormKey(sessionId, targetComment.id);
     if (replySubmittingByComment[replyKey]) return;
 
+    const parentCommentId = targetComment.parentCommentId ?? targetComment.id;
+    const replyToCommentId = targetComment.id;
     const draft = replyDraftByComment[replyKey] || '';
-    const content = draft.trim();
-    if (!content) return;
+    const content = getReplySubmitContent(draft, targetComment);
+    if (!content || !hasReplyDraftContent(draft, targetComment) || parentCommentId == null) return;
 
     setReplySubmittingByComment((prev) => ({ ...prev, [replyKey]: true }));
     setReplyErrorByComment((prev) => ({ ...prev, [replyKey]: '' }));
@@ -799,6 +888,7 @@ const Feed = () => {
       const created = await createSessionComment(currentUser.id, sessionId, {
         content,
         parentCommentId,
+        replyToCommentId,
       });
       setCommentsBySession((prev) => ({
         ...prev,
@@ -806,6 +896,10 @@ const Feed = () => {
       }));
       setReplyDraftByComment((prev) => ({ ...prev, [replyKey]: '' }));
       setReplyFormOpenByComment((prev) => ({ ...prev, [replyKey]: false }));
+      setExpandedReplyThreads((prev) => ({
+        ...prev,
+        [getReplyThreadKey(sessionId, parentCommentId)]: true,
+      }));
     } catch (err) {
       setReplyErrorByComment((prev) => ({
         ...prev,
@@ -814,6 +908,13 @@ const Feed = () => {
     } finally {
       setReplySubmittingByComment((prev) => ({ ...prev, [replyKey]: false }));
     }
+  };
+
+  const handleToggleReplyThread = (sessionId, commentId, expanded) => {
+    setExpandedReplyThreads((prev) => ({
+      ...prev,
+      [getReplyThreadKey(sessionId, commentId)]: expanded,
+    }));
   };
 
   const handleViewProfile = (targetUserId) => {
@@ -1425,24 +1526,21 @@ const Feed = () => {
                         const replyDraft = replyDraftByComment[replyKey] || '';
                         const isReplySubmitting = Boolean(replySubmittingByComment[replyKey]);
                         const replyError = replyErrorByComment[replyKey] || '';
+                        const repliesCount = comment.replies.length;
+                        const replyThreadKey = getReplyThreadKey(item.id, comment.id);
+                        const replyThreadExpansionState = expandedReplyThreads[replyThreadKey];
+                        const areRepliesExpanded = repliesCount > 0 && (
+                          replyThreadExpansionState ?? repliesCount <= DEFAULT_EXPANDED_REPLY_LIMIT
+                        );
+                        const replyToggleLabel = `${areRepliesExpanded ? 'Hide' : 'View'} ${repliesCount} ${repliesCount === 1 ? 'reply' : 'replies'}`;
+                        const hasReplyDraft = hasReplyDraftContent(replyDraft, comment);
 
                         return (
                           <article key={comment.id} className="feed-comment-thread">
-                            <div className={`feed-comment-item feed-comment-item--parent${comment.replies.length > 0 ? ' has-replies' : ''}`}>
+                            <div className={`feed-comment-item feed-comment-item--parent${areRepliesExpanded ? ' has-replies' : ''}`}>
                               <div className="feed-comment-meta">
                                 <div className="feed-comment-author">
-                                  {comment.authorProfileImage ? (
-                                    <img
-                                      src={comment.authorProfileImage}
-                                      alt=""
-                                      className="feed-comment-avatar-image"
-                                      aria-hidden="true"
-                                    />
-                                  ) : (
-                                    <span className="feed-comment-avatar" aria-hidden="true">
-                                      {getInitial(comment.authorUsername)}
-                                    </span>
-                                  )}
+                                  {renderCommentAvatar(comment)}
                                   <strong>{comment.authorUsername || 'User'}</strong>
                                 </div>
                                 <span>{formatRelativeFromNow(comment.createdAt)}</span>
@@ -1452,7 +1550,7 @@ const Feed = () => {
                                 <button
                                   type="button"
                                   className="feed-comment-reply-button"
-                                  onClick={() => handleOpenReplyForm(item.id, comment.id)}
+                                  onClick={() => handleOpenReplyForm(item.id, comment)}
                                   disabled={isReplySubmitting}
                                 >
                                   <span className="feed-reply-arrow" aria-hidden="true">
@@ -1468,8 +1566,9 @@ const Feed = () => {
                             {isReplyFormOpen && (
                               <form
                                 className="feed-comment-form feed-comment-reply-form"
-                                onSubmit={(event) => handlePostReply(item.id, comment.id, event)}
+                                onSubmit={(event) => handlePostReply(item.id, comment, event)}
                               >
+                                {renderCommentAvatar(comment, 'feed-comment-reply-compose-avatar')}
                                 <div className="feed-comment-input-shell">
                                   <input
                                     type="text"
@@ -1479,13 +1578,13 @@ const Feed = () => {
                                       ...prev,
                                       [replyKey]: event.target.value.slice(0, 1000),
                                     }))}
-                                    placeholder={`Reply to ${comment.authorUsername || 'comment'}...`}
+                                    placeholder={`Reply to @${comment.authorUsername || 'user'}…`}
                                     disabled={isReplySubmitting}
                                   />
                                   <button
                                     type="submit"
-                                    className={`feed-comment-send-button${replyDraft.trim() ? ' has-draft' : ''}`}
-                                    disabled={isReplySubmitting || !replyDraft.trim()}
+                                    className={`feed-comment-send-button${hasReplyDraft ? ' has-draft' : ''}`}
+                                    disabled={isReplySubmitting || !hasReplyDraft}
                                     aria-label={isReplySubmitting ? 'Posting reply' : 'Post reply'}
                                   >
                                     {isReplySubmitting ? (
@@ -1499,41 +1598,118 @@ const Feed = () => {
                                 </div>
                                 <button
                                   type="button"
-                                  className="secondary-button compact-button feed-comment-cancel"
+                                  className="feed-reply-cancel-button"
                                   onClick={() => handleCancelReply(item.id, comment.id)}
                                   disabled={isReplySubmitting}
+                                  aria-label="Cancel reply"
                                 >
-                                  Cancel
+                                  <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                                    <path d="M6 6l12 12M18 6 6 18" />
+                                  </svg>
                                 </button>
                                 {replyError && <p className="message-error feed-reply-error">{replyError}</p>}
                               </form>
                             )}
 
-                            {comment.replies.length > 0 && (
+                            {repliesCount > 0 && (
+                              <button
+                                type="button"
+                                className={`feed-view-replies-button${areRepliesExpanded ? ' is-expanded' : ''}`}
+                                onClick={() => handleToggleReplyThread(item.id, comment.id, !areRepliesExpanded)}
+                                aria-expanded={areRepliesExpanded}
+                              >
+                                {replyToggleLabel}
+                              </button>
+                            )}
+
+                            {areRepliesExpanded && (
                               <div className="feed-comment-replies">
-                                {comment.replies.map((reply) => (
-                                  <article key={reply.id} className="feed-comment-item feed-comment-item--reply">
-                                    <div className="feed-comment-meta">
-                                      <div className="feed-comment-author">
-                                        {reply.authorProfileImage ? (
-                                          <img
-                                            src={reply.authorProfileImage}
-                                            alt=""
-                                            className="feed-comment-avatar-image"
-                                            aria-hidden="true"
-                                          />
-                                        ) : (
-                                          <span className="feed-comment-avatar" aria-hidden="true">
-                                            {getInitial(reply.authorUsername)}
-                                          </span>
-                                        )}
-                                        <strong>{reply.authorUsername || 'User'}</strong>
+                                {comment.replies.map((reply) => {
+                                  const nestedReplyKey = getReplyFormKey(item.id, reply.id);
+                                  const isNestedReplyFormOpen = Boolean(replyFormOpenByComment[nestedReplyKey]);
+                                  const nestedReplyDraft = replyDraftByComment[nestedReplyKey] || '';
+                                  const isNestedReplySubmitting = Boolean(replySubmittingByComment[nestedReplyKey]);
+                                  const nestedReplyError = replyErrorByComment[nestedReplyKey] || '';
+                                  const hasNestedReplyDraft = hasReplyDraftContent(nestedReplyDraft, reply);
+
+                                  return (
+                                    <article key={reply.id} className="feed-comment-reply-thread">
+                                      <div className="feed-comment-item feed-comment-item--reply">
+                                        <div className="feed-comment-meta">
+                                          <div className="feed-comment-author">
+                                            {renderCommentAvatar(reply)}
+                                            <strong>{reply.authorUsername || 'User'}</strong>
+                                          </div>
+                                          <span>{formatRelativeFromNow(reply.createdAt)}</span>
+                                        </div>
+                                        <p className="feed-comment-content">{reply.content}</p>
+                                        <div className="feed-comment-actions">
+                                          <button
+                                            type="button"
+                                            className="feed-comment-reply-button"
+                                            onClick={() => handleOpenReplyForm(item.id, reply)}
+                                            disabled={isNestedReplySubmitting}
+                                          >
+                                            <span className="feed-reply-arrow" aria-hidden="true">
+                                              <svg viewBox="0 0 16 16" focusable="false">
+                                                <path d="M5 3v3.4c0 1.7 1.3 3 3 3h4M9.5 7 12 9.4l-2.5 2.4" />
+                                              </svg>
+                                            </span>
+                                            <span>Reply</span>
+                                          </button>
+                                        </div>
                                       </div>
-                                      <span>{formatRelativeFromNow(reply.createdAt)}</span>
-                                    </div>
-                                    <p className="feed-comment-content">{reply.content}</p>
-                                  </article>
-                                ))}
+
+                                      {isNestedReplyFormOpen && (
+                                        <form
+                                          className="feed-comment-form feed-comment-reply-form"
+                                          onSubmit={(event) => handlePostReply(item.id, reply, event)}
+                                        >
+                                          {renderCommentAvatar(reply, 'feed-comment-reply-compose-avatar')}
+                                          <div className="feed-comment-input-shell">
+                                            <input
+                                              type="text"
+                                              className="feed-comment-input"
+                                              value={nestedReplyDraft}
+                                              onChange={(event) => setReplyDraftByComment((prev) => ({
+                                                ...prev,
+                                                [nestedReplyKey]: event.target.value.slice(0, 1000),
+                                              }))}
+                                              placeholder={`Reply to @${reply.authorUsername || 'user'}…`}
+                                              disabled={isNestedReplySubmitting}
+                                            />
+                                            <button
+                                              type="submit"
+                                              className={`feed-comment-send-button${hasNestedReplyDraft ? ' has-draft' : ''}`}
+                                              disabled={isNestedReplySubmitting || !hasNestedReplyDraft}
+                                              aria-label={isNestedReplySubmitting ? 'Posting reply' : 'Post reply'}
+                                            >
+                                              {isNestedReplySubmitting ? (
+                                                <span className="feed-comment-send-status" aria-hidden="true">...</span>
+                                              ) : (
+                                                <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                                                  <path d="M4 11.2 20 4l-7.2 16-1.8-6.7L4 11.2Zm7.4 1.4 1 3.7 3.9-8.6-8.6 3.9 3.7 1Zm0 0 4.9-4.9" />
+                                                </svg>
+                                              )}
+                                            </button>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            className="feed-reply-cancel-button"
+                                            onClick={() => handleCancelReply(item.id, reply.id)}
+                                            disabled={isNestedReplySubmitting}
+                                            aria-label="Cancel reply"
+                                          >
+                                            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                                              <path d="M6 6l12 12M18 6 6 18" />
+                                            </svg>
+                                          </button>
+                                          {nestedReplyError && <p className="message-error feed-reply-error">{nestedReplyError}</p>}
+                                        </form>
+                                      )}
+                                    </article>
+                                  );
+                                })}
                               </div>
                             )}
                           </article>

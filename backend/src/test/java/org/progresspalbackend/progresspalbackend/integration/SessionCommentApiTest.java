@@ -105,6 +105,9 @@ class SessionCommentApiTest {
                 .andExpect(jsonPath("$.authorId").value(actor.getId().toString()))
                 .andExpect(jsonPath("$.authorUsername").value(actor.getUsername()))
                 .andExpect(jsonPath("$.parentCommentId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.replyToCommentId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.replyToAuthorId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.replyToAuthorUsername").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.content").value("Great consistency!"))
                 .andExpect(jsonPath("$.editable").value(true));
 
@@ -133,6 +136,9 @@ class SessionCommentApiTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.sessionId").value(session.getId().toString()))
                 .andExpect(jsonPath("$.parentCommentId").value(parentId))
+                .andExpect(jsonPath("$.replyToCommentId").value(parentId))
+                .andExpect(jsonPath("$.replyToAuthorId").value(parentAuthor.getId().toString()))
+                .andExpect(jsonPath("$.replyToAuthorUsername").value(parentAuthor.getUsername()))
                 .andExpect(jsonPath("$.authorId").value(replier.getId().toString()))
                 .andExpect(jsonPath("$.content").value("Replying here"))
                 .andExpect(jsonPath("$.editable").value(true));
@@ -142,11 +148,37 @@ class SessionCommentApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[?(@.content == 'Replying here')].parentCommentId")
+                        .value(org.hamcrest.Matchers.contains(parentId)))
+                .andExpect(jsonPath("$[?(@.content == 'Replying here')].replyToCommentId")
                         .value(org.hamcrest.Matchers.contains(parentId)));
     }
 
     @Test
-    void createReply_toReply_returns400() throws Exception {
+    void createReply_toAnotherReply_targetsReplyAndKeepsTopLevelParent() throws Exception {
+        User owner = persistUser();
+        User firstReplier = persistUser();
+        User secondReplier = persistUser();
+        ActivityType type = persistActivityType("Study");
+        Session session = persistSession(owner, type, Visibility.PUBLIC);
+        String parentId = JsonPath.read(createComment(session, owner, "Root thought"), "$.id");
+        String firstReplyId = JsonPath.read(createReply(session, firstReplier, "First reply", parentId), "$.id");
+
+        mvc.perform(post("/api/sessions/{sessionId}/comments", session.getId())
+                        .header("X-User-Id", secondReplier.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"Targeted reply","parentCommentId":"%s","replyToCommentId":"%s"}
+                                """.formatted(parentId, firstReplyId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.parentCommentId").value(parentId))
+                .andExpect(jsonPath("$.replyToCommentId").value(firstReplyId))
+                .andExpect(jsonPath("$.replyToAuthorId").value(firstReplier.getId().toString()))
+                .andExpect(jsonPath("$.replyToAuthorUsername").value(firstReplier.getUsername()))
+                .andExpect(jsonPath("$.authorId").value(secondReplier.getId().toString()));
+    }
+
+    @Test
+    void createReply_usingReplyAsParentCommentId_returns400() throws Exception {
         User owner = persistUser();
         User actor = persistUser();
         ActivityType type = persistActivityType("Study");
@@ -164,20 +196,39 @@ class SessionCommentApiTest {
     }
 
     @Test
-    void createReply_toCommentFromAnotherSession_returns400() throws Exception {
+    void createReply_withReplyTargetFromAnotherSession_returns400() throws Exception {
         User owner = persistUser();
         User actor = persistUser();
         ActivityType type = persistActivityType("Study");
         Session firstSession = persistSession(owner, type, Visibility.PUBLIC);
         Session secondSession = persistSession(owner, type, Visibility.PUBLIC);
-        String parentId = JsonPath.read(createComment(firstSession, owner, "Wrong thread"), "$.id");
+        String parentId = JsonPath.read(createComment(secondSession, owner, "Local thread"), "$.id");
+        String replyToId = JsonPath.read(createComment(firstSession, owner, "Wrong session target"), "$.id");
 
         mvc.perform(post("/api/sessions/{sessionId}/comments", secondSession.getId())
                         .header("X-User-Id", actor.getId().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"content":"Wrong session reply","parentCommentId":"%s"}
-                                """.formatted(parentId)))
+                                {"content":"Wrong session reply","parentCommentId":"%s","replyToCommentId":"%s"}
+                                """.formatted(parentId, replyToId)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void createReply_withReplyTargetFromAnotherThread_returns400() throws Exception {
+        User owner = persistUser();
+        User actor = persistUser();
+        ActivityType type = persistActivityType("Study");
+        Session session = persistSession(owner, type, Visibility.PUBLIC);
+        String firstParentId = JsonPath.read(createComment(session, owner, "First thread"), "$.id");
+        String secondParentId = JsonPath.read(createComment(session, owner, "Second thread"), "$.id");
+
+        mvc.perform(post("/api/sessions/{sessionId}/comments", session.getId())
+                        .header("X-User-Id", actor.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"Wrong thread reply","parentCommentId":"%s","replyToCommentId":"%s"}
+                                """.formatted(firstParentId, secondParentId)))
                 .andExpect(status().isBadRequest());
     }
 
@@ -274,26 +325,61 @@ class SessionCommentApiTest {
     }
 
     @Test
-    void createReply_notifiesParentCommentAuthor() throws Exception {
+    void createTopLevelComment_notifiesSessionAuthor() throws Exception {
         User owner = persistUser();
-        User parentAuthor = persistUser();
-        User replier = persistUser();
+        User actor = persistUser();
         ActivityType type = persistActivityType("Study");
         Session session = persistSession(owner, type, Visibility.PUBLIC);
-        String parentId = JsonPath.read(createComment(session, parentAuthor, "Root thought"), "$.id");
-        notificationRepository.deleteAll();
 
-        String replyId = JsonPath.read(createReply(session, replier, "Replying here", parentId), "$.id");
+        String commentId = JsonPath.read(createComment(session, actor, "Great session"), "$.id");
 
         var notifications = notificationRepository.findAll();
         assertThat(notifications).hasSize(1);
         var notification = notifications.get(0);
-        assertThat(notification.getRecipient().getId()).isEqualTo(parentAuthor.getId());
-        assertThat(notification.getActor().getId()).isEqualTo(replier.getId());
+        assertThat(notification.getRecipient().getId()).isEqualTo(owner.getId());
+        assertThat(notification.getActor().getId()).isEqualTo(actor.getId());
+        assertThat(notification.getType()).isEqualTo(NotificationType.SESSION_COMMENT);
+        assertThat(notification.getResourceType()).isEqualTo(NotificationResourceType.COMMENT);
+        assertThat(notification.getResourceId().toString()).isEqualTo(commentId);
+        assertThat(notification.getMessage()).isEqualTo(actor.getUsername() + " commented on your session.");
+    }
+
+    @Test
+    void createTopLevelComment_onOwnSession_createsNoNotification() throws Exception {
+        User owner = persistUser();
+        ActivityType type = persistActivityType("Study");
+        Session session = persistSession(owner, type, Visibility.PUBLIC);
+
+        createComment(session, owner, "Logging my own note");
+
+        assertThat(notificationRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void createReply_notifiesReplyTargetAuthor() throws Exception {
+        User owner = persistUser();
+        User firstReplier = persistUser();
+        User secondReplier = persistUser();
+        ActivityType type = persistActivityType("Study");
+        Session session = persistSession(owner, type, Visibility.PUBLIC);
+        String parentId = JsonPath.read(createComment(session, owner, "Root thought"), "$.id");
+        String firstReplyId = JsonPath.read(createReply(session, firstReplier, "First reply", parentId), "$.id");
+        notificationRepository.deleteAll();
+
+        String replyId = JsonPath.read(
+                createTargetedReply(session, secondReplier, "Targeted reply", parentId, firstReplyId),
+                "$.id"
+        );
+
+        var notifications = notificationRepository.findAll();
+        assertThat(notifications).hasSize(1);
+        var notification = notifications.get(0);
+        assertThat(notification.getRecipient().getId()).isEqualTo(firstReplier.getId());
+        assertThat(notification.getActor().getId()).isEqualTo(secondReplier.getId());
         assertThat(notification.getType()).isEqualTo(NotificationType.SESSION_COMMENT);
         assertThat(notification.getResourceType()).isEqualTo(NotificationResourceType.COMMENT);
         assertThat(notification.getResourceId().toString()).isEqualTo(replyId);
-        assertThat(notification.getMessage()).isEqualTo(replier.getUsername() + " replied to your comment.");
+        assertThat(notification.getMessage()).isEqualTo(secondReplier.getUsername() + " replied to your comment.");
     }
 
     @Test
@@ -330,6 +416,23 @@ class SessionCommentApiTest {
                         .content("""
                                 {"content":"%s","parentCommentId":"%s"}
                                 """.formatted(content, parentCommentId)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+    }
+
+    private String createTargetedReply(Session session,
+                                       User actor,
+                                       String content,
+                                       String parentCommentId,
+                                       String replyToCommentId) throws Exception {
+        return mvc.perform(post("/api/sessions/{sessionId}/comments", session.getId())
+                        .header("X-User-Id", actor.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"%s","parentCommentId":"%s","replyToCommentId":"%s"}
+                                """.formatted(content, parentCommentId, replyToCommentId)))
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()
