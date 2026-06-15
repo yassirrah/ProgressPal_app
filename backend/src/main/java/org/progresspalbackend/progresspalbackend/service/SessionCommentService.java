@@ -55,21 +55,22 @@ public class SessionCommentService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
         Session session = sessionAccessService.requireVisibleSession(actorUserId, sessionId);
-        SessionComment parentComment = resolveParentComment(sessionId, dto.parentCommentId());
+        ReplyTarget replyTarget = resolveReplyTarget(sessionId, dto.parentCommentId(), dto.replyToCommentId());
 
         SessionComment comment = new SessionComment();
         comment.setSession(session);
         comment.setAuthor(actor);
-        comment.setParentComment(parentComment);
+        comment.setParentComment(replyTarget.parentComment());
+        comment.setReplyToComment(replyTarget.replyToComment());
         comment.setContent(content);
         comment.setCreatedAt(Instant.now());
 
         SessionComment saved = sessionCommentRepository.save(comment);
 
-        if (parentComment == null) {
+        if (replyTarget.replyToComment() == null) {
             notificationService.notifySessionComment(session.getUser(), actor, saved.getId());
         } else {
-            notificationService.notifySessionCommentReply(parentComment.getAuthor(), actor, saved.getId());
+            notificationService.notifySessionCommentReply(replyTarget.replyToComment().getAuthor(), actor, saved.getId());
         }
 
         return toDto(saved, actorUserId);
@@ -90,32 +91,63 @@ public class SessionCommentService {
         sessionCommentRepository.delete(comment);
     }
 
-    private SessionComment resolveParentComment(UUID sessionId, UUID parentCommentId) {
-        if (parentCommentId == null) {
-            return null;
+    private ReplyTarget resolveReplyTarget(UUID sessionId, UUID parentCommentId, UUID replyToCommentId) {
+        if (parentCommentId == null && replyToCommentId == null) {
+            return new ReplyTarget(null, null);
         }
 
-        SessionComment parentComment = sessionCommentRepository.findById(parentCommentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Parent comment not found"));
+        SessionComment parentComment = parentCommentId == null ? null : requireComment(parentCommentId, "Parent comment not found");
+        if (parentComment != null) {
+            validateSameSession(parentComment, sessionId, "Parent comment belongs to another session");
 
-        if (!parentComment.getSession().getId().equals(sessionId)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Parent comment belongs to another session");
+            if (parentComment.getParentComment() != null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot use a reply as parentCommentId");
+            }
         }
 
-        if (parentComment.getParentComment() != null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot reply to a reply");
+        SessionComment replyToComment = replyToCommentId == null ? parentComment : requireComment(replyToCommentId, "Reply target not found");
+        if (replyToComment == null) {
+            return new ReplyTarget(parentComment, null);
         }
 
-        return parentComment;
+        validateSameSession(replyToComment, sessionId, "Reply target belongs to another session");
+
+        SessionComment replyToThreadParent = replyToComment.getParentComment() == null
+                ? replyToComment
+                : replyToComment.getParentComment();
+
+        if (parentComment == null) {
+            parentComment = replyToThreadParent;
+        } else if (!replyToThreadParent.getId().equals(parentComment.getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Reply target belongs to another thread");
+        }
+
+        return new ReplyTarget(parentComment, replyToComment);
+    }
+
+    private SessionComment requireComment(UUID commentId, String notFoundMessage) {
+        return sessionCommentRepository.findById(commentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, notFoundMessage));
+    }
+
+    private void validateSameSession(SessionComment comment, UUID sessionId, String message) {
+        if (!comment.getSession().getId().equals(sessionId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
+        }
     }
 
     private SessionCommentDto toDto(SessionComment comment, UUID actorUserId) {
         User author = comment.getAuthor();
         SessionComment parentComment = comment.getParentComment();
+        SessionComment replyToComment = comment.getReplyToComment();
+        User replyToAuthor = replyToComment != null ? replyToComment.getAuthor() : null;
         return new SessionCommentDto(
                 comment.getId(),
                 comment.getSession().getId(),
                 parentComment != null ? parentComment.getId() : null,
+                replyToComment != null ? replyToComment.getId() : null,
+                replyToAuthor != null ? replyToAuthor.getId() : null,
+                replyToAuthor != null ? replyToAuthor.getUsername() : null,
                 author.getId(),
                 author.getUsername(),
                 author.getProfileImage(),
@@ -124,5 +156,8 @@ public class SessionCommentService {
                 comment.getUpdatedAt(),
                 author.getId().equals(actorUserId)
         );
+    }
+
+    private record ReplyTarget(SessionComment parentComment, SessionComment replyToComment) {
     }
 }
