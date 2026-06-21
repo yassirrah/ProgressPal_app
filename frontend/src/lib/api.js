@@ -983,11 +983,11 @@ export async function unlikeSession(userId, sessionId) {
   }
 }
 
-export async function getSessionComments(userId, sessionId) {
+export async function getSessionComments(userId, sessionId, options = {}) {
   try {
-    const { data } = await client.get(`/sessions/${sessionId}/comments`, {
+    const { data } = await client.get(`/sessions/${sessionId}/comments`, withAuditConfig({
       headers: authHeaders(userId),
-    });
+    }, options));
     return data;
   } catch (error) {
     throw new Error(toErrorMessage(error, 'Failed to load comments'));

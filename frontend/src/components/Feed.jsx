@@ -9,7 +9,6 @@ import {
   getOutgoingSessionJoinRequests,
   getMySessions,
   getSessionComments,
-  getSessionLikes,
   submitSessionJoinRequest,
   getStoredUser,
   likeSession,
@@ -28,6 +27,22 @@ const LIVE_SESSION_REFRESHED_EVENT = 'progresspal-live-session-refreshed';
 const LIVE_SESSION_LOCAL_EVENT = 'progresspal-live-session-local';
 const FLOATING_TIMER_EDGE_GAP = 12;
 const DEFAULT_EXPANDED_REPLY_LIMIT = 5;
+
+const getSummaryCount = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
+};
+
+const getSummaryBoolean = (value, fallback = false) => {
+  if (typeof value === 'boolean') return value;
+  if (value == null) return fallback;
+  return String(value).toLowerCase() === 'true';
+};
+
+const getLikeSummaryState = (item, fallback = {}) => ({
+  likesCount: getSummaryCount(item?.likesCount, getSummaryCount(fallback.likesCount, 0)),
+  likedByMe: getSummaryBoolean(item?.likedByMe, Boolean(fallback.likedByMe)),
+});
 
 const clampFloatingTimerPosition = (x, y, width, height) => {
   if (typeof window === 'undefined') return { x, y };
@@ -152,46 +167,6 @@ const Feed = () => {
   const [outgoingJoinRequestsBySession, setOutgoingJoinRequestsBySession] = useState({});
   const [joinRequestSubmittingBySession, setJoinRequestSubmittingBySession] = useState({});
 
-  const loadLikeSummaries = useCallback(async (items) => {
-    if (!currentUser?.id || !Array.isArray(items) || items.length === 0) {
-      setLikesBySession({});
-      return;
-    }
-
-    const summaries = await Promise.all(items.map(async (item) => {
-      if (isPrivateVisibility(item)) {
-        return {
-          sessionId: item.id,
-          likesCount: 0,
-          likedByMe: false,
-        };
-      }
-      try {
-        const summary = await getSessionLikes(currentUser.id, item.id, { initiator: 'Feed:likesFanout' });
-        return {
-          sessionId: item.id,
-          likesCount: Number(summary?.likesCount || 0),
-          likedByMe: Boolean(summary?.likedByMe),
-        };
-      } catch {
-        return {
-          sessionId: item.id,
-          likesCount: 0,
-          likedByMe: false,
-        };
-      }
-    }));
-
-    const next = {};
-    summaries.forEach((summary) => {
-      next[summary.sessionId] = {
-        likesCount: summary.likesCount,
-        likedByMe: summary.likedByMe,
-      };
-    });
-    setLikesBySession(next);
-  }, [currentUser]);
-
   const mapMySessionToFeedItem = useCallback((session) => {
     const activityType = activityTypesById[session.activityTypeId];
     return {
@@ -237,7 +212,13 @@ const Feed = () => {
       const nextItems = dedupedItems;
       setError('');
       setFeedItems(nextItems);
-      void loadLikeSummaries(nextItems);
+      setLikesBySession((prev) => {
+        const next = {};
+        nextItems.forEach((item) => {
+          next[item.id] = getLikeSummaryState(item, prev[item.id]);
+        });
+        return next;
+      });
     } catch (err) {
       setError(err.message || 'Failed to load feed');
     } finally {
@@ -245,7 +226,7 @@ const Feed = () => {
         setLoading(false);
       }
     }
-  }, [currentUser, loadLikeSummaries, mapMySessionToFeedItem]);
+  }, [currentUser, mapMySessionToFeedItem]);
 
   useEffect(() => {
     refreshFeed({ showLoading: true });
@@ -736,7 +717,7 @@ const Feed = () => {
     }
     if (likePendingBySession[item.id]) return;
 
-    const current = likesBySession[item.id] || { likesCount: 0, likedByMe: false };
+    const current = likesBySession[item.id] || getLikeSummaryState(item);
 
     try {
       setLikePendingBySession((prev) => ({ ...prev, [item.id]: true }));
@@ -745,12 +726,17 @@ const Feed = () => {
         ? await unlikeSession(currentUser.id, item.id)
         : await likeSession(currentUser.id, item.id);
 
+      const fallbackLikedByMe = !current.likedByMe;
+      const fallbackLikesCount = getSummaryCount(
+        current.likesCount + (fallbackLikedByMe ? 1 : -1),
+      );
+
       setLikesBySession((prev) => ({
         ...prev,
-        [item.id]: {
-          likesCount: Number(summary?.likesCount || 0),
-          likedByMe: Boolean(summary?.likedByMe),
-        },
+        [item.id]: getLikeSummaryState(summary, {
+          likesCount: fallbackLikesCount,
+          likedByMe: fallbackLikedByMe,
+        }),
       }));
 
       showToast(current.likedByMe ? 'Like removed.' : `You liked ${item.username}'s session.`);
@@ -768,7 +754,7 @@ const Feed = () => {
     setCommentLoadingBySession((prev) => ({ ...prev, [sessionId]: true }));
     setCommentErrorBySession((prev) => ({ ...prev, [sessionId]: '' }));
     try {
-      const comments = await getSessionComments(currentUser.id, sessionId);
+      const comments = await getSessionComments(currentUser.id, sessionId, { initiator: 'Feed:commentsPanel' });
       setCommentsBySession((prev) => ({
         ...prev,
         [sessionId]: Array.isArray(comments) ? comments : [],
@@ -996,15 +982,6 @@ const Feed = () => {
     return filtered;
   }, [feedItems, sortOrder, statusFilter]);
 
-  useEffect(() => {
-    if (!currentUser?.id || visibleFeedItems.length === 0) return;
-    visibleFeedItems.forEach((item) => {
-      if (isPrivateVisibility(item)) return;
-      if (commentsBySession[item.id] !== undefined || commentLoadingBySession[item.id]) return;
-      void loadCommentsForSession(item.id);
-    });
-  }, [commentLoadingBySession, commentsBySession, currentUser, loadCommentsForSession, visibleFeedItems]);
-
   const sidebarStats = useMemo(() => {
     const dayMs = 24 * 60 * 60 * 1000;
     const nowMs = now;
@@ -1220,20 +1197,26 @@ const Feed = () => {
         ) : (
           <div className="feed-grid">
             {visibleFeedItems.map((item) => {
-            const likeState = likesBySession[item.id] || { likesCount: 0, likedByMe: false };
+            const likeState = likesBySession[item.id] || getLikeSummaryState(item);
             const isCommentComposerOpen = Boolean(commentComposerOpenBySession[item.id]);
-            const sessionComments = commentsBySession[item.id] || [];
+            const loadedSessionComments = commentsBySession[item.id];
+            const hasLoadedComments = Array.isArray(loadedSessionComments);
+            const sessionComments = hasLoadedComments ? loadedSessionComments : [];
             const commentThreads = groupCommentsWithReplies(sessionComments);
-            const commentsCount = sessionComments.length;
+            const commentsCount = hasLoadedComments
+              ? sessionComments.length
+              : getSummaryCount(item.commentCount);
             const commentCountLabel = `${commentsCount} comment${commentsCount === 1 ? '' : 's'}`;
             const commentDraft = commentDraftBySession[item.id] || '';
             const isCommentSubmitting = Boolean(commentSubmittingBySession[item.id]);
             const hasCommentDraft = commentDraft.trim().length > 0;
-            const canToggleComments = commentsCount > 0;
+            const canToggleComments = hasLoadedComments && commentsCount > 0;
             const isCommentsCollapsed = canToggleComments && Boolean(commentCollapsedBySession[item.id]);
             const commentButtonLabel = canToggleComments
               ? (isCommentsCollapsed ? 'Expand comments' : 'Collapse comments')
-              : (isCommentComposerOpen ? 'Hide comment form' : 'Add comment');
+              : (commentsCount > 0
+                ? 'Open comments'
+                : (isCommentComposerOpen ? 'Hide comment form' : 'Add comment'));
             const isLiveCard = isSessionOngoing(item) || isSessionPaused(item);
             const isPrivateSession = isPrivateVisibility(item);
             const joinStatus = getJoinRequestStatus(item.id);
@@ -1253,7 +1236,7 @@ const Feed = () => {
               isCommentComposerOpen
               || Boolean(commentLoadingBySession[item.id])
               || Boolean(commentErrorBySession[item.id])
-              || commentsCount > 0
+              || (hasLoadedComments && commentsCount > 0)
             );
             return (
             <article
