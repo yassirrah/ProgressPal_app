@@ -9,6 +9,7 @@ import org.progresspalbackend.progresspalbackend.config.SessionFreshnessProperti
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
 import org.progresspalbackend.progresspalbackend.domain.GoalType;
 import org.progresspalbackend.progresspalbackend.domain.MetricKind;
+import org.progresspalbackend.progresspalbackend.domain.ReactionType;
 import org.progresspalbackend.progresspalbackend.domain.Session;
 
 import org.progresspalbackend.progresspalbackend.domain.User;
@@ -28,6 +29,9 @@ import org.progresspalbackend.progresspalbackend.dto.session.SessionStopDto;
 import org.progresspalbackend.progresspalbackend.mapper.SessionMapper;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
 import org.progresspalbackend.progresspalbackend.repository.FriendRepository;
+import org.progresspalbackend.progresspalbackend.repository.SessionAggregateCount;
+import org.progresspalbackend.progresspalbackend.repository.SessionCommentRepository;
+import org.progresspalbackend.progresspalbackend.repository.SessionReactionRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.data.domain.Page;
@@ -70,6 +74,8 @@ public class SessionService {
     private final ActivityTypeRepository activityTypeRepository;
     private final NotificationService notificationService;
     private final SessionFreshnessProperties sessionFreshnessProperties;
+    private final SessionReactionRepository sessionReactionRepository;
+    private final SessionCommentRepository sessionCommentRepository;
 
     public SessionDto create(SessionCreateDto dto, UUID user_id) {
         if(dto.activityTypeId() == null){
@@ -255,7 +261,8 @@ public class SessionService {
                 sessions = sessionRepo.findByUserIdAndVisibilityOrderByStartedAtDesc(targetUserId, Visibility.PUBLIC, pageable);
             }
         }
-        return sessions.map(mapper::toDto);
+        SessionSocialSummaries summaries = loadSocialSummaries(sessions.getContent(), actorUserId);
+        return sessions.map(session -> toSessionDto(session, summaries));
     }
 
     public Page<FeedSessionDto> getFeedSessions(UUID actorUserId, Pageable pageable){
@@ -269,29 +276,94 @@ public class SessionService {
             return Page.empty(pageable);
         }
 
-        return sessionRepo.findByUser_IdInAndVisibilityInOrderByStartedAtDesc(
+        Page<Session> sessions = sessionRepo.findByUser_IdInAndVisibilityInOrderByStartedAtDesc(
                 List.copyOf(friendIds),
                 List.of(Visibility.PUBLIC, Visibility.FRIENDS),
                 pageable
-        )
-                .map(s -> new FeedSessionDto(
-                    s.getId(),
-                    s.getUser().getId(),
-                    s.getUser().getUsername(),
-                    s.getUser().getProfileImage(),
-                    s.getActivityType().getId(),
-                    s.getActivityType().getName(),
-                    s.getTitle(),
-                    s.getMetricValue(),
-                    s.getActivityType().getMetricLabel(),
-                    s.getStartedAt(),
-                    s.getEndedAt(),
-                    s.getPausedAt(),
-                    s.getPausedDurationSeconds(),
-                    s.isPaused(),
-                    s.isLive() && !s.isPaused(),
-                    s.getVisibility())
-                );
+        );
+
+        SessionSocialSummaries summaries = loadSocialSummaries(sessions.getContent(), actorUserId);
+        return sessions.map(session -> toFeedSessionDto(session, summaries));
+    }
+
+    private SessionSocialSummaries loadSocialSummaries(List<Session> sessions, UUID actorUserId) {
+        if (sessions.isEmpty()) {
+            return SessionSocialSummaries.empty();
+        }
+
+        List<UUID> sessionIds = sessions.stream()
+                .map(Session::getId)
+                .toList();
+
+        Map<UUID, Long> likesCounts = toCountMap(
+                sessionReactionRepository.countBySessionIdsAndType(sessionIds, ReactionType.LIKE)
+        );
+        Set<UUID> likedSessionIds = sessionReactionRepository.findSessionIdsReactedByUser(
+                sessionIds,
+                actorUserId,
+                ReactionType.LIKE
+        );
+        Map<UUID, Long> commentCounts = toCountMap(sessionCommentRepository.countBySessionIds(sessionIds));
+
+        return new SessionSocialSummaries(likesCounts, likedSessionIds, commentCounts);
+    }
+
+    private Map<UUID, Long> toCountMap(List<SessionAggregateCount> counts) {
+        return counts.stream()
+                .collect(Collectors.toMap(SessionAggregateCount::getSessionId, SessionAggregateCount::getCount));
+    }
+
+    private SessionDto toSessionDto(Session session, SessionSocialSummaries summaries) {
+        return mapper.toDto(session).withSocialSummary(
+                summaries.likesCount(session.getId()),
+                summaries.likedByMe(session.getId()),
+                summaries.commentCount(session.getId())
+        );
+    }
+
+    private FeedSessionDto toFeedSessionDto(Session session, SessionSocialSummaries summaries) {
+        UUID sessionId = session.getId();
+        return new FeedSessionDto(
+                sessionId,
+                session.getUser().getId(),
+                session.getUser().getUsername(),
+                session.getUser().getProfileImage(),
+                session.getActivityType().getId(),
+                session.getActivityType().getName(),
+                session.getTitle(),
+                session.getMetricValue(),
+                session.getActivityType().getMetricLabel(),
+                session.getStartedAt(),
+                session.getEndedAt(),
+                session.getPausedAt(),
+                session.getPausedDurationSeconds(),
+                session.isPaused(),
+                session.isLive() && !session.isPaused(),
+                session.getVisibility(),
+                summaries.likesCount(sessionId),
+                summaries.likedByMe(sessionId),
+                summaries.commentCount(sessionId)
+        );
+    }
+
+    private record SessionSocialSummaries(Map<UUID, Long> likesCounts,
+                                          Set<UUID> likedSessionIds,
+                                          Map<UUID, Long> commentCounts) {
+        static SessionSocialSummaries empty() {
+            return new SessionSocialSummaries(Map.of(), Set.of(), Map.of());
+        }
+
+        long likesCount(UUID sessionId) {
+            return likesCounts.getOrDefault(sessionId, 0L);
+        }
+
+        boolean likedByMe(UUID sessionId) {
+            return likedSessionIds.contains(sessionId);
+        }
+
+        long commentCount(UUID sessionId) {
+            return commentCounts.getOrDefault(sessionId, 0L);
+        }
     }
 
     private boolean areUsersFriends(UUID actorUserId, UUID targetUserId) {
@@ -350,7 +422,9 @@ public class SessionService {
         validateDateRange(from, to);
         SessionStatusFilter statusFilter = parseStatus(status);
         Specification<Session> spec = buildMySessionsSpec(userId, from, to, activityTypeId, visibility, statusFilter);
-        return sessionRepo.findAll(spec, pageable).map(mapper::toDto);
+        Page<Session> sessions = sessionRepo.findAll(spec, pageable);
+        SessionSocialSummaries summaries = loadSocialSummaries(sessions.getContent(), userId);
+        return sessions.map(session -> toSessionDto(session, summaries));
     }
 
     @Transactional

@@ -3,10 +3,15 @@ package org.progresspalbackend.progresspalbackend.integration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
+import org.progresspalbackend.progresspalbackend.domain.ReactionType;
 import org.progresspalbackend.progresspalbackend.domain.Session;
+import org.progresspalbackend.progresspalbackend.domain.SessionComment;
+import org.progresspalbackend.progresspalbackend.domain.SessionReaction;
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
+import org.progresspalbackend.progresspalbackend.repository.SessionCommentRepository;
+import org.progresspalbackend.progresspalbackend.repository.SessionReactionRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,11 +54,15 @@ class MeSessionsApiTest {
 
     @Autowired MockMvc mvc;
     @Autowired SessionRepository sessionRepo;
+    @Autowired SessionReactionRepository reactionRepo;
+    @Autowired SessionCommentRepository commentRepo;
     @Autowired ActivityTypeRepository activityTypeRepo;
     @Autowired UserRepository userRepo;
 
     @BeforeEach
     void cleanDb() {
+        reactionRepo.deleteAll();
+        commentRepo.deleteAllInBatch();
         sessionRepo.deleteAll();
         activityTypeRepo.deleteAll();
         userRepo.deleteAll();
@@ -146,6 +155,37 @@ class MeSessionsApiTest {
                 .andExpect(jsonPath("$.totalElements").value(3));
     }
 
+    @Test
+    void meSessions_includesBoundedSocialSummariesForMultipleSessions() throws Exception {
+        User me = persistUser();
+        User other = persistUser();
+        ActivityType type = persistActivityType("Reading");
+
+        Session newer = sessionRepo.save(session(me, type, Visibility.PUBLIC, Instant.parse("2026-01-04T10:00:00Z"), true));
+        Session older = sessionRepo.save(session(me, type, Visibility.PUBLIC, Instant.parse("2026-01-03T10:00:00Z"), true));
+
+        persistLike(newer, me);
+        persistLike(newer, other);
+        persistLike(older, other);
+        persistComment(newer, other, "top-level");
+        persistComment(newer, me, "reply");
+        persistComment(older, other, "older comment");
+
+        mvc.perform(get("/api/me/sessions")
+                        .header("X-User-Id", me.getId().toString())
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].id").value(newer.getId().toString()))
+                .andExpect(jsonPath("$.content[0].likesCount").value(2))
+                .andExpect(jsonPath("$.content[0].likedByMe").value(true))
+                .andExpect(jsonPath("$.content[0].commentCount").value(2))
+                .andExpect(jsonPath("$.content[1].id").value(older.getId().toString()))
+                .andExpect(jsonPath("$.content[1].likesCount").value(1))
+                .andExpect(jsonPath("$.content[1].likedByMe").value(false))
+                .andExpect(jsonPath("$.content[1].commentCount").value(1));
+    }
+
     private User persistUser() {
         User u = new User();
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 10);
@@ -170,5 +210,23 @@ class MeSessionsApiTest {
         s.setEndedAt(ended ? startedAt.plusSeconds(600) : null);
         s.setTitle("t");
         return s;
+    }
+
+    private SessionReaction persistLike(Session session, User user) {
+        SessionReaction reaction = new SessionReaction();
+        reaction.setSession(session);
+        reaction.setUser(user);
+        reaction.setType(ReactionType.LIKE);
+        reaction.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z"));
+        return reactionRepo.save(reaction);
+    }
+
+    private SessionComment persistComment(Session session, User author, String content) {
+        SessionComment comment = new SessionComment();
+        comment.setSession(session);
+        comment.setAuthor(author);
+        comment.setContent(content);
+        comment.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z"));
+        return commentRepo.save(comment);
     }
 }

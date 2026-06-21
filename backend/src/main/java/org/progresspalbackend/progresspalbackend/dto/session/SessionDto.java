@@ -26,5 +26,35 @@ public record SessionDto(
         Boolean goalAchieved,
         Visibility visibility,
         boolean paused,
-        boolean ongoing
-) {}
+        boolean ongoing,
+        long likesCount,
+        boolean likedByMe,
+        long commentCount
+) {
+    public SessionDto withSocialSummary(long likesCount, boolean likedByMe, long commentCount) {
+        return new SessionDto(
+                id,
+                userId,
+                activityTypeId,
+                title,
+                description,
+                startedAt,
+                endedAt,
+                pausedAt,
+                pausedDurationSeconds,
+                metricValue,
+                metricCurrentValue,
+                goalType,
+                goalTarget,
+                goalNote,
+                goalDone,
+                goalAchieved,
+                visibility,
+                paused,
+                ongoing,
+                likesCount,
+                likedByMe,
+                commentCount
+        );
+    }
+}

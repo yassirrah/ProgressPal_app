@@ -21,4 +21,7 @@ public record FeedSessionDto(UUID id,
                              Long pausedDurationSeconds,
                              boolean paused,
                              boolean ongoing,
-                             Visibility visibility) {}
+                             Visibility visibility,
+                             long likesCount,
+                             boolean likedByMe,
+                             long commentCount) {}

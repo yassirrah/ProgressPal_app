@@ -20,6 +20,9 @@ public interface SessionMapper {
     @Mapping(target = "activityTypeId", source = "activityType.id")
     @Mapping(target = "goalDone",       expression = "java(computeGoalDone(entity))")
     @Mapping(target = "goalAchieved",   expression = "java(computeGoalAchieved(entity))")
+    @Mapping(target = "likesCount",     expression = "java(0L)")
+    @Mapping(target = "likedByMe",      expression = "java(false)")
+    @Mapping(target = "commentCount",   expression = "java(0L)")
     SessionDto toDto(Session entity);
 
     /* CREATE DTO -> ENTITY (relations & timestamps set elsewhere) */
