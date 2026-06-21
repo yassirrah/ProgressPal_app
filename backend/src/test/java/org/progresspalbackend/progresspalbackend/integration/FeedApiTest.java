@@ -5,11 +5,16 @@ import org.junit.jupiter.api.Test;
 import org.progresspalbackend.progresspalbackend.domain.ActivityType;
 import org.progresspalbackend.progresspalbackend.domain.Friendship;
 import org.progresspalbackend.progresspalbackend.domain.MetricKind;
+import org.progresspalbackend.progresspalbackend.domain.ReactionType;
 import org.progresspalbackend.progresspalbackend.domain.Session;
+import org.progresspalbackend.progresspalbackend.domain.SessionComment;
+import org.progresspalbackend.progresspalbackend.domain.SessionReaction;
 import org.progresspalbackend.progresspalbackend.domain.User;
 import org.progresspalbackend.progresspalbackend.domain.Visibility;
 import org.progresspalbackend.progresspalbackend.repository.ActivityTypeRepository;
 import org.progresspalbackend.progresspalbackend.repository.FriendRepository;
+import org.progresspalbackend.progresspalbackend.repository.SessionCommentRepository;
+import org.progresspalbackend.progresspalbackend.repository.SessionReactionRepository;
 import org.progresspalbackend.progresspalbackend.repository.SessionRepository;
 import org.progresspalbackend.progresspalbackend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,6 +64,10 @@ public class FeedApiTest {
     UserRepository userRepo;
     @Autowired
     FriendRepository friendRepo;
+    @Autowired
+    SessionReactionRepository reactionRepo;
+    @Autowired
+    SessionCommentRepository commentRepo;
 
     @Autowired
     MockMvc mockMvc;
@@ -68,6 +77,8 @@ public class FeedApiTest {
 
     @BeforeEach
     void cleanDb() {
+        reactionRepo.deleteAll();
+        commentRepo.deleteAllInBatch();
         sessionRepo.deleteAll();
         friendRepo.deleteAll();
         activityTypeRepo.deleteAll();
@@ -164,6 +175,39 @@ public class FeedApiTest {
                 .andExpect(jsonPath("$.content[1].visibility").value("PUBLIC"));
     }
 
+    @Test
+    void feed_includesBoundedSocialSummariesForMultipleSessions() throws Exception {
+        User viewer = persistUser();
+        User friend = persistUser();
+        User other = persistUser();
+        ActivityType type = persistActivityType("Study");
+
+        friendRepo.save(friendship(viewer, friend));
+        Session newer = sessionRepo.save(session(friend, type, Visibility.PUBLIC, Instant.parse("2026-01-04T10:00:00Z")));
+        Session older = sessionRepo.save(session(friend, type, Visibility.PUBLIC, Instant.parse("2026-01-03T10:00:00Z")));
+
+        persistLike(newer, viewer);
+        persistLike(newer, other);
+        persistLike(older, other);
+        persistComment(newer, other, "top-level");
+        persistComment(newer, viewer, "reply");
+        persistComment(older, other, "older comment");
+
+        mockMvc.perform(get("/api/feed")
+                        .header("X-User-Id", viewer.getId().toString())
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].id").value(newer.getId().toString()))
+                .andExpect(jsonPath("$.content[0].likesCount").value(2))
+                .andExpect(jsonPath("$.content[0].likedByMe").value(true))
+                .andExpect(jsonPath("$.content[0].commentCount").value(2))
+                .andExpect(jsonPath("$.content[1].id").value(older.getId().toString()))
+                .andExpect(jsonPath("$.content[1].likesCount").value(1))
+                .andExpect(jsonPath("$.content[1].likedByMe").value(false))
+                .andExpect(jsonPath("$.content[1].commentCount").value(1));
+    }
+
     private User persistUser(){
         User u = new User();
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 10);
@@ -196,5 +240,23 @@ public class FeedApiTest {
         f.setFriend(friend);
         f.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z"));
         return f;
+    }
+
+    private SessionReaction persistLike(Session session, User user) {
+        SessionReaction reaction = new SessionReaction();
+        reaction.setSession(session);
+        reaction.setUser(user);
+        reaction.setType(ReactionType.LIKE);
+        reaction.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z"));
+        return reactionRepo.save(reaction);
+    }
+
+    private SessionComment persistComment(Session session, User author, String content) {
+        SessionComment comment = new SessionComment();
+        comment.setSession(session);
+        comment.setAuthor(author);
+        comment.setContent(content);
+        comment.setCreatedAt(Instant.parse("2026-01-01T00:00:00Z"));
+        return commentRepo.save(comment);
     }
 }
